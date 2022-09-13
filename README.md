@@ -1,5 +1,9 @@
+
 # GenerativeModels
 Prototyping repo for generative models to be integrated into MONAI
+
+* Target: alpha for November
+* Priority: develop general purpose components and trial PR process into MONAI
 
 ## Objectives
 * Develop models to reproduce instances of data on the same distribution as the training data but differentiated enough to preserve privacy/data protection
