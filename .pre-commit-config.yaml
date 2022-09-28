@@ -1,0 +1,39 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.3.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-docstring-first
+      - id: check-executables-have-shebangs
+      - id: check-toml
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=1024']
+      - id: detect-private-key
+      - id: forbid-new-submodules
+      - id: pretty-format-json
+        args: ['--autofix', '--no-sort-keys', '--indent=4']
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+  - repo: https://github.com/psf/black
+    rev: 22.3.0
+    hooks:
+      - id: black
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.9.3
+    hooks:
+      - id: isort
+  - repo: https://github.com/PyCQA/flake8
+    rev: 3.9.2
+    hooks:
+      - id: flake8
+        args: # arguments to configure flake8
+          # these are errors that will be ignored by flake8
+          # check out their meaning here
+          # https://flake8.pycqa.org/en/latest/user/error-codes.html
+          - "--ignore=E203,E266,E501,W503,E731,F541,F841"
+          # Adding args to work with black format
+          - "--max-line-length=120"
+          - "--max-complexity=18"
