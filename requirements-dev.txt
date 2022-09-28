@@ -1,0 +1,11 @@
+# Full requirements for developments
+-r requirements.txt
+flake8>=3.8.1
+flake8-bugbear
+flake8-comprehensions
+flake8-executable
+pyflakes
+black
+isort
+mypy>=0.790
+pre-commit
