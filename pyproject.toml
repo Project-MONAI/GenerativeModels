@@ -1,6 +1,6 @@
 [tool.isort]
 line_length = 120
-src_paths = ["monaigen"]
+src_paths = ["generative"]
 profile = "black"
 
 [tool.black]
