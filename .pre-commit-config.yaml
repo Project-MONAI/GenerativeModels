@@ -37,3 +37,4 @@ repos:
           # Adding args to work with black format
           - "--max-line-length=120"
           - "--max-complexity=18"
+          - "--per-file-ignores=__init__.py:F401"

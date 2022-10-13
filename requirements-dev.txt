@@ -9,3 +9,5 @@ black
 isort
 mypy>=0.790
 pre-commit
+matplotlib!=3.5.0
+einops
