@@ -1,5 +1,5 @@
 # Full requirements for developments
--r requirements.txt
+-r requirements-min.txt
 flake8>=3.8.1
 flake8-bugbear
 flake8-comprehensions
