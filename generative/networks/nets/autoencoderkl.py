@@ -74,12 +74,12 @@ class Downsample(nn.Module):
 
 class ResBlock(nn.Module):
     # TODO: Add docstring to class
-    def __init__(self, spatial_dims: int, in_channels: int, out_channels: Optional[int] = None) -> None:
+    def __init__(self, spatial_dims: int, in_channels: int, num_groups: int, out_channels) -> None:
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = in_channels if out_channels is None else out_channels
 
-        self.norm1 = nn.GroupNorm(num_groups=32, num_channels=in_channels, eps=1e-6, affine=True)
+        self.norm1 = nn.GroupNorm(num_groups=num_groups, num_channels=in_channels, eps=1e-6, affine=True)
         self.conv1 = Convolution(
             spatial_dims=spatial_dims,
             in_channels=self.in_channels,
@@ -89,7 +89,7 @@ class ResBlock(nn.Module):
             padding=1,
             conv_only=True,
         )
-        self.norm2 = nn.GroupNorm(num_groups=32, num_channels=out_channels, eps=1e-6, affine=True)
+        self.norm2 = nn.GroupNorm(num_groups=num_groups, num_channels=out_channels, eps=1e-6, affine=True)
         self.conv2 = Convolution(
             spatial_dims=spatial_dims,
             in_channels=self.out_channels,
@@ -134,12 +134,13 @@ class AttnBlock(nn.Module):
         self,
         spatial_dims: int,
         in_channels: int,
+        num_groups: int,
     ) -> None:
         super().__init__()
         self.spatial_dims = spatial_dims
         self.in_channels = in_channels
 
-        self.norm = nn.GroupNorm(num_groups=32, num_channels=in_channels, eps=1e-6, affine=True)
+        self.norm = nn.GroupNorm(num_groups=num_groups, num_channels=in_channels, eps=1e-6, affine=True)
         self.q = Convolution(
             spatial_dims=spatial_dims,
             in_channels=in_channels,
@@ -225,6 +226,7 @@ class Encoder(nn.Module):
         ch_mult: Sequence[int],
         num_res_blocks: int,
         resolution: Sequence[int],
+        num_groups: int,
         with_attention: bool,
         attn_resolutions: Optional[Sequence[int]],
     ) -> None:
@@ -235,6 +237,7 @@ class Encoder(nn.Module):
         self.num_resolutions = len(ch_mult)
         self.num_res_blocks = num_res_blocks
         self.resolution = resolution
+        self.num_groups = num_groups
         self.with_attention = with_attention
         self.attn_resolutions = attn_resolutions
 
@@ -260,23 +263,23 @@ class Encoder(nn.Module):
             block_in_ch = n_channels * in_ch_mult[i]
             block_out_ch = n_channels * ch_mult[i]
             for _ in range(self.num_res_blocks):
-                blocks.append(ResBlock(spatial_dims, block_in_ch, block_out_ch))
+                blocks.append(ResBlock(spatial_dims, block_in_ch, num_groups, block_out_ch))
                 block_in_ch = block_out_ch
                 if self.with_attention and max(curr_res) in attn_resolutions:
-                    blocks.append(AttnBlock(spatial_dims, block_in_ch))
+                    blocks.append(AttnBlock(spatial_dims, block_in_ch, num_groups))
 
             if i != self.num_resolutions - 1:
                 blocks.append(Downsample(spatial_dims, block_in_ch))
                 curr_res = tuple(ti // 2 for ti in curr_res)
 
         # Non-local attention block
-        blocks.append(ResBlock(spatial_dims, block_in_ch, block_in_ch))
+        blocks.append(ResBlock(spatial_dims, block_in_ch, num_groups, block_in_ch))
         if self.with_attention:
-            blocks.append(AttnBlock(spatial_dims, block_in_ch))
-        blocks.append(ResBlock(spatial_dims, block_in_ch, block_in_ch))
+            blocks.append(AttnBlock(spatial_dims, block_in_ch, num_groups))
+        blocks.append(ResBlock(spatial_dims, block_in_ch, num_groups, block_in_ch))
 
         # Normalise and convert to latent size
-        blocks.append(nn.GroupNorm(num_groups=32, num_channels=block_in_ch, eps=1e-6, affine=True))
+        blocks.append(nn.GroupNorm(num_groups=num_groups, num_channels=block_in_ch, eps=1e-6, affine=True))
         blocks.append(
             Convolution(
                 spatial_dims=self.spatial_dims,
@@ -308,6 +311,7 @@ class Decoder(nn.Module):
         ch_mult: Sequence[int],
         num_res_blocks: int,
         resolution: Sequence[int],
+        num_groups: int,
         with_attention: bool,
         attn_resolutions: Optional[Sequence[int]],
     ) -> None:
@@ -320,6 +324,7 @@ class Decoder(nn.Module):
         self.num_resolutions = len(ch_mult)
         self.num_res_blocks = num_res_blocks
         self.resolution = resolution
+        self.num_groups = num_groups
         self.with_attention = with_attention
         self.attn_resolutions = attn_resolutions
 
@@ -343,26 +348,26 @@ class Decoder(nn.Module):
         # TODO: Discuss: in the 3D version, BrainDiffusionModel did not had middle part in the decoder to save memory
         # Non-local attention block
         if spatial_dims == 2:
-            blocks.append(ResBlock(spatial_dims, block_in_ch, block_in_ch))
+            blocks.append(ResBlock(spatial_dims, block_in_ch, num_groups, block_in_ch))
             if self.with_attention:
-                blocks.append(AttnBlock(spatial_dims, block_in_ch))
-            blocks.append(ResBlock(spatial_dims, block_in_ch, block_in_ch))
+                blocks.append(AttnBlock(spatial_dims, block_in_ch, num_groups))
+            blocks.append(ResBlock(spatial_dims, block_in_ch, num_groups, block_in_ch))
 
         for i in reversed(range(self.num_resolutions)):
             block_out_ch = n_channels * self.ch_mult[i]
 
             for _ in range(self.num_res_blocks):
-                blocks.append(ResBlock(spatial_dims, block_in_ch, block_out_ch))
+                blocks.append(ResBlock(spatial_dims, block_in_ch, num_groups, block_out_ch))
                 block_in_ch = block_out_ch
 
                 if self.with_attention and max(curr_res) in self.attn_resolutions:
-                    blocks.append(AttnBlock(spatial_dims, block_in_ch))
+                    blocks.append(AttnBlock(spatial_dims, block_in_ch, num_groups))
 
             if i != 0:
                 blocks.append(Upsample(spatial_dims, block_in_ch))
                 curr_res = tuple(ti * 2 for ti in curr_res)
 
-        blocks.append(nn.GroupNorm(num_groups=32, num_channels=block_in_ch, eps=1e-6, affine=True))
+        blocks.append(nn.GroupNorm(num_groups=num_groups, num_channels=block_in_ch, eps=1e-6, affine=True))
         blocks.append(
             Convolution(
                 spatial_dims=spatial_dims,
@@ -386,7 +391,6 @@ class Decoder(nn.Module):
 # TODO: Discuss common interface between VQVAE and AEKL via get_ldm_inputs and reconstruct_ldm_outputs methods
 # TODO: Maybe change n_channels, z_channels, and ch_mult to an approach similar to MONAI's AutoEncoder class?
 # TODO: Maybe get a better solution for the resolution parameter?
-# TODO: Maybe add num_groups from GroupNorm to parameters and add assert if n_channels is multiple of num_groups
 class AutoencoderKL(nn.Module):
     # TODO: Add docstring to class
     def __init__(
@@ -420,6 +424,7 @@ class AutoencoderKL(nn.Module):
             ch_mult=ch_mult,
             num_res_blocks=num_res_blocks,
             resolution=resolution,
+            num_groups=num_groups,
             with_attention=with_attention,
             attn_resolutions=attn_resolutions,
         )
@@ -431,6 +436,7 @@ class AutoencoderKL(nn.Module):
             ch_mult=ch_mult,
             num_res_blocks=num_res_blocks,
             resolution=resolution,
+            num_groups=num_groups,
             with_attention=with_attention,
             attn_resolutions=attn_resolutions,
         )
