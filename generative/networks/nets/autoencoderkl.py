@@ -346,6 +346,7 @@ class Decoder(nn.Module):
         )
 
         # TODO: Discuss: in the 3D version, BrainDiffusionModel did not had middle part in the decoder to save memory
+        # TODO: Maybe add a parameter to add or remove the non-local attention block at the Decoder and Encoder
         # Non-local attention block
         if spatial_dims == 2:
             blocks.append(ResBlock(spatial_dims, block_in_ch, num_groups, block_in_ch))
@@ -389,7 +390,6 @@ class Decoder(nn.Module):
 
 
 # TODO: Discuss common interface between VQVAE and AEKL via get_ldm_inputs and reconstruct_ldm_outputs methods
-# TODO: Maybe change n_channels, z_channels, and ch_mult to an approach similar to MONAI's AutoEncoder class?
 # TODO: Maybe get a better solution for the resolution parameter?
 class AutoencoderKL(nn.Module):
     # TODO: Add docstring to class
