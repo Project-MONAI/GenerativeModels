@@ -497,10 +497,10 @@ class ResBlock(TimestepBlock):
         return self.skip_connection(x) + h
 
 
-def get_head_params(ch, num_head_channels, num_heads, legacy, use_spatial_transformer):
+def get_attention_parameters(ch, num_head_channels, num_heads, legacy, use_spatial_transformer):
     # TODO: Add docstring
     """
-    Get the dimensions of each attention head and number of heads depending on the model parameters.
+    Get the number of attention heads and their dimensions depending on the model parameters.
 
     Args:
         ch:
@@ -612,7 +612,7 @@ class DiffusionModelUNet(nn.Module):
                 ]
                 ch = mult * model_channels
                 if ds in attention_resolutions:
-                    dim_head, num_heads = get_head_params(
+                    dim_head, num_heads = get_attention_parameters(
                         ch, num_head_channels, num_heads, legacy, use_spatial_transformer
                     )
 
@@ -660,7 +660,9 @@ class DiffusionModelUNet(nn.Module):
                 ds *= 2
                 self._feature_size += ch
 
-        dim_head, num_heads = get_head_params(ch, num_head_channels, num_heads, legacy, use_spatial_transformer)
+        dim_head, num_heads = get_attention_parameters(
+            ch, num_head_channels, num_heads, legacy, use_spatial_transformer
+        )
 
         self.middle_block = TimestepEmbedSequential(
             ResBlock(
@@ -715,7 +717,7 @@ class DiffusionModelUNet(nn.Module):
                 ]
                 ch = model_channels * mult
                 if ds in attention_resolutions:
-                    dim_head, num_heads = get_head_params(
+                    dim_head, num_heads = get_attention_parameters(
                         ch, num_head_channels, num_heads, legacy, use_spatial_transformer
                     )
 
