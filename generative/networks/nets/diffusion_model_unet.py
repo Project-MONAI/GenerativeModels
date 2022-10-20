@@ -26,7 +26,14 @@ __all__ = ["DiffusionModelUNet"]
 
 
 class GEGLU(nn.Module):
-    # TODO: Add docstring
+    """
+    A variant of the gated linear unit activation function from https://arxiv.org/abs/2002.05202.
+
+    Args:
+        dim_in: The number of channels in the input.
+        dim_out: The number of channels in the output.
+    """
+
     def __init__(self, dim_in: int, dim_out: int) -> None:
         super().__init__()
         self.proj = nn.Linear(dim_in, dim_out * 2)
@@ -37,7 +44,17 @@ class GEGLU(nn.Module):
 
 
 class FeedForward(nn.Module):
-    # TODO: Add docstring
+    """
+    A feed-forward layer.
+
+    Args:
+        dim: The number of channels in the input.
+        dim_out: The number of channels in the output. If not given, defaults to `dim`.
+        mult: The multiplier to use for the hidden dimension.
+        glu: Whether to use GLU activation.
+        dropout: The dropout probability to use.
+    """
+
     def __init__(
         self, dim: int, dim_out: Optional[int] = None, mult: int = 4, glu: bool = False, dropout: float = 0.0
     ) -> None:
@@ -53,7 +70,17 @@ class FeedForward(nn.Module):
 
 
 class CrossAttention(nn.Module):
-    # TODO: Add docstring
+    """
+    A cross attention layer.
+
+    Args:
+        query_dim: The number of channels in the query.
+        context_dim: The number of channels in the context.
+        heads: The number of heads to use for multi-head attention.
+        dim_head: The number of channels in each head.
+        dropout: The dropout probability to use.
+    """
+
     def __init__(
         self,
         query_dim: int,
@@ -103,7 +130,18 @@ class CrossAttention(nn.Module):
 
 
 class BasicTransformerBlock(nn.Module):
-    # TODO: Add docstring
+    """
+    A basic Transformer block.
+
+    Args:
+        dim: The number of channels in the input and output.
+        n_heads: The number of heads to use for multi-head attention.
+        d_head: The number of channels in each head.
+        dropout: The dropout probability to use.
+        context_dim: The size of the context vector for cross attention.
+        gated_ff: Whether to use a gated feed-forward network.
+    """
+
     def __init__(
         self,
         dim: int,
@@ -133,7 +171,22 @@ class BasicTransformerBlock(nn.Module):
 
 
 class SpatialTransformer(nn.Module):
-    # TODO: Add docstring
+    """
+    Transformer block for image-like data. First, project the input (aka embedding) and reshape to b, t, d. Then apply
+    standard transformer action. Finally, reshape to image.
+
+    Args:
+        spatial_dims: The number of spatial dimensions.
+        in_channels: The number of channels in the input and output.
+        n_heads: The number of heads to use for multi-head attention.
+        d_head: The number of channels in each head.
+        depth: The number of layers of Transformer blocks to use.
+        dropout: The dropout probability to use.
+        norm_num_groups: The number of groups for the normalization.
+        norm_eps: The epsilon for the normalization.
+        context_dim: The number of context dimensions to use.
+    """
+
     def __init__(
         self,
         spatial_dims: int,
@@ -211,15 +264,15 @@ class SpatialTransformer(nn.Module):
         return x + x_in
 
 
-def timestep_embedding(timesteps: int, dim: int, max_period: int = 10000):
+def timestep_embedding(timesteps: int, dim: int, max_period: int = 10000) -> torch.Tensor:
     """
     This matches the implementation in Denoising Diffusion Probabilistic Models: Create sinusoidal timestep embeddings.
-    :param timesteps: a 1-D Tensor of N indices, one per batch element.
-                      These may be fractional.
-    :param embedding_dim: the dimension of the output. :param max_period: controls the minimum frequency of the
-    embeddings. :return: an [N x dim] Tensor of positional embeddings.
+
+    Args:
+        timesteps: a 1-D Tensor of N indices, one per batch element.
+        dim: the dimension of the output.
+        max_period: Controls the minimum frequency of the embeddings.
     """
-    # TODO: Add docstring
     half = dim // 2
     freqs = torch.exp(-math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half).to(
         device=timesteps.device
@@ -233,7 +286,6 @@ def timestep_embedding(timesteps: int, dim: int, max_period: int = 10000):
 
 
 def zero_module(module: nn.Module) -> nn.Module:
-    # TODO: Add docstring
     """
     Zero out the parameters of a module and return it.
     """
@@ -243,16 +295,14 @@ def zero_module(module: nn.Module) -> nn.Module:
 
 
 class TimestepBlock(nn.Module):
-    # TODO: Add docstring
     @abstractmethod
-    def forward(self, x, emb):
+    def forward(self, x: torch.Tensor, emb: torch.Tensor):
         """
         Apply the module to `x` given `emb` timestep embeddings.
         """
 
 
 class TimestepEmbedSequential(nn.Sequential, TimestepBlock):
-    # TODO: Add docstring
     """
     A sequential module that passes timestep embeddings to the children that
     support it as an extra input.
@@ -271,6 +321,12 @@ class TimestepEmbedSequential(nn.Sequential, TimestepBlock):
 
 class QKVAttentionLegacy(nn.Module):
     # TODO: Add docstring
+    """
+
+    Args:
+        n_heads:
+    """
+
     def __init__(self, n_heads: int) -> None:
         super().__init__()
         self.n_heads = n_heads
@@ -289,6 +345,16 @@ class QKVAttentionLegacy(nn.Module):
 
 class AttentionBlock(nn.Module):
     # TODO: Add docstring
+    """
+
+    Args:
+        channels: The number of channels in the input and output.
+        num_heads:
+        num_head_channels: The number of channels in each head.
+        norm_num_groups: The number of groups to use for group norm.
+        norm_eps: The epsilon value to use for group norm.
+    """
+
     def __init__(
         self,
         channels: int,
@@ -323,6 +389,16 @@ class AttentionBlock(nn.Module):
 
 class Downsample(nn.Module):
     # TODO: Add docstring
+    """
+
+    Args:
+        spatial_dims: The number of spatial dimensions.
+        channels:
+        use_conv:
+        out_channels:
+        padding:
+    """
+
     def __init__(
         self,
         spatial_dims: int,
@@ -356,6 +432,16 @@ class Downsample(nn.Module):
 
 class Upsample(nn.Module):
     # TODO: Add docstring
+    """
+
+    Args:
+        spatial_dims: The number of spatial dimensions.
+        channels:
+        use_conv:
+        out_channels:
+        padding:
+    """
+
     def __init__(
         self,
         spatial_dims: int,
@@ -389,6 +475,22 @@ class Upsample(nn.Module):
 
 class ResBlock(TimestepBlock):
     # TODO: Add docstring
+    """
+
+    Args:
+        spatial_dims: The number of spatial dimensions.
+        channels:
+        emb_channels:
+        dropout:
+        out_channels:
+        use_conv:
+        use_scale_shift_norm:
+        up:
+        down:
+        norm_num_groups: The number of groups for the normalization.
+        norm_eps: The epsilon for the normalization.
+    """
+
     def __init__(
         self,
         spatial_dims: int,
@@ -534,6 +636,28 @@ def get_attention_parameters(
 
 class DiffusionModelUNet(nn.Module):
     # TODO: Add docstring
+    """
+
+    Args:
+        spatial_dims: The number of spatial dimensions.
+        in_channels: The number of input channels.
+        model_channels:
+        out_channels: The number of output channels.
+        num_res_blocks:
+        attention_resolutions:
+        channel_mult:
+        num_heads:
+        num_head_channels:
+        use_scale_shift_norm:
+        resblock_updown:
+        norm_num_groups: The number of groups for the normalization.
+        norm_eps: The epsilon for the normalization.
+        use_spatial_transformer:
+        transformer_depth: The number of layers of Transformer blocks to use.
+        context_dim: The number of context dimensions to use.
+        legacy:
+    """
+
     def __init__(
         self,
         spatial_dims: int,
@@ -555,7 +679,6 @@ class DiffusionModelUNet(nn.Module):
         legacy: bool = True,
     ) -> None:
         super().__init__()
-
         if use_spatial_transformer is True and context_dim is None:
             raise ValueError(
                 (
@@ -798,6 +921,13 @@ class DiffusionModelUNet(nn.Module):
         timesteps: torch.Tensor,
         context: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
+        """
+
+        Args:
+            x:
+            timesteps:
+            context:
+        """
         hs = []
         t_emb = timestep_embedding(timesteps, self.model_channels)
         emb = self.time_embed(t_emb)
