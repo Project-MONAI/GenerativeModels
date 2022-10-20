@@ -8,7 +8,7 @@ git clone https://github.com/Project-MONAI/MONAI --branch main
 
 Then we add it to PYTHONPATH
 ```shell
-export PYTHONPATH="${PYTHONPATH}:/MONAI/"
+export PYTHONPATH="${PYTHONPATH}:./MONAI/"
 ```
 
 ## Executing tests
