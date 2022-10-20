@@ -11,7 +11,7 @@
 
 import math
 from abc import abstractmethod
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -142,14 +142,15 @@ class SpatialTransformer(nn.Module):
         d_head: int,
         depth: int = 1,
         dropout: float = 0.0,
-        num_groups: int = 32,
+        norm_num_groups: int = 32,
+        norm_eps: float = 1e-6,
         context_dim: Optional[int] = None,
     ) -> None:
         super().__init__()
         self.spatial_dims = spatial_dims
         self.in_channels = in_channels
         inner_dim = n_heads * d_head
-        self.norm = nn.GroupNorm(num_groups=num_groups, num_channels=in_channels, eps=1e-6, affine=True)
+        self.norm = nn.GroupNorm(num_groups=norm_num_groups, num_channels=in_channels, eps=norm_eps, affine=True)
 
         self.proj_in = Convolution(
             spatial_dims=spatial_dims,
@@ -211,6 +212,13 @@ class SpatialTransformer(nn.Module):
 
 
 def timestep_embedding(timesteps: int, dim: int, max_period: int = 10000):
+    """
+    This matches the implementation in Denoising Diffusion Probabilistic Models: Create sinusoidal timestep embeddings.
+    :param timesteps: a 1-D Tensor of N indices, one per batch element.
+                      These may be fractional.
+    :param embedding_dim: the dimension of the output. :param max_period: controls the minimum frequency of the
+    embeddings. :return: an [N x dim] Tensor of positional embeddings.
+    """
     # TODO: Add docstring
     half = dim // 2
     freqs = torch.exp(-math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half).to(
@@ -286,7 +294,8 @@ class AttentionBlock(nn.Module):
         channels: int,
         num_heads: int = 1,
         num_head_channels: int = -1,
-        num_groups: int = 32,
+        norm_num_groups: int = 32,
+        norm_eps: float = 1e-6,
     ) -> None:
         super().__init__()
         self.channels = channels
@@ -297,7 +306,7 @@ class AttentionBlock(nn.Module):
                 channels % num_head_channels == 0
             ), f"q,k,v channels {channels} is not divisible by num_head_channels {num_head_channels}"
             self.num_heads = channels // num_head_channels
-        self.norm = nn.GroupNorm(num_groups=num_groups, num_channels=channels, eps=1e-6, affine=True)
+        self.norm = nn.GroupNorm(num_groups=norm_num_groups, num_channels=channels, eps=norm_eps, affine=True)
         self.qkv = nn.Conv1d(channels, channels * 3, 1)
         self.attention = QKVAttentionLegacy(self.num_heads)
 
@@ -385,13 +394,14 @@ class ResBlock(TimestepBlock):
         spatial_dims: int,
         channels: int,
         emb_channels: int,
-        dropout: float,
+        dropout: float = 0.0,
         out_channels: Optional[int] = None,
         use_conv: bool = False,
         use_scale_shift_norm: bool = False,
         up: bool = False,
         down: bool = False,
-        num_groups: int = 32,
+        norm_num_groups: int = 32,
+        norm_eps: float = 1e-6,
     ) -> None:
         super().__init__()
         self.channels = channels
@@ -402,7 +412,7 @@ class ResBlock(TimestepBlock):
         self.use_scale_shift_norm = use_scale_shift_norm
 
         self.in_layers = nn.Sequential(
-            nn.GroupNorm(num_groups=num_groups, num_channels=channels, eps=1e-6, affine=True),
+            nn.GroupNorm(num_groups=norm_num_groups, num_channels=channels, eps=norm_eps, affine=True),
             nn.SiLU(),
             Convolution(
                 spatial_dims=spatial_dims,
@@ -434,7 +444,7 @@ class ResBlock(TimestepBlock):
             ),
         )
         self.out_layers = nn.Sequential(
-            nn.GroupNorm(num_groups=num_groups, num_channels=self.out_channels, eps=1e-6, affine=True),
+            nn.GroupNorm(num_groups=norm_num_groups, num_channels=self.out_channels, eps=norm_eps, affine=True),
             nn.SiLU(),
             nn.Dropout(p=dropout),
             zero_module(
@@ -497,7 +507,9 @@ class ResBlock(TimestepBlock):
         return self.skip_connection(x) + h
 
 
-def get_attention_parameters(ch, num_head_channels, num_heads, legacy, use_spatial_transformer):
+def get_attention_parameters(
+    ch: int, num_head_channels: int, num_heads: int, legacy: bool, use_spatial_transformer: bool
+) -> Tuple[int, int]:
     # TODO: Add docstring
     """
     Get the number of attention heads and their dimensions depending on the model parameters.
@@ -530,13 +542,13 @@ class DiffusionModelUNet(nn.Module):
         out_channels: int,
         num_res_blocks: int,
         attention_resolutions: Sequence[int],
-        dropout: float = 0,
         channel_mult: Sequence[int] = (1, 2, 4, 8),
         num_heads: int = -1,
         num_head_channels: int = -1,
         use_scale_shift_norm: bool = False,
         resblock_updown: bool = False,
-        num_groups: int = 32,
+        norm_num_groups: int = 32,
+        norm_eps: float = 1e-6,
         use_spatial_transformer: bool = False,
         transformer_depth: int = 1,
         context_dim: Optional[int] = None,
@@ -554,19 +566,18 @@ class DiffusionModelUNet(nn.Module):
         if context_dim is not None and use_spatial_transformer is False:
             raise ValueError("DiffusionModelUNet expects use_spatial_transformer=True when specifying the context_dim.")
 
-        # TODO: Add num_heads_channel mechanism
-        if num_heads == -1:
-            assert num_head_channels != -1, "Either num_heads or num_head_channels has to be set"
+        if num_heads == -1 and num_head_channels == -1:
+            raise ValueError("DiffusionModelUNet expects that either num_heads or num_head_channels has to be set.")
 
-        if num_head_channels == -1:
-            assert num_heads != -1, "Either num_heads or num_head_channels has to be set"
+        # The number of channels should be multiple of num_groups
+        if (model_channels % norm_num_groups) != 0:
+            raise ValueError("DiffusionModelUNet expects model_channels being multiple of norm_num_groups")
 
         self.in_channels = in_channels
         self.model_channels = model_channels
         self.out_channels = out_channels
         self.num_res_blocks = num_res_blocks
         self.attention_resolutions = attention_resolutions
-        self.dropout = dropout
         self.channel_mult = channel_mult
         self.num_heads = num_heads
         self.num_head_channels = num_head_channels
@@ -604,10 +615,10 @@ class DiffusionModelUNet(nn.Module):
                         spatial_dims=spatial_dims,
                         channels=ch,
                         emb_channels=time_embed_dim,
-                        dropout=dropout,
                         out_channels=mult * model_channels,
                         use_scale_shift_norm=use_scale_shift_norm,
-                        num_groups=num_groups,
+                        norm_num_groups=norm_num_groups,
+                        norm_eps=norm_eps,
                     )
                 ]
                 ch = mult * model_channels
@@ -621,7 +632,8 @@ class DiffusionModelUNet(nn.Module):
                             ch,
                             num_heads=num_heads,
                             num_head_channels=dim_head,
-                            num_groups=num_groups,
+                            norm_num_groups=norm_num_groups,
+                            norm_eps=norm_eps,
                         )
                         if not use_spatial_transformer
                         else SpatialTransformer(
@@ -630,7 +642,8 @@ class DiffusionModelUNet(nn.Module):
                             n_heads=num_heads,
                             d_head=dim_head,
                             depth=transformer_depth,
-                            num_groups=num_groups,
+                            norm_num_groups=norm_num_groups,
+                            norm_eps=norm_eps,
                             context_dim=context_dim,
                         )
                     )
@@ -645,11 +658,11 @@ class DiffusionModelUNet(nn.Module):
                             spatial_dims=spatial_dims,
                             channels=ch,
                             emb_channels=time_embed_dim,
-                            dropout=dropout,
                             out_channels=out_ch,
                             use_scale_shift_norm=use_scale_shift_norm,
                             down=True,
-                            num_groups=num_groups,
+                            norm_num_groups=norm_num_groups,
+                            norm_eps=norm_eps,
                         )
                         if resblock_updown
                         else Downsample(spatial_dims=spatial_dims, channels=ch, use_conv=True, out_channels=out_ch)
@@ -669,15 +682,16 @@ class DiffusionModelUNet(nn.Module):
                 spatial_dims=spatial_dims,
                 channels=ch,
                 emb_channels=time_embed_dim,
-                dropout=dropout,
                 use_scale_shift_norm=use_scale_shift_norm,
-                num_groups=num_groups,
+                norm_num_groups=norm_num_groups,
+                norm_eps=norm_eps,
             ),
             AttentionBlock(
                 ch,
                 num_heads=num_heads,
                 num_head_channels=dim_head,
-                num_groups=num_groups,
+                norm_num_groups=norm_num_groups,
+                norm_eps=norm_eps,
             )
             if not use_spatial_transformer
             else SpatialTransformer(
@@ -686,16 +700,17 @@ class DiffusionModelUNet(nn.Module):
                 n_heads=num_heads,
                 d_head=dim_head,
                 depth=transformer_depth,
-                num_groups=num_groups,
+                norm_num_groups=norm_num_groups,
+                norm_eps=norm_eps,
                 context_dim=context_dim,
             ),
             ResBlock(
                 spatial_dims=spatial_dims,
                 channels=ch,
                 emb_channels=time_embed_dim,
-                dropout=dropout,
                 use_scale_shift_norm=use_scale_shift_norm,
-                num_groups=num_groups,
+                norm_num_groups=norm_num_groups,
+                norm_eps=norm_eps,
             ),
         )
         self._feature_size += ch
@@ -709,10 +724,10 @@ class DiffusionModelUNet(nn.Module):
                         spatial_dims=spatial_dims,
                         channels=ch + ich,
                         emb_channels=time_embed_dim,
-                        dropout=dropout,
                         out_channels=model_channels * mult,
                         use_scale_shift_norm=use_scale_shift_norm,
-                        num_groups=num_groups,
+                        norm_num_groups=norm_num_groups,
+                        norm_eps=norm_eps,
                     )
                 ]
                 ch = model_channels * mult
@@ -726,7 +741,8 @@ class DiffusionModelUNet(nn.Module):
                             ch,
                             num_heads=num_heads,
                             num_head_channels=dim_head,
-                            num_groups=num_groups,
+                            norm_num_groups=norm_num_groups,
+                            norm_eps=norm_eps,
                         )
                         if not use_spatial_transformer
                         else SpatialTransformer(
@@ -735,7 +751,8 @@ class DiffusionModelUNet(nn.Module):
                             n_heads=num_heads,
                             d_head=dim_head,
                             depth=transformer_depth,
-                            num_groups=num_groups,
+                            norm_num_groups=norm_num_groups,
+                            norm_eps=norm_eps,
                             context_dim=context_dim,
                         )
                     )
@@ -746,11 +763,11 @@ class DiffusionModelUNet(nn.Module):
                             spatial_dims=spatial_dims,
                             channels=ch,
                             emb_channels=time_embed_dim,
-                            dropout=dropout,
                             out_channels=out_ch,
                             use_scale_shift_norm=use_scale_shift_norm,
                             up=True,
-                            num_groups=num_groups,
+                            norm_num_groups=norm_num_groups,
+                            norm_eps=norm_eps,
                         )
                         if resblock_updown
                         else Upsample(spatial_dims=spatial_dims, channels=ch, use_conv=True, out_channels=out_ch)
@@ -760,7 +777,7 @@ class DiffusionModelUNet(nn.Module):
                 self._feature_size += ch
 
         self.out = nn.Sequential(
-            nn.GroupNorm(num_groups=num_groups, num_channels=ch, eps=1e-6, affine=True),
+            nn.GroupNorm(num_groups=norm_num_groups, num_channels=ch, eps=norm_eps, affine=True),
             nn.SiLU(),
             zero_module(
                 Convolution(
