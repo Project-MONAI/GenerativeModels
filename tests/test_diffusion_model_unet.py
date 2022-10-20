@@ -15,12 +15,9 @@ import torch
 from monai.networks import eval_mode
 from parameterized import parameterized
 
-# from tests.utils import TorchImageTestCase2D, TorchImageTestCase3D
-from tests.utils import TorchImageTestCase2D
-
 from generative.networks.nets import DiffusionModelUNet
 
-UNCOND_CASES = [
+UNCOND_CASES_2D = [
     [
         {
             "spatial_dims": 2,
@@ -32,25 +29,7 @@ UNCOND_CASES = [
             "channel_mult": [1, 1, 1, 1],
             "num_heads": 1,
         },
-        (1, 1, 64, 64),
-        (1,),
-        (1, 1, 64, 64),
     ],
-    # [
-    #     {
-    #         "spatial_dims": 2,
-    #         "in_channels": 6,
-    #         "model_channels": 32,
-    #         "out_channels": 3,
-    #         "num_res_blocks": 1,
-    #         "attention_resolutions": [16, 8],
-    #         "channel_mult": [1, 1, 1, 1],
-    #         "num_heads": 1,
-    #     },
-    #     (1, 6, 64, 64),
-    #     (1,),
-    #     (1, 3, 64, 64),
-    # ],
     [
         {
             "spatial_dims": 2,
@@ -63,9 +42,6 @@ UNCOND_CASES = [
             "num_heads": -1,
             "num_head_channels": 1,
         },
-        (1, 1, 64, 64),
-        (1,),
-        (1, 1, 64, 64),
     ],
     [
         {
@@ -80,84 +56,79 @@ UNCOND_CASES = [
             "num_head_channels": 2,
             "legacy": False,
         },
-        (1, 1, 64, 64),
-        (1,),
-        (1, 1, 64, 64),
     ],
-    # [
-    #     {
-    #         "spatial_dims": 3,
-    #         "in_channels": 3,
-    #         "model_channels": 32,
-    #         "out_channels": 3,
-    #         "num_res_blocks": 1,
-    #         "attention_resolutions": [16, 8],
-    #         "channel_mult": [1, 1, 1, 1],
-    #         "num_heads": 1,
-    #     },
-    #     (1, 3, 32, 32, 32),
-    #     (1,),
-    #     (1, 3, 32, 32, 32),
-    # ],
-    # [
-    #     {
-    #         "spatial_dims": 3,
-    #         "in_channels": 6,
-    #         "model_channels": 32,
-    #         "out_channels": 3,
-    #         "num_res_blocks": 1,
-    #         "attention_resolutions": [16, 8],
-    #         "channel_mult": [1, 1, 1, 1],
-    #         "num_heads": 1,
-    #     },
-    #     (1, 6, 32, 32, 32),
-    #     (1,),
-    #     (1, 3, 32, 32, 32),
-    # ],
-    # [
-    #     {
-    #         "spatial_dims": 3,
-    #         "in_channels": 3,
-    #         "model_channels": 32,
-    #         "out_channels": 3,
-    #         "num_res_blocks": 1,
-    #         "attention_resolutions": [16, 8],
-    #         "channel_mult": [1, 1, 1, 1],
-    #         "num_heads": -1,
-    #         "num_head_channels": 1,
-    #     },
-    #     (1, 3, 32, 32, 32),
-    #     (1,),
-    #     (1, 3, 32, 32, 32),
-    # ],
-    # [
-    #     {
-    #         "spatial_dims": 3,
-    #         "in_channels": 3,
-    #         "model_channels": 32,
-    #         "out_channels": 3,
-    #         "num_res_blocks": 1,
-    #         "attention_resolutions": [16, 8],
-    #         "channel_mult": [1, 1, 1, 1],
-    #         "num_heads": 1,
-    #         "num_head_channels": 1,
-    #         "legacy": False,
-    #     },
-    #     (1, 3, 32, 32, 32),
-    #     (1,),
-    #     (1, 3, 32, 32, 32),
-    # ]
+]
+
+UNCOND_CASES_3D = [
+    [
+        {
+            "spatial_dims": 3,
+            "in_channels": 1,
+            "model_channels": 16,
+            "out_channels": 1,
+            "num_res_blocks": 1,
+            "attention_resolutions": [16, 8],
+            "channel_mult": [1, 1, 1, 1],
+            "num_heads": 1,
+            "norm_num_groups": 16,
+        },
+    ],
+    [
+        {
+            "spatial_dims": 3,
+            "in_channels": 1,
+            "model_channels": 16,
+            "out_channels": 1,
+            "num_res_blocks": 1,
+            "attention_resolutions": [16, 8],
+            "channel_mult": [1, 1, 1, 1],
+            "num_heads": -1,
+            "num_head_channels": 1,
+            "norm_num_groups": 16,
+        },
+    ],
+    [
+        {
+            "spatial_dims": 3,
+            "in_channels": 1,
+            "model_channels": 16,
+            "out_channels": 1,
+            "num_res_blocks": 1,
+            "attention_resolutions": [16, 8],
+            "channel_mult": [1, 1, 1, 1],
+            "num_heads": 1,
+            "num_head_channels": 1,
+            "legacy": False,
+            "norm_num_groups": 16,
+        },
+    ],
 ]
 
 
-class TestDiffusionModelUNet2D(TorchImageTestCase2D):
-    @parameterized.expand(UNCOND_CASES)
-    def test_shape_unconditioned_models(self, input_param, input_shape, timestep_shape, expected_shape):
+class TestDiffusionModelUNet2D(unittest.TestCase):
+    @parameterized.expand(UNCOND_CASES_2D)
+    def test_shape_unconditioned_models(self, input_param):
         net = DiffusionModelUNet(**input_param)
         with eval_mode(net):
-            result = net.forward(self.imt, torch.randint(0, 1000, timestep_shape).long())
-            expected_shape = (1, self.input_channels, self.im_shape[0], self.im_shape[1])
-            self.assertEqual(result.shape, expected_shape)
+            result = net.forward(torch.rand((1, 1, 32, 64)), torch.randint(0, 1000, (1,)).long())
+            self.assertEqual(result.shape, (1, 1, 32, 64))
+
+    def test_shape_with_different_in_channel_out_channel(self):
+        in_channels = 6
+        out_channels = 3
+        net = DiffusionModelUNet(
+            spatial_dims=2,
+            in_channels=in_channels,
+            model_channels=32,
+            out_channels=out_channels,
+            num_res_blocks=1,
+            attention_resolutions=[16, 8],
+            channel_mult=[1, 1, 1, 1],
+            num_heads=1,
+        )
+        with eval_mode(net):
+            result = net.forward(torch.rand((1, in_channels, 64, 64)), torch.randint(0, 1000, (1,)).long())
+            self.assertEqual(result.shape, (1, out_channels, 64, 64))
 
     def test_attention_heads_not_declared(self):
         with self.assertRaises(ValueError):
@@ -185,6 +156,78 @@ class TestDiffusionModelUNet2D(TorchImageTestCase2D):
                 channel_mult=[1, 1, 1, 1],
                 norm_num_groups=32,
             )
+
+    def test_shape_conditioned_models(self):
+        net = DiffusionModelUNet(
+            spatial_dims=2,
+            in_channels=1,
+            model_channels=32,
+            out_channels=1,
+            num_res_blocks=1,
+            attention_resolutions=[16, 8],
+            channel_mult=[1, 1, 1, 1],
+            num_heads=1,
+            use_spatial_transformer=True,
+            transformer_depth=1,
+            context_dim=3,
+        )
+        with eval_mode(net):
+            result = net.forward(
+                x=torch.rand((1, 1, 32, 64)),
+                timesteps=torch.randint(0, 1000, (1,)).long(),
+                context=torch.rand((1, 1, 3)),
+            )
+            self.assertEqual(result.shape, (1, 1, 32, 64))
+
+
+class TestDiffusionModelUNet3D(unittest.TestCase):
+    @parameterized.expand(UNCOND_CASES_3D)
+    def test_shape_unconditioned_models(self, input_param):
+        net = DiffusionModelUNet(**input_param)
+        with eval_mode(net):
+            result = net.forward(torch.rand((1, 1, 16, 32, 48)), torch.randint(0, 1000, (1,)).long())
+            self.assertEqual(result.shape, (1, 1, 16, 32, 48))
+
+    def test_shape_with_different_in_channel_out_channel(self):
+        in_channels = 6
+        out_channels = 3
+        net = DiffusionModelUNet(
+            spatial_dims=3,
+            in_channels=in_channels,
+            model_channels=16,
+            out_channels=out_channels,
+            num_res_blocks=1,
+            attention_resolutions=[16, 8],
+            channel_mult=[1, 1, 1, 1],
+            num_heads=1,
+            norm_num_groups=16,
+        )
+        with eval_mode(net):
+            result = net.forward(torch.rand((1, in_channels, 16, 32, 48)), torch.randint(0, 1000, (1,)).long())
+            self.assertEqual(result.shape, (1, out_channels, 16, 32, 48))
+
+    def test_shape_conditioned_models(self):
+        net = DiffusionModelUNet(
+            spatial_dims=3,
+            in_channels=1,
+            model_channels=16,
+            out_channels=1,
+            num_res_blocks=1,
+            attention_resolutions=[16, 8],
+            channel_mult=[1, 1, 1, 1],
+            num_heads=1,
+            norm_num_groups=16,
+            use_spatial_transformer=True,
+            transformer_depth=1,
+            context_dim=3,
+        )
+        with eval_mode(net):
+            result = net.forward(
+                x=torch.rand((1, 1, 16, 32, 48)),
+                timesteps=torch.randint(0, 1000, (1,)).long(),
+                context=torch.rand((1, 1, 3)),
+            )
+            self.assertEqual(result.shape, (1, 1, 16, 32, 48))
 
 
 if __name__ == "__main__":
