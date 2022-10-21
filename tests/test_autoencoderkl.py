@@ -14,8 +14,8 @@ import unittest
 import torch
 from monai.networks import eval_mode
 from parameterized import parameterized
+from tests.utils import test_script_save
 
-# from tests.utils import test_script_save
 from generative.networks.nets import AutoencoderKL
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -47,21 +47,11 @@ class TestAutoEncoderKL(unittest.TestCase):
             result = net.forward(torch.randn(input_shape).to(device))
             self.assertEqual(result[0].shape, expected_shape)
 
-    # def test_script(self):
-    #     net = AutoencoderKL(
-    #         spatial_dims= 2,
-    #         in_channels= 1,
-    #         out_channels= 1,
-    #         n_channels= 32,
-    #         z_channels= 32,
-    #         embed_dim= 32,
-    #         ch_mult= [1, 1, 1],
-    #         num_res_blocks= 1,
-    #         resolution= (64, 64),
-    #         with_attention= False,
-    #     )
-    #     test_data = torch.randn(2, 1, 128, 128)
-    #     test_script_save(net, test_data)
+    def test_script(self):
+        input_param, input_shape, _ = CASES[0]
+        net = AutoencoderKL(**input_param)
+        test_data = torch.randn(input_shape)
+        test_script_save(net, test_data)
 
 
 if __name__ == "__main__":

@@ -95,7 +95,7 @@ class Downsample(nn.Module):
         Args:
             x: BxCx[SPATIAL DIMS] tensor
         """
-        x = nn.functional.pad(x, self.pad, mode="constant", value=0)
+        x = nn.functional.pad(x, self.pad, mode="constant", value=0.0)
         x = self.conv(x)
         return x
 
@@ -154,6 +154,8 @@ class ResBlock(nn.Module):
                 padding=0,
                 conv_only=True,
             )
+        else:
+            self.nin_shortcut = nn.Identity()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -169,7 +171,6 @@ class ResBlock(nn.Module):
         h = F.silu(h)
         h = self.conv2(h)
 
-        # TODO: Fix error from torchscript tests
         if self.in_channels != self.out_channels:
             x = self.nin_shortcut(x)
 
