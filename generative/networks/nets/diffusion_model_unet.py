@@ -60,6 +60,7 @@ class FeedForward(nn.Module):
     ) -> None:
         super().__init__()
         inner_dim = int(dim * mult)
+        # TODO: Try to remove default usage
         dim_out = default(dim_out, dim)
         project_in = nn.Sequential(nn.Linear(dim, inner_dim), nn.GELU()) if not glu else GEGLU(dim, inner_dim)
 
@@ -91,6 +92,7 @@ class CrossAttention(nn.Module):
     ) -> None:
         super().__init__()
         inner_dim = dim_head * heads
+        # TODO: Try to remove default usage
         context_dim = default(context_dim, query_dim)
 
         self.scale = dim_head**-0.5
@@ -108,6 +110,7 @@ class CrossAttention(nn.Module):
         h = self.heads
 
         q = self.to_q(x)
+        # TODO: Try to remove default usage
         context = default(context, x)
         k = self.to_k(context)
         v = self.to_v(context)
@@ -116,6 +119,7 @@ class CrossAttention(nn.Module):
 
         sim = einsum("b i d, b j d -> b i j", q, k) * self.scale
 
+        # TODO: Try to remove exists usage
         if exists(mask):
             mask = rearrange(mask, "b ... -> b (...)")
             max_neg_value = -torch.finfo(sim.dtype).max
