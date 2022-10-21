@@ -521,7 +521,28 @@ class Decoder(nn.Module):
 # TODO: Discuss common interface between VQVAE and AEKL via get_ldm_inputs and reconstruct_ldm_outputs methods
 class AutoencoderKL(nn.Module):
     """
-    Instance of Spatial Autoencoder, made up of an Encoder and Decoder branches.
+    Autoencoder model with KL-regularized latent space based on
+    Rombach et al. "High-Resolution Image Synthesis with Latent Diffusion Models"
+    https://arxiv.org/abs/2112.10752
+
+    Args:
+        spatial_dims: int, number of spatial dimensions (1D, 2D, 3D).
+        in_channels: int, number of input channels,.
+        out_channels: int, number of output channels.
+        n_channels: int, number of filters in the first downsampling / last upsampling.
+        latent_channels: int, latent embedding dimension.
+        ch_mult: list of ints, multiplier of the number of channels in each downsampling layer (+ initial one).
+            i.e.: If you want 3 downsamplings, it should be a 4-element list.
+            num_res_blocks: number of residual blocks (see ResBlock) per level.
+        resolution: list of ints, spatial dimensions of the input image.
+        norm_num_groups: number of groups for the GroupNorm layers, n_channels must be divisible by this number.
+        norm_eps: epsilon for the normalization.
+        with_attention: bool, whether to include Attention Blocks or not.
+        attn_resolutions: list of ints, containing the max spatial sizes of latent space representation that
+            trigger the inclusion of an attention block. i.e. if 8 is in the list, Attention will be applied when the
+            max activation spatial size is 8.
+        with_encoder_nonlocal_attn: if True use non-local attention block in the encoder.
+        with_decoder_nonlocal_attn: if True use non-local attention block in the decoder.
     """
 
     def __init__(
@@ -541,29 +562,6 @@ class AutoencoderKL(nn.Module):
         with_encoder_nonlocal_attn: bool = True,
         with_decoder_nonlocal_attn: bool = True,
     ) -> None:
-        """
-        Creates an instance of Autoencoder.
-
-        Args:
-            spatial_dims: int, number of spatial dimensions (1D, 2D, 3D).
-            in_channels: int, number of input channels,.
-            out_channels: int, number of output channels.
-            n_channels: int, number of filters in the first downsampling / last upsampling.
-            latent_channels: int, latent embedding dimension.
-            ch_mult: list of ints, multiplier of the number of channels in each downsampling layer (+ initial one).
-                i.e.: If you want 3 downsamplings, it should be a 4-element list.
-                num_res_blocks: number of residual blocks (see ResBlock) per level.
-            resolution: list of ints, spatial dimensions of the input image.
-            norm_num_groups: number of groups for the GroupNorm layers, n_channels must be divisible by this number.
-            norm_eps: epsilon for the normalization.
-            with_attention: bool, whether to include Attention Blocks or not.
-            attn_resolutions: list of ints, containing the max spatial sizes of latent space representation that
-                trigger the inclusion of an attention block. i.e. if 8 is in the list, Attention will be applied when the
-                max activation spatial size is 8.
-            with_encoder_nonlocal_attn: if True use non-local attention block in the encoder.
-            with_decoder_nonlocal_attn: if True use non-local attention block in the decoder.
-        """
-
         super().__init__()
         if attn_resolutions is None:
             attn_resolutions = []
