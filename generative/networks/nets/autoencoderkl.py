@@ -20,12 +20,19 @@ __all__ = ["AutoencoderKL"]
 
 
 class Upsample(nn.Module):
-    # TODO: Add docstring to class
+    '''
+    Convolution-based upsampling layer
+    '''
     def __init__(
         self,
         spatial_dims: int,
         in_channels: int,
     ) -> None:
+        '''
+        Creates an instance of a convolution-based upsampling layer.
+        :param spatial_dims: number of spatial dimensions (1D, 2D, 3D)
+        :param in_channels: number of input channels to the layer
+        '''
         super().__init__()
         self.conv = Convolution(
             spatial_dims=spatial_dims,
@@ -38,18 +45,29 @@ class Upsample(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        '''
+        :param x: BxCx[SPATIAL DIMS] tensor
+        :return:
+        '''
         x = F.interpolate(x, scale_factor=2.0, mode="nearest")
         x = self.conv(x)
         return x
 
 
 class Downsample(nn.Module):
-    # TODO: Add docstring to class
+    '''
+    Convolution-based downsampling layer
+    '''
     def __init__(
         self,
         spatial_dims: int,
         in_channels: int,
     ) -> None:
+        '''
+        Creates instance of convolution-based downsampling layer
+        :param spatial_dims: number of spatial dimensions (1D, 2D, 3D etc.)
+        :param in_channels: number of input channels
+        '''
         super().__init__()
         if spatial_dims == 2:
             self.pad = (0, 1, 0, 1)
@@ -67,14 +85,29 @@ class Downsample(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        '''
+        :param x: BxCx[SPATIAL DIMS] tensor
+        :return:
+        '''
         x = nn.functional.pad(x, self.pad, mode="constant", value=0)
         x = self.conv(x)
         return x
 
 
 class ResBlock(nn.Module):
-    # TODO: Add docstring to class
+    '''
+    Residual block consisting of a cascade of 2 convolutions + activation + normalisation block, and a
+    residual connection between input and output.
+    '''
     def __init__(self, spatial_dims: int, in_channels: int, num_groups: int, out_channels) -> None:
+        '''
+        Creates instance of residual block
+        :param spatial_dims: int, number of spatial dimensions (1D, 2D etc.)
+        :param in_channels: int, input channels to the layer
+        :param num_groups: int, number of groups involved for the group normalisation layer. Ensure that
+        your number of channels is divisible by this number.
+        :param out_channels: int, number of output channels
+        '''
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = in_channels if out_channels is None else out_channels
@@ -112,6 +145,10 @@ class ResBlock(nn.Module):
             )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        '''
+        :param x: BxCx[SPATIAL DIMS]
+        :return:
+        '''
         h = x
         h = self.norm1(h)
         h = F.silu(h)
@@ -129,13 +166,19 @@ class ResBlock(nn.Module):
 
 
 class AttnBlock(nn.Module):
-    # TODO: Add docstring to class
     def __init__(
         self,
         spatial_dims: int,
         in_channels: int,
         num_groups: int,
     ) -> None:
+        '''
+        Creates instance of Attention Block
+        :param spatial_dims: int, number of spatial dimensions (1D, 2D etc.)
+        :param in_channels: number of input channels
+        :param num_groups: int, number of groups involved for the group normalisation layer. Ensure that
+        your number of channels is divisible by this number.
+        '''
         super().__init__()
         self.spatial_dims = spatial_dims
         self.in_channels = in_channels
@@ -179,6 +222,10 @@ class AttnBlock(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        '''
+        :param x: BxCx[SPATIAL DIMS] tensor
+        :return:
+        '''
         h_ = x
         h_ = self.norm(h_)
         q = self.q(h_)
@@ -216,7 +263,9 @@ class AttnBlock(nn.Module):
 
 
 class Encoder(nn.Module):
-    # TODO: Add docstring to class
+    '''
+    Convolutional cascade that downsamples the image into a spatial latent space.
+    '''
     def __init__(
         self,
         spatial_dims: int,
@@ -230,6 +279,25 @@ class Encoder(nn.Module):
         with_attention: bool,
         attn_resolutions: Optional[Sequence[int]],
     ) -> None:
+        '''
+        Creates an instance of Encoder.
+        :param spatial_dims: int, number of spatial dimensions (1D, 2D etc.)
+        :param in_channels: int, number of input channels
+        :param n_channels: int, number of filters in the first downsampling
+        :param z_channels: int, number of channels in the bottom layer (latent space) of the autoencoder
+        :param ch_mult: list of ints, list of multipliers of n_channels in the initial layer and in  each downsampling
+        layer. Example: if you want three downsamplings, you have to input a 4-element list. If you input [1, 1, 2, 2],
+        the first downsampling will leave n_channels to n_channels, the next will multiply n_channels by 2, and the next
+        will multiply n_channels*2 by 2 again, resulting in 8, 8, 16 and 32 channels.
+        :param num_res_blocks: number of residual blocks (see ResBlock) per level.
+        :param resolution: list of ints, spatial dimensions of the input image
+        :param num_groups:  number of groups for the GroupNorm layers, n_channels must be divisible by this number.
+        :param with_attention: bool, whether to include Attention Blocks or not.
+        :param attn_resolutions: list of ints, containing the max spatial sizes of latent space representation that
+        trigger the inclusion of an attention block. i.e. if 8 is in the list, Attention will be applied when the
+        max activation spatial size is 8
+        '''
+
         super().__init__()
         self.spatial_dims = spatial_dims
         self.in_channels = in_channels
@@ -295,13 +363,19 @@ class Encoder(nn.Module):
         self.blocks = nn.ModuleList(blocks)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        '''
+        :param x: BxCx[SPATIAL DIMS] tensor
+        :return:
+        '''
         for block in self.blocks:
             x = block(x)
         return x
 
 
 class Decoder(nn.Module):
-    # TODO: Add docstring to class
+    '''
+    Convolutional cascade upsampling from a spatial latent space into an image space.
+    '''
     def __init__(
         self,
         spatial_dims: int,
@@ -315,6 +389,23 @@ class Decoder(nn.Module):
         with_attention: bool,
         attn_resolutions: Optional[Sequence[int]],
     ) -> None:
+        '''
+        Creates an instance of Decoder
+        :param spatial_dims: int, number of spatial dimensions (1D, 2D etc.)
+        :param n_channels: int, number of filters in the last upsampling
+        :param z_channels: int, number of channels in the bottom layer (latent space) of the autoencoder
+        :param out_channels: int, number of output channels,
+        :param ch_mult: list of ints, list of multipliers of n_channels that make for all the upsampling layers before
+        the last. In the last layer, there will be a transition from n_channels to out_channels. In the layers before
+        that, channels will be the product of the previous number of channels by ch_mult.
+        :param num_res_blocks: number of residual blocks (see ResBlock) per level.
+        :param resolution: list of ints, spatial dimensions of the input image
+        :param num_groups:  number of groups for the GroupNorm layers, n_channels must be divisible by this number.
+        :param with_attention: bool, whether to include Attention Blocks or not.
+        :param attn_resolutions: list of ints, containing the max spatial sizes of latent space representation that
+        trigger the inclusion of an attention block. i.e. if 8 is in the list, Attention will be applied when the
+        max activation spatial size is 8
+        '''
         super().__init__()
         self.spatial_dims = spatial_dims
         self.n_channels = n_channels
@@ -348,6 +439,7 @@ class Decoder(nn.Module):
         # TODO: Discuss: in the 3D version, BrainDiffusionModel did not had middle part in the decoder to save memory
         # TODO: Maybe add a parameter to add or remove the non-local attention block at the Decoder and Encoder
         # Non-local attention block
+
         if spatial_dims == 2:
             blocks.append(ResBlock(spatial_dims, block_in_ch, num_groups, block_in_ch))
             if self.with_attention:
@@ -392,7 +484,9 @@ class Decoder(nn.Module):
 # TODO: Discuss common interface between VQVAE and AEKL via get_ldm_inputs and reconstruct_ldm_outputs methods
 # TODO: Maybe get a better solution for the resolution parameter?
 class AutoencoderKL(nn.Module):
-    # TODO: Add docstring to class
+    '''
+    Instance of Spatial Autoencoder, made up of an Encoder and Decoder branches.
+    '''
     def __init__(
         self,
         spatial_dims: int,
@@ -408,6 +502,25 @@ class AutoencoderKL(nn.Module):
         with_attention: bool = True,
         attn_resolutions: Optional[Sequence[int]] = None,
     ) -> None:
+        '''
+
+        :param spatial_dims: int, number of spatial dimensions (1D, 2D etc.)
+        :param in_channels: int, number of input channels,
+        :param out_channels: int, number of output channels,
+        :param n_channels: int, number of filters in the first downsampling / last upsampling
+        :param z_channels: int, number of channels in the bottom layer (latent space) of the autoencoder
+        :param embed_dim:
+        :param ch_mult: list of ints, multiplier of the number of channels in each downsampling layer (+ initial one).
+        i.e.: If you want 3 downsamplings, it should be a 4-element list.
+        :param num_res_blocks: number of residual blocks (see ResBlock) per level.
+        :param resolution: list of ints, spatial dimensions of the input image
+        :param num_groups: number of groups for the GroupNorm layers, n_channels must be divisible by this number.
+        :param with_attention: bool, whether to include Attention Blocks or not.
+        :param attn_resolutions: list of ints, containing the max spatial sizes of latent space representation that
+        trigger the inclusion of an attention block. i.e. if 8 is in the list, Attention will be applied when the
+        max activation spatial size is 8
+        '''
+
         super().__init__()
         if attn_resolutions is None:
             attn_resolutions = []
@@ -446,7 +559,11 @@ class AutoencoderKL(nn.Module):
         self.embed_dim = embed_dim
 
     def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        # TODO: Add docstring
+        '''
+        Forwards an image through the spatial encoder, obtaining the latent mean and sigma representations.
+        :param x: BxCx[SPATIAL DIMS] tensor
+        :return:
+        '''
         h = self.encoder(x)
 
         z_mu = self.quant_conv_mu(h)
@@ -457,19 +574,34 @@ class AutoencoderKL(nn.Module):
         return z_mu, z_sigma
 
     def sampling(self, z_mu: torch.Tensor, z_sigma: torch.Tensor) -> torch.Tensor:
-        # TODO: Add docstring
+        '''
+        From the mean and sigma representations resulting of encoding an image through the latent space,
+        obtains a noise sample resulting from sampling gaussian noise, multiplying by the variance (sigma) and
+        adding the mean.
+        :param z_mu: Bx[Z_CHANNELS]x[LATENT SPACE SIZE] mean vector obtained by the encoder when you encode an image
+        :param z_sigma: Bx[Z_CHANNELS]x[LATENT SPACE SIZE] variance vector obtained by the encoder when you encode an image
+        :return: sample of shape Bx[Z_CHANNELS]x[LATENT SPACE SIZE]
+        '''
         eps = torch.randn_like(z_sigma)
         z_vae = z_mu + eps * z_sigma
         return z_vae
 
     def reconstruct(self, x: torch.Tensor) -> torch.Tensor:
-        # TODO: Add docstring
+        '''
+        Encodes and decodes an input image.
+        :param x: BxCx[SPATIAL DIMENSIONS] tensor.
+        :return: reconstructed image, of the same shape as input
+        '''
         z_mu, _ = self.encode(x)
         reconstruction = self.decode(z_mu)
         return reconstruction
 
     def decode(self, z: torch.Tensor) -> torch.Tensor:
-        # TODO: Add docstring
+        '''
+        Based on a latent space sample, forwards it through the Decoder.
+        :param z: Bx[Z_CHANNELS]x[LATENT SPACE SHAPE]
+        :return: decoded image tensor
+        '''
         z = self.post_quant_conv(z)
         dec = self.decoder(z)
         return dec
@@ -477,7 +609,13 @@ class AutoencoderKL(nn.Module):
     def forward(
         self, x: torch.Tensor, get_ldm_inputs: bool = False
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
-        # TODO: Add docstring (because of get_ldm_inputs parameter)
+        '''
+        Runs a forward pass through the Autoencoder.
+        :param x: BxCx[SPATIAL DIMS] input image tensor
+        :param get_ldm_inputs: bool, whether you want a noise latent space sample
+        :return: if get_dlm_inputs, returns latent space representation of input image, otherwise, returns the
+        reconstructed image, and the mu and sigma vectors of the encoder.
+        '''
         if get_ldm_inputs:
             return self.get_ldm_inputs(x)
         else:
@@ -487,12 +625,21 @@ class AutoencoderKL(nn.Module):
             return reconstruction, z_mu, z_sigma
 
     def get_ldm_inputs(self, img: torch.Tensor) -> torch.Tensor:
-        # TODO: Add docstring
+        '''
+        For the LDM, you need the latent space representation of the input image. This forwards an image and
+        gets the sample by adding noise to the resulting sigma and mu via function sampling.
+        :param img: BxCx[SPATIAL DIMS] input image tensor.
+        :return: z: Bx[Z_CHANNELS]x[LATENT SPACE SHAPE] tensor
+        '''
         z_mu, z_sigma = self.encode(img)
         z = self.sampling(z_mu, z_sigma)
         return z
 
     def reconstruct_ldm_outputs(self, z: torch.Tensor) -> torch.Tensor:
-        # TODO: Add docstring
+        '''
+        Based on a denoised sample from the LDM, reconstructs it via the Decoder
+        :param z: Bx[Z_CHANNELS]x[LATENT SPACE SHAPE] sample
+        :return: Bx[C]x[SPATIAL DIMS] reconstructed tensor
+        '''
         x_hat = self.decode(z)
         return x_hat
