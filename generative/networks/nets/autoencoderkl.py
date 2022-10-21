@@ -294,6 +294,7 @@ class Encoder(nn.Module):
         norm_eps: float,
         with_attention: bool,
         attn_resolutions: Optional[Sequence[int]],
+        with_nonlocal_attn: bool = True,
     ) -> None:
         """
         Creates an instance of Encoder.
@@ -315,6 +316,7 @@ class Encoder(nn.Module):
             attn_resolutions: list of ints, containing the max spatial sizes of latent space representation that
                 trigger the inclusion of an attention block. i.e. if 8 is in the list, Attention will be applied when the
                 max activation spatial size is 8.
+            with_nonlocal_attn: if True use non-local attention block.
         """
 
         super().__init__()
@@ -370,10 +372,11 @@ class Encoder(nn.Module):
                 curr_res = tuple(ti // 2 for ti in curr_res)
 
         # Non-local attention block
-        blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_in_ch))
-        if self.with_attention:
-            blocks.append(AttnBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps))
-        blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_in_ch))
+        if with_nonlocal_attn is True:
+            blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_in_ch))
+            if self.with_attention:
+                blocks.append(AttnBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps))
+            blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_in_ch))
 
         # Normalise and convert to latent size
         blocks.append(nn.GroupNorm(num_groups=norm_num_groups, num_channels=block_in_ch, eps=norm_eps, affine=True))
@@ -419,6 +422,7 @@ class Decoder(nn.Module):
         norm_eps: float,
         with_attention: bool,
         attn_resolutions: Optional[Sequence[int]],
+        with_nonlocal_attn: bool = True,
     ) -> None:
         """
         Creates an instance of Decoder
@@ -438,6 +442,7 @@ class Decoder(nn.Module):
             attn_resolutions: list of ints, containing the max spatial sizes of latent space representation that
                 trigger the inclusion of an attention block. i.e. if 8 is in the list, Attention will be applied when the
                 max activation spatial size is 8.
+            with_nonlocal_attn: if True use non-local attention block.
         """
         super().__init__()
         self.spatial_dims = spatial_dims
@@ -470,11 +475,8 @@ class Decoder(nn.Module):
             )
         )
 
-        # TODO: Discuss: in the 3D version, BrainDiffusionModel did not had middle part in the decoder to save memory
-        # TODO: Maybe add a parameter to add or remove the non-local attention block at the Decoder and Encoder
         # Non-local attention block
-
-        if spatial_dims == 2:
+        if with_nonlocal_attn is True:
             blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_in_ch))
             if self.with_attention:
                 blocks.append(AttnBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps))
@@ -535,6 +537,8 @@ class AutoencoderKL(nn.Module):
         norm_eps: float = 1e-6,
         with_attention: bool = True,
         attn_resolutions: Optional[Sequence[int]] = None,
+        with_encoder_nonlocal_attn: bool = True,
+        with_decoder_nonlocal_attn: bool = True,
     ) -> None:
         """
         Creates an instance of Autoencoder.
@@ -555,6 +559,8 @@ class AutoencoderKL(nn.Module):
             attn_resolutions: list of ints, containing the max spatial sizes of latent space representation that
                 trigger the inclusion of an attention block. i.e. if 8 is in the list, Attention will be applied when the
                 max activation spatial size is 8.
+            with_encoder_nonlocal_attn: if True use non-local attention block in the encoder.
+            with_decoder_nonlocal_attn: if True use non-local attention block in the decoder.
         """
 
         super().__init__()
@@ -577,6 +583,7 @@ class AutoencoderKL(nn.Module):
             norm_eps=norm_eps,
             with_attention=with_attention,
             attn_resolutions=attn_resolutions,
+            with_nonlocal_attn=with_encoder_nonlocal_attn,
         )
         self.decoder = Decoder(
             spatial_dims=spatial_dims,
@@ -590,6 +597,7 @@ class AutoencoderKL(nn.Module):
             norm_eps=norm_eps,
             with_attention=with_attention,
             attn_resolutions=attn_resolutions,
+            with_nonlocal_attn=with_decoder_nonlocal_attn,
         )
         self.quant_conv_mu = Convolution(spatial_dims, latent_channels, latent_channels, 1, conv_only=True)
         self.quant_conv_log_sigma = Convolution(spatial_dims, latent_channels, latent_channels, 1, conv_only=True)
