@@ -106,7 +106,9 @@ class ResBlock(nn.Module):
     residual connection between input and output.
     """
 
-    def __init__(self, spatial_dims: int, in_channels: int, num_groups: int, out_channels) -> None:
+    def __init__(
+        self, spatial_dims: int, in_channels: int, norm_num_groups: int, norm_eps: float, out_channels
+    ) -> None:
         """
         Creates instance of residual block.
 
@@ -121,7 +123,7 @@ class ResBlock(nn.Module):
         self.in_channels = in_channels
         self.out_channels = in_channels if out_channels is None else out_channels
 
-        self.norm1 = nn.GroupNorm(num_groups=num_groups, num_channels=in_channels, eps=1e-6, affine=True)
+        self.norm1 = nn.GroupNorm(num_groups=norm_num_groups, num_channels=in_channels, eps=norm_eps, affine=True)
         self.conv1 = Convolution(
             spatial_dims=spatial_dims,
             in_channels=self.in_channels,
@@ -131,7 +133,7 @@ class ResBlock(nn.Module):
             padding=1,
             conv_only=True,
         )
-        self.norm2 = nn.GroupNorm(num_groups=num_groups, num_channels=out_channels, eps=1e-6, affine=True)
+        self.norm2 = nn.GroupNorm(num_groups=norm_num_groups, num_channels=out_channels, eps=norm_eps, affine=True)
         self.conv2 = Convolution(
             spatial_dims=spatial_dims,
             in_channels=self.out_channels,
@@ -179,7 +181,8 @@ class AttnBlock(nn.Module):
         self,
         spatial_dims: int,
         in_channels: int,
-        num_groups: int,
+        norm_num_groups: int,
+        norm_eps: float,
     ) -> None:
         """
         Creates instance of Attention Block.
@@ -194,7 +197,7 @@ class AttnBlock(nn.Module):
         self.spatial_dims = spatial_dims
         self.in_channels = in_channels
 
-        self.norm = nn.GroupNorm(num_groups=num_groups, num_channels=in_channels, eps=1e-6, affine=True)
+        self.norm = nn.GroupNorm(num_groups=norm_num_groups, num_channels=in_channels, eps=norm_eps, affine=True)
         self.q = Convolution(
             spatial_dims=spatial_dims,
             in_channels=in_channels,
@@ -287,7 +290,8 @@ class Encoder(nn.Module):
         ch_mult: Sequence[int],
         num_res_blocks: int,
         resolution: Sequence[int],
-        num_groups: int,
+        norm_num_groups: int,
+        norm_eps: float,
         with_attention: bool,
         attn_resolutions: Optional[Sequence[int]],
     ) -> None:
@@ -305,7 +309,8 @@ class Encoder(nn.Module):
                 will multiply n_channels*2 by 2 again, resulting in 8, 8, 16 and 32 channels.
             num_res_blocks: number of residual blocks (see ResBlock) per level.
             resolution: list of ints, spatial dimensions of the input image.
-            num_groups:  number of groups for the GroupNorm layers, n_channels must be divisible by this number.
+            norm_num_groups: number of groups for the GroupNorm layers, n_channels must be divisible by this number.
+            norm_eps: epsilon for the normalization.
             with_attention: bool, whether to include Attention Blocks or not.
             attn_resolutions: list of ints, containing the max spatial sizes of latent space representation that
                 trigger the inclusion of an attention block. i.e. if 8 is in the list, Attention will be applied when the
@@ -320,7 +325,8 @@ class Encoder(nn.Module):
         self.num_resolutions = len(ch_mult)
         self.num_res_blocks = num_res_blocks
         self.resolution = resolution
-        self.num_groups = num_groups
+        self.norm_num_groups = norm_num_groups
+        self.norm_eps = norm_eps
         self.with_attention = with_attention
         self.attn_resolutions = attn_resolutions
 
@@ -346,23 +352,31 @@ class Encoder(nn.Module):
             block_in_ch = n_channels * in_ch_mult[i]
             block_out_ch = n_channels * ch_mult[i]
             for _ in range(self.num_res_blocks):
-                blocks.append(ResBlock(spatial_dims, block_in_ch, num_groups, block_out_ch))
+                blocks.append(
+                    ResBlock(
+                        spatial_dims=spatial_dims,
+                        in_channels=block_in_ch,
+                        norm_num_groups=norm_num_groups,
+                        norm_eps=norm_eps,
+                        out_channels=block_out_ch,
+                    )
+                )
                 block_in_ch = block_out_ch
                 if self.with_attention and max(curr_res) in attn_resolutions:
-                    blocks.append(AttnBlock(spatial_dims, block_in_ch, num_groups))
+                    blocks.append(AttnBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps))
 
             if i != self.num_resolutions - 1:
                 blocks.append(Downsample(spatial_dims, block_in_ch))
                 curr_res = tuple(ti // 2 for ti in curr_res)
 
         # Non-local attention block
-        blocks.append(ResBlock(spatial_dims, block_in_ch, num_groups, block_in_ch))
+        blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_in_ch))
         if self.with_attention:
-            blocks.append(AttnBlock(spatial_dims, block_in_ch, num_groups))
-        blocks.append(ResBlock(spatial_dims, block_in_ch, num_groups, block_in_ch))
+            blocks.append(AttnBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps))
+        blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_in_ch))
 
         # Normalise and convert to latent size
-        blocks.append(nn.GroupNorm(num_groups=num_groups, num_channels=block_in_ch, eps=1e-6, affine=True))
+        blocks.append(nn.GroupNorm(num_groups=norm_num_groups, num_channels=block_in_ch, eps=norm_eps, affine=True))
         blocks.append(
             Convolution(
                 spatial_dims=self.spatial_dims,
@@ -401,7 +415,8 @@ class Decoder(nn.Module):
         ch_mult: Sequence[int],
         num_res_blocks: int,
         resolution: Sequence[int],
-        num_groups: int,
+        norm_num_groups: int,
+        norm_eps: float,
         with_attention: bool,
         attn_resolutions: Optional[Sequence[int]],
     ) -> None:
@@ -433,7 +448,8 @@ class Decoder(nn.Module):
         self.num_resolutions = len(ch_mult)
         self.num_res_blocks = num_res_blocks
         self.resolution = resolution
-        self.num_groups = num_groups
+        self.norm_num_groups = norm_num_groups
+        self.norm_eps = norm_eps
         self.with_attention = with_attention
         self.attn_resolutions = attn_resolutions
 
@@ -459,26 +475,26 @@ class Decoder(nn.Module):
         # Non-local attention block
 
         if spatial_dims == 2:
-            blocks.append(ResBlock(spatial_dims, block_in_ch, num_groups, block_in_ch))
+            blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_in_ch))
             if self.with_attention:
-                blocks.append(AttnBlock(spatial_dims, block_in_ch, num_groups))
-            blocks.append(ResBlock(spatial_dims, block_in_ch, num_groups, block_in_ch))
+                blocks.append(AttnBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps))
+            blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_in_ch))
 
         for i in reversed(range(self.num_resolutions)):
             block_out_ch = n_channels * self.ch_mult[i]
 
             for _ in range(self.num_res_blocks):
-                blocks.append(ResBlock(spatial_dims, block_in_ch, num_groups, block_out_ch))
+                blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_out_ch))
                 block_in_ch = block_out_ch
 
                 if self.with_attention and max(curr_res) in self.attn_resolutions:
-                    blocks.append(AttnBlock(spatial_dims, block_in_ch, num_groups))
+                    blocks.append(AttnBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps))
 
             if i != 0:
                 blocks.append(Upsample(spatial_dims, block_in_ch))
                 curr_res = tuple(ti * 2 for ti in curr_res)
 
-        blocks.append(nn.GroupNorm(num_groups=num_groups, num_channels=block_in_ch, eps=1e-6, affine=True))
+        blocks.append(nn.GroupNorm(num_groups=norm_num_groups, num_channels=block_in_ch, eps=norm_eps, affine=True))
         blocks.append(
             Convolution(
                 spatial_dims=spatial_dims,
@@ -515,7 +531,8 @@ class AutoencoderKL(nn.Module):
         ch_mult: Sequence[int],
         num_res_blocks: int,
         resolution: Sequence[int],
-        num_groups: int = 32,
+        norm_num_groups: int = 32,
+        norm_eps: float = 1e-6,
         with_attention: bool = True,
         attn_resolutions: Optional[Sequence[int]] = None,
     ) -> None:
@@ -532,7 +549,8 @@ class AutoencoderKL(nn.Module):
                 i.e.: If you want 3 downsamplings, it should be a 4-element list.
                 num_res_blocks: number of residual blocks (see ResBlock) per level.
             resolution: list of ints, spatial dimensions of the input image.
-            num_groups: number of groups for the GroupNorm layers, n_channels must be divisible by this number.
+            norm_num_groups: number of groups for the GroupNorm layers, n_channels must be divisible by this number.
+            norm_eps: epsilon for the normalization.
             with_attention: bool, whether to include Attention Blocks or not.
             attn_resolutions: list of ints, containing the max spatial sizes of latent space representation that
                 trigger the inclusion of an attention block. i.e. if 8 is in the list, Attention will be applied when the
@@ -544,7 +562,7 @@ class AutoencoderKL(nn.Module):
             attn_resolutions = []
 
         # The number of channels should be multiple of num_groups
-        if (n_channels % num_groups) != 0:
+        if (n_channels % norm_num_groups) != 0:
             raise ValueError("AutoencoderKL expects number of channels being multiple of number of groups")
 
         self.encoder = Encoder(
@@ -555,7 +573,8 @@ class AutoencoderKL(nn.Module):
             ch_mult=ch_mult,
             num_res_blocks=num_res_blocks,
             resolution=resolution,
-            num_groups=num_groups,
+            norm_num_groups=norm_num_groups,
+            norm_eps=norm_eps,
             with_attention=with_attention,
             attn_resolutions=attn_resolutions,
         )
@@ -567,7 +586,8 @@ class AutoencoderKL(nn.Module):
             ch_mult=ch_mult,
             num_res_blocks=num_res_blocks,
             resolution=resolution,
-            num_groups=num_groups,
+            norm_num_groups=norm_num_groups,
+            norm_eps=norm_eps,
             with_attention=with_attention,
             attn_resolutions=attn_resolutions,
         )
