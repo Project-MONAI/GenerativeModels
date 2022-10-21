@@ -22,6 +22,10 @@ __all__ = ["AutoencoderKL"]
 class Upsample(nn.Module):
     """
     Convolution-based upsampling layer.
+
+    Args:
+        spatial_dims: number of spatial dimensions (1D, 2D, 3D).
+        in_channels: number of input channels to the layer.
     """
 
     def __init__(
@@ -29,13 +33,6 @@ class Upsample(nn.Module):
         spatial_dims: int,
         in_channels: int,
     ) -> None:
-        """
-        Creates an instance of a convolution-based upsampling layer.
-
-        Args:
-            spatial_dims: number of spatial dimensions (1D, 2D, 3D).
-            in_channels: number of input channels to the layer.
-        """
         super().__init__()
         self.conv = Convolution(
             spatial_dims=spatial_dims,
@@ -60,6 +57,10 @@ class Upsample(nn.Module):
 class Downsample(nn.Module):
     """
     Convolution-based downsampling layer.
+
+    Args:
+        spatial_dims: number of spatial dimensions (1D, 2D, 3D).
+        in_channels: number of input channels.
     """
 
     def __init__(
@@ -67,13 +68,6 @@ class Downsample(nn.Module):
         spatial_dims: int,
         in_channels: int,
     ) -> None:
-        """
-        Creates instance of convolution-based downsampling layer
-
-        Args:
-            spatial_dims: number of spatial dimensions (1D, 2D, 3D).
-            in_channels: number of input channels.
-        """
         super().__init__()
         if spatial_dims == 2:
             self.pad = (0, 1, 0, 1)
@@ -104,21 +98,19 @@ class ResBlock(nn.Module):
     """
     Residual block consisting of a cascade of 2 convolutions + activation + normalisation block, and a
     residual connection between input and output.
+
+    Args:
+        spatial_dims: number of spatial dimensions (1D, 2D, 3D).
+        in_channels: input channels to the layer.
+        norm_num_groups: number of groups involved for the group normalisation layer. Ensure that your number of
+            channels is divisible by this number.
+        norm_eps: epsilon for the normalisation.
+        out_channels: number of output channels.
     """
 
     def __init__(
         self, spatial_dims: int, in_channels: int, norm_num_groups: int, norm_eps: float, out_channels
     ) -> None:
-        """
-        Creates instance of residual block.
-
-        Args:
-            spatial_dims: int, number of spatial dimensions (1D, 2D etc.).
-            in_channels: int, input channels to the layer.
-            num_groups: int, number of groups involved for the group normalisation layer. Ensure that
-                your number of channels is divisible by this number.
-            out_channels: int, number of output channels.
-        """
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = in_channels if out_channels is None else out_channels
@@ -178,6 +170,17 @@ class ResBlock(nn.Module):
 
 
 class AttnBlock(nn.Module):
+    """
+    Attention block.
+
+    Args:
+        spatial_dims: number of spatial dimensions (1D, 2D, 3D).
+        in_channels: number of input channels.
+        norm_num_groups: number of groups involved for the group normalisation layer. Ensure that your number of
+            channels is divisible by this number.
+        norm_eps: epsilon for the normalisation.
+    """
+
     def __init__(
         self,
         spatial_dims: int,
@@ -185,15 +188,6 @@ class AttnBlock(nn.Module):
         norm_num_groups: int,
         norm_eps: float,
     ) -> None:
-        """
-        Creates instance of Attention Block.
-
-        Args:
-            spatial_dims: int, number of spatial dimensions (1D, 2D, 3D).
-            in_channels: number of input channels.
-            num_groups: int, number of groups involved for the group normalisation layer. Ensure that
-            your number of channels is divisible by this number.
-        """
         super().__init__()
         self.spatial_dims = spatial_dims
         self.in_channels = in_channels
@@ -280,6 +274,25 @@ class AttnBlock(nn.Module):
 class Encoder(nn.Module):
     """
     Convolutional cascade that downsamples the image into a spatial latent space.
+
+    Args:
+        spatial_dims: number of spatial dimensions (1D, 2D, 3D).
+        in_channels: number of input channels.
+        n_channels: number of filters in the first downsampling.
+        out_channels: number of channels in the bottom layer (latent space) of the autoencoder.
+        ch_mult: list of multipliers of n_channels in the initial layer and in  each downsampling layer. Example: if
+            you want three downsamplings, you have to input a 4-element list. If you input [1, 1, 2, 2],
+            the first downsampling will leave n_channels to n_channels, the next will multiply n_channels by 2,
+            and the next will multiply n_channels*2 by 2 again, resulting in 8, 8, 16 and 32 channels.
+        num_res_blocks: number of residual blocks (see ResBlock) per level.
+        resolution: spatial dimensions of the input image.
+        norm_num_groups: number of groups for the GroupNorm layers, n_channels must be divisible by this number.
+        norm_eps: epsilon for the normalization.
+        with_attention: whether to include Attention Blocks or not.
+        attn_resolutions: containing the max spatial sizes of latent space representation that trigger the inclusion
+            of an attention block. i.e. if 8 is in the list, Attention will be applied when the max activation spatial
+            size is 8.
+        with_nonlocal_attn: if True use non-local attention block.
     """
 
     def __init__(
@@ -297,29 +310,6 @@ class Encoder(nn.Module):
         attn_resolutions: Optional[Sequence[int]],
         with_nonlocal_attn: bool = True,
     ) -> None:
-        """
-        Creates an instance of Encoder.
-
-        Args:
-            spatial_dims: int, number of spatial dimensions (1D, 2D, 3D).
-            in_channels: int, number of input channels.
-            n_channels: int, number of filters in the first downsampling.
-            out_channels: int, number of channels in the bottom layer (latent space) of the autoencoder.
-            ch_mult: list of ints, list of multipliers of n_channels in the initial layer and in  each downsampling
-                layer. Example: if you want three downsamplings, you have to input a 4-element list. If you input [1, 1, 2, 2],
-                the first downsampling will leave n_channels to n_channels, the next will multiply n_channels by 2, and the next
-                will multiply n_channels*2 by 2 again, resulting in 8, 8, 16 and 32 channels.
-            num_res_blocks: number of residual blocks (see ResBlock) per level.
-            resolution: list of ints, spatial dimensions of the input image.
-            norm_num_groups: number of groups for the GroupNorm layers, n_channels must be divisible by this number.
-            norm_eps: epsilon for the normalization.
-            with_attention: bool, whether to include Attention Blocks or not.
-            attn_resolutions: list of ints, containing the max spatial sizes of latent space representation that
-                trigger the inclusion of an attention block. i.e. if 8 is in the list, Attention will be applied when the
-                max activation spatial size is 8.
-            with_nonlocal_attn: if True use non-local attention block.
-        """
-
         super().__init__()
         self.spatial_dims = spatial_dims
         self.in_channels = in_channels
@@ -408,6 +398,24 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     """
     Convolutional cascade upsampling from a spatial latent space into an image space.
+
+    Args:
+        spatial_dims: number of spatial dimensions (1D, 2D, 3D).
+        n_channels: number of filters in the last upsampling.
+        in_channels: number of channels in the bottom layer (latent space) of the autoencoder.
+        out_channels: number of output channels.
+        ch_mult: list of multipliers of n_channels that make for all the upsampling layers before the last. In the
+            last layer, there will be a transition from n_channels to out_channels. In the layers before that,
+            channels will be the product of the previous number of channels by ch_mult.
+        num_res_blocks: number of residual blocks (see ResBlock) per level.
+        resolution: spatial dimensions of the input image
+        norm_num_groups: number of groups for the GroupNorm layers, n_channels must be divisible by this number.
+        norm_eps: epsilon for the normalization.
+        with_attention: whether to include Attention Blocks or not.
+        attn_resolutions: containing the max spatial sizes of latent space representation that trigger the inclusion
+            of an attention block. i.e. if 8 is in the list, Attention will be applied when the max activation spatial
+            size is 8.
+        with_nonlocal_attn: if True use non-local attention block.
     """
 
     def __init__(
@@ -425,26 +433,6 @@ class Decoder(nn.Module):
         attn_resolutions: Optional[Sequence[int]],
         with_nonlocal_attn: bool = True,
     ) -> None:
-        """
-        Creates an instance of Decoder
-
-        Args:
-            spatial_dims: int, number of spatial dimensions (1D, 2D, 3D).
-            n_channels: int, number of filters in the last upsampling.
-            in_channels: int, number of channels in the bottom layer (latent space) of the autoencoder.
-            out_channels: int, number of output channels.
-            ch_mult: list of ints, list of multipliers of n_channels that make for all the upsampling layers before
-                the last. In the last layer, there will be a transition from n_channels to out_channels.
-                In the layers before that, channels will be the product of the previous number of channels by ch_mult.
-            num_res_blocks: number of residual blocks (see ResBlock) per level.
-            resolution: list of ints, spatial dimensions of the input image
-            num_groups:  number of groups for the GroupNorm layers, n_channels must be divisible by this number.
-            with_attention: bool, whether to include Attention Blocks or not.
-            attn_resolutions: list of ints, containing the max spatial sizes of latent space representation that
-                trigger the inclusion of an attention block. i.e. if 8 is in the list, Attention will be applied when the
-                max activation spatial size is 8.
-            with_nonlocal_attn: if True use non-local attention block.
-        """
         super().__init__()
         self.spatial_dims = spatial_dims
         self.n_channels = n_channels
@@ -526,21 +514,21 @@ class AutoencoderKL(nn.Module):
     https://arxiv.org/abs/2112.10752
 
     Args:
-        spatial_dims: int, number of spatial dimensions (1D, 2D, 3D).
-        in_channels: int, number of input channels,.
-        out_channels: int, number of output channels.
-        n_channels: int, number of filters in the first downsampling / last upsampling.
-        latent_channels: int, latent embedding dimension.
-        ch_mult: list of ints, multiplier of the number of channels in each downsampling layer (+ initial one).
-            i.e.: If you want 3 downsamplings, it should be a 4-element list.
-            num_res_blocks: number of residual blocks (see ResBlock) per level.
-        resolution: list of ints, spatial dimensions of the input image.
+        spatial_dims: number of spatial dimensions (1D, 2D, 3D).
+        in_channels: number of input channels.
+        out_channels: number of output channels.
+        n_channels: number of filters in the first downsampling / last upsampling.
+        latent_channels: latent embedding dimension.
+        ch_mult: multiplier of the number of channels in each downsampling layer (+ initial one). i.e.: If you want 3
+            downsamplings, it should be a 4-element list. num_res_blocks: number of residual blocks (see ResBlock) per
+            level.
+        resolution: spatial dimensions of the input image.
         norm_num_groups: number of groups for the GroupNorm layers, n_channels must be divisible by this number.
         norm_eps: epsilon for the normalization.
-        with_attention: bool, whether to include Attention Blocks or not.
-        attn_resolutions: list of ints, containing the max spatial sizes of latent space representation that
-            trigger the inclusion of an attention block. i.e. if 8 is in the list, Attention will be applied when the
-            max activation spatial size is 8.
+        with_attention: whether to include Attention Blocks or not.
+        attn_resolutions: containing the max spatial sizes of latent space representation that trigger the inclusion
+            of an attention block. i.e. if 8 is in the list, Attention will be applied when the max activation spatial
+            size is 8.
         with_encoder_nonlocal_attn: if True use non-local attention block in the encoder.
         with_decoder_nonlocal_attn: if True use non-local attention block in the decoder.
     """
@@ -669,8 +657,6 @@ class AutoencoderKL(nn.Module):
         self, x: torch.Tensor, get_ldm_inputs: bool = False
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
         """
-        Runs a forward pass through the Autoencoder.
-
         Args:
             x: BxCx[SPATIAL DIMS] input image tensor
             get_ldm_inputs: bool, whether you want a noise latent space sample
