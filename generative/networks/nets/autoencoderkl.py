@@ -283,7 +283,7 @@ class Encoder(nn.Module):
         spatial_dims: int,
         in_channels: int,
         n_channels: int,
-        z_channels: int,
+        out_channels: int,
         ch_mult: Sequence[int],
         num_res_blocks: int,
         resolution: Sequence[int],
@@ -298,7 +298,7 @@ class Encoder(nn.Module):
             spatial_dims: int, number of spatial dimensions (1D, 2D, 3D).
             in_channels: int, number of input channels.
             n_channels: int, number of filters in the first downsampling.
-            z_channels: int, number of channels in the bottom layer (latent space) of the autoencoder.
+            out_channels: int, number of channels in the bottom layer (latent space) of the autoencoder.
             ch_mult: list of ints, list of multipliers of n_channels in the initial layer and in  each downsampling
                 layer. Example: if you want three downsamplings, you have to input a 4-element list. If you input [1, 1, 2, 2],
                 the first downsampling will leave n_channels to n_channels, the next will multiply n_channels by 2, and the next
@@ -316,6 +316,7 @@ class Encoder(nn.Module):
         self.spatial_dims = spatial_dims
         self.in_channels = in_channels
         self.n_channels = n_channels
+        self.out_channels = out_channels
         self.num_resolutions = len(ch_mult)
         self.num_res_blocks = num_res_blocks
         self.resolution = resolution
@@ -366,7 +367,7 @@ class Encoder(nn.Module):
             Convolution(
                 spatial_dims=self.spatial_dims,
                 in_channels=block_in_ch,
-                out_channels=z_channels,
+                out_channels=out_channels,
                 strides=1,
                 kernel_size=3,
                 padding=1,
@@ -395,7 +396,7 @@ class Decoder(nn.Module):
         self,
         spatial_dims: int,
         n_channels: int,
-        z_channels: int,
+        in_channels: int,
         out_channels: int,
         ch_mult: Sequence[int],
         num_res_blocks: int,
@@ -410,7 +411,7 @@ class Decoder(nn.Module):
         Args:
             spatial_dims: int, number of spatial dimensions (1D, 2D, 3D).
             n_channels: int, number of filters in the last upsampling.
-            z_channels: int, number of channels in the bottom layer (latent space) of the autoencoder.
+            in_channels: int, number of channels in the bottom layer (latent space) of the autoencoder.
             out_channels: int, number of output channels.
             ch_mult: list of ints, list of multipliers of n_channels that make for all the upsampling layers before
                 the last. In the last layer, there will be a transition from n_channels to out_channels.
@@ -426,7 +427,7 @@ class Decoder(nn.Module):
         super().__init__()
         self.spatial_dims = spatial_dims
         self.n_channels = n_channels
-        self.z_channels = z_channels
+        self.in_channels = in_channels
         self.out_channels = out_channels
         self.ch_mult = ch_mult
         self.num_resolutions = len(ch_mult)
@@ -444,7 +445,7 @@ class Decoder(nn.Module):
         blocks.append(
             Convolution(
                 spatial_dims=spatial_dims,
-                in_channels=z_channels,
+                in_channels=in_channels,
                 out_channels=block_in_ch,
                 strides=1,
                 kernel_size=3,
@@ -510,8 +511,7 @@ class AutoencoderKL(nn.Module):
         in_channels: int,
         out_channels: int,
         n_channels: int,
-        z_channels: int,
-        embed_dim: int,
+        latent_channels: int,
         ch_mult: Sequence[int],
         num_res_blocks: int,
         resolution: Sequence[int],
@@ -527,8 +527,7 @@ class AutoencoderKL(nn.Module):
             in_channels: int, number of input channels,.
             out_channels: int, number of output channels.
             n_channels: int, number of filters in the first downsampling / last upsampling.
-            z_channels: int, number of channels in the bottom layer (latent space) of the autoencoder.
-            embed_dim: int, embedding dimension.
+            latent_channels: int, latent embedding dimension.
             ch_mult: list of ints, multiplier of the number of channels in each downsampling layer (+ initial one).
                 i.e.: If you want 3 downsamplings, it should be a 4-element list.
                 num_res_blocks: number of residual blocks (see ResBlock) per level.
@@ -552,7 +551,7 @@ class AutoencoderKL(nn.Module):
             spatial_dims=spatial_dims,
             in_channels=in_channels,
             n_channels=n_channels,
-            z_channels=z_channels,
+            out_channels=latent_channels,
             ch_mult=ch_mult,
             num_res_blocks=num_res_blocks,
             resolution=resolution,
@@ -563,7 +562,7 @@ class AutoencoderKL(nn.Module):
         self.decoder = Decoder(
             spatial_dims=spatial_dims,
             n_channels=n_channels,
-            z_channels=z_channels,
+            in_channels=latent_channels,
             out_channels=out_channels,
             ch_mult=ch_mult,
             num_res_blocks=num_res_blocks,
@@ -572,10 +571,10 @@ class AutoencoderKL(nn.Module):
             with_attention=with_attention,
             attn_resolutions=attn_resolutions,
         )
-        self.quant_conv_mu = Convolution(spatial_dims, z_channels, embed_dim, 1, conv_only=True)
-        self.quant_conv_log_sigma = Convolution(spatial_dims, z_channels, embed_dim, 1, conv_only=True)
-        self.post_quant_conv = Convolution(spatial_dims, embed_dim, z_channels, 1, conv_only=True)
-        self.embed_dim = embed_dim
+        self.quant_conv_mu = Convolution(spatial_dims, latent_channels, latent_channels, 1, conv_only=True)
+        self.quant_conv_log_sigma = Convolution(spatial_dims, latent_channels, latent_channels, 1, conv_only=True)
+        self.post_quant_conv = Convolution(spatial_dims, latent_channels, latent_channels, 1, conv_only=True)
+        self.latent_channels = latent_channels
 
     def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
