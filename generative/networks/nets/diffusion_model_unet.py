@@ -30,8 +30,8 @@ class GEGLU(nn.Module):
     A variant of the gated linear unit activation function from https://arxiv.org/abs/2002.05202.
 
     Args:
-        dim_in: The number of channels in the input.
-        dim_out: The number of channels in the output.
+        dim_in: number of channels in the input.
+        dim_out: number of channels in the output.
     """
 
     def __init__(self, dim_in: int, dim_out: int) -> None:
@@ -48,11 +48,11 @@ class FeedForward(nn.Module):
     A feed-forward layer.
 
     Args:
-        dim: The number of channels in the input.
-        dim_out: The number of channels in the output. If not given, defaults to `dim`.
-        mult: The multiplier to use for the hidden dimension.
-        glu: Whether to use GLU activation.
-        dropout: The dropout probability to use.
+        dim: number of channels in the input.
+        dim_out: number of channels in the output. If not given, defaults to `dim`.
+        mult: multiplier to use for the hidden dimension.
+        glu: whether to use GLU activation.
+        dropout: dropout probability to use.
     """
 
     def __init__(
@@ -74,11 +74,11 @@ class CrossAttention(nn.Module):
     A cross attention layer.
 
     Args:
-        query_dim: The number of channels in the query.
-        context_dim: The number of channels in the context.
-        heads: The number of heads to use for multi-head attention.
-        dim_head: The number of channels in each head.
-        dropout: The dropout probability to use.
+        query_dim: number of channels in the query.
+        context_dim: number of channels in the context.
+        heads: number of heads to use for multi-head attention.
+        dim_head: number of channels in each head.
+        dropout: dropout probability to use.
     """
 
     def __init__(
@@ -134,12 +134,12 @@ class BasicTransformerBlock(nn.Module):
     A basic Transformer block.
 
     Args:
-        dim: The number of channels in the input and output.
-        n_heads: The number of heads to use for multi-head attention.
-        d_head: The number of channels in each head.
-        dropout: The dropout probability to use.
-        context_dim: The size of the context vector for cross attention.
-        gated_ff: Whether to use a gated feed-forward network.
+        dim: number of channels in the input and output.
+        n_heads: number of heads to use for multi-head attention.
+        d_head: number of channels in each head.
+        dropout: dropout probability to use.
+        context_dim: size of the context vector for cross attention.
+        gated_ff: whether to use a gated feed-forward network.
     """
 
     def __init__(
@@ -176,15 +176,15 @@ class SpatialTransformer(nn.Module):
     standard transformer action. Finally, reshape to image.
 
     Args:
-        spatial_dims: The number of spatial dimensions.
-        in_channels: The number of channels in the input and output.
-        n_heads: The number of heads to use for multi-head attention.
-        d_head: The number of channels in each head.
-        depth: The number of layers of Transformer blocks to use.
-        dropout: The dropout probability to use.
-        norm_num_groups: The number of groups for the normalization.
-        norm_eps: The epsilon for the normalization.
-        context_dim: The number of context dimensions to use.
+        spatial_dims: number of spatial dimensions.
+        in_channels: number of channels in the input and output.
+        n_heads: number of heads to use for multi-head attention.
+        d_head: number of channels in each head.
+        depth: number of layers of Transformer blocks to use.
+        dropout: dropout probability to use.
+        norm_num_groups: number of groups for the normalization.
+        norm_eps: epsilon for the normalization.
+        context_dim: number of context dimensions to use.
     """
 
     def __init__(
@@ -271,7 +271,7 @@ def timestep_embedding(timesteps: int, dim: int, max_period: int = 10000) -> tor
     Args:
         timesteps: a 1-D Tensor of N indices, one per batch element.
         dim: the dimension of the output.
-        max_period: Controls the minimum frequency of the embeddings.
+        max_period: controls the minimum frequency of the embeddings.
     """
     half = dim // 2
     freqs = torch.exp(-math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half).to(
@@ -320,11 +320,11 @@ class TimestepEmbedSequential(nn.Sequential, TimestepBlock):
 
 
 class QKVAttentionLegacy(nn.Module):
-    # TODO: Add docstring
     """
+    A qkv attention mechanism.
 
     Args:
-        n_heads:
+        n_heads: number of attention heads.
     """
 
     def __init__(self, n_heads: int) -> None:
@@ -343,16 +343,18 @@ class QKVAttentionLegacy(nn.Module):
         return a.reshape(bs, -1, length)
 
 
+# TODO: Check if could use MONAI's SABlock instead.
+# https://github.com/Project-MONAI/MONAI/blob/1516ca758090dd8ed2890b64554a77f681a0e224/monai/networks/blocks/selfattention.py#L20
 class AttentionBlock(nn.Module):
-    # TODO: Add docstring
     """
+    An attention block.
 
     Args:
-        channels: The number of channels in the input and output.
-        num_heads:
-        num_head_channels: The number of channels in each head.
-        norm_num_groups: The number of groups to use for group norm.
-        norm_eps: The epsilon value to use for group norm.
+        channels: number of channels in the input and output.
+        num_heads:  number of attention heads.
+        num_head_channels: number of channels in each head.
+        norm_num_groups: number of groups to use for group norm.
+        norm_eps: epsilon value to use for group norm.
     """
 
     def __init__(
@@ -388,15 +390,16 @@ class AttentionBlock(nn.Module):
 
 
 class Downsample(nn.Module):
-    # TODO: Add docstring
     """
+    Downsampling layer.
 
     Args:
-        spatial_dims: The number of spatial dimensions.
-        channels:
-        use_conv:
-        out_channels:
-        padding:
+        spatial_dims: number of spatial dimensions.
+        channels: number of input channels.
+        use_conv: if True uses Convolution instead of Pool average to perform downsampling.
+        out_channels: number of output channels.
+        padding: controls the amount of implicit zero-paddings on both sides for padding number of points
+            for each dimension.
     """
 
     def __init__(
@@ -431,15 +434,16 @@ class Downsample(nn.Module):
 
 
 class Upsample(nn.Module):
-    # TODO: Add docstring
     """
+    Upsampling layer.
 
     Args:
-        spatial_dims: The number of spatial dimensions.
-        channels:
-        use_conv:
-        out_channels:
-        padding:
+        spatial_dims: number of spatial dimensions.
+        channels: number of input channels
+        use_conv: if True uses Convolution instead of Pool average to perform downsampling.
+        out_channels: number of output channels.
+        padding: controls the amount of implicit zero-paddings on both sides for padding number of points
+            for each dimension.
     """
 
     def __init__(
@@ -474,21 +478,21 @@ class Upsample(nn.Module):
 
 
 class ResBlock(TimestepBlock):
-    # TODO: Add docstring
     """
+    Residual block with timestep conditioning.
 
     Args:
         spatial_dims: The number of spatial dimensions.
-        channels:
-        emb_channels:
-        dropout:
-        out_channels:
-        use_conv:
-        use_scale_shift_norm:
-        up:
-        down:
-        norm_num_groups: The number of groups for the normalization.
-        norm_eps: The epsilon for the normalization.
+        channels: number of input channels
+        emb_channels: number of timestep embedding  channels
+        dropout: dropout probability to use.
+        out_channels: number of output channels.
+        use_conv: if True uses Convolution instead of Identity in skip connection.
+        use_scale_shift_norm: if True, performs a scale-shift normalization.
+        up: if True, performs upsampling.
+        down: if True, performs downsampling.
+        norm_num_groups: number of groups for the group normalization.
+        norm_eps: epsilon for the group normalization.
     """
 
     def __init__(
@@ -612,16 +616,15 @@ class ResBlock(TimestepBlock):
 def get_attention_parameters(
     ch: int, num_head_channels: int, num_heads: int, legacy: bool, use_spatial_transformer: bool
 ) -> Tuple[int, int]:
-    # TODO: Add docstring
     """
     Get the number of attention heads and their dimensions depending on the model parameters.
 
     Args:
         ch:
-        num_head_channels:
-        num_heads:
-        legacy:
-        use_spatial_transformer:
+        num_head_channels: number of channels in each head.
+        num_heads: number of attention heads.
+        legacy: if True, use legacy way to compute dim_head for attention blocks.
+        use_spatial_transformer: if true together with legacy, use ch // num_heads as head dimension.
 
     """
     if num_head_channels == -1:
@@ -639,23 +642,23 @@ class DiffusionModelUNet(nn.Module):
     """
 
     Args:
-        spatial_dims: The number of spatial dimensions.
-        in_channels: The number of input channels.
+        spatial_dims: number of spatial dimensions.
+        in_channels: number of input channels.
         model_channels:
-        out_channels: The number of output channels.
-        num_res_blocks:
-        attention_resolutions:
-        channel_mult:
-        num_heads:
-        num_head_channels:
-        use_scale_shift_norm:
-        resblock_updown:
-        norm_num_groups: The number of groups for the normalization.
-        norm_eps: The epsilon for the normalization.
-        use_spatial_transformer:
-        transformer_depth: The number of layers of Transformer blocks to use.
-        context_dim: The number of context dimensions to use.
-        legacy:
+        out_channels: number of output channels.
+        num_res_blocks: number of residual blocks (see ResBlock) per level.
+        attention_resolutions: list of levels to add attention.
+        channel_mult: list of channel multipliers.
+        num_heads: number of attention heads.
+        num_head_channels: number of channels in each head.
+        use_scale_shift_norm:  if True, performs a scale-shift normalization in ResBlocks.
+        resblock_updown: if True, use ResBlocks to perform upsampling or downsampling.
+        norm_num_groups: number of groups for the normalization.
+        norm_eps: epsilon for the normalization.
+        use_spatial_transformer: if True add spatial transformers to perform conditioning.
+        transformer_depth: number of layers of Transformer blocks to use.
+        context_dim: number of context dimensions to use.
+        legacy: if True, use legacy way to compute dim_head for attention blocks.
     """
 
     def __init__(
@@ -922,11 +925,10 @@ class DiffusionModelUNet(nn.Module):
         context: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
-
         Args:
-            x:
-            timesteps:
-            context:
+            x: input tensor. (N, C, SpatialDims)
+            timesteps: timestep tensor (N,)
+            context: context tensor (N, 1, ContextDim)
         """
         hs = []
         t_emb = timestep_embedding(timesteps, self.model_channels)
