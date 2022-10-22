@@ -129,20 +129,6 @@ class TestAutoEncoderKL(unittest.TestCase):
             )
 
     @parameterized.expand(CASES)
-    def test_shape_stage2_inputs(self, input_param, input_shape, _, expected_latent_shape):
-        net = AutoencoderKL(**input_param).to(device)
-        with eval_mode(net):
-            result = net.get_stage2_inputs(torch.randn(input_shape).to(device))
-            self.assertEqual(result.shape, expected_latent_shape)
-
-    @parameterized.expand(CASES)
-    def test_shape_decoded_stage2_outputs(self, input_param, input_shape, _, expected_latent_shape):
-        net = AutoencoderKL(**input_param).to(device)
-        with eval_mode(net):
-            result = net.decode_stage2_outputs(torch.randn(expected_latent_shape).to(device))
-            self.assertEqual(result.shape, input_shape)
-
-    @parameterized.expand(CASES)
     def test_shape_reconstruction(self, input_param, input_shape, expected_shape, _):
         net = AutoencoderKL(**input_param).to(device)
         with eval_mode(net):

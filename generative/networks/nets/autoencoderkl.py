@@ -9,7 +9,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Sequence, Tuple, Union
+from typing import Optional, Sequence, Tuple
 
 import torch
 import torch.nn as nn
@@ -506,7 +506,6 @@ class Decoder(nn.Module):
         return x
 
 
-# TODO: Discuss common interface between VQVAE and AEKL via get_stage2_inputs and decode_stage2_outputs methods
 class AutoencoderKL(nn.Module):
     """
     Autoencoder model with KL-regularized latent space based on
@@ -653,50 +652,15 @@ class AutoencoderKL(nn.Module):
         dec = self.decoder(z)
         return dec
 
-    def forward(
-        self, x: torch.Tensor, get_stage2_inputs: bool = False
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
             x: BxCx[SPATIAL DIMS] input image tensor
-            get_stage2_inputs: bool, whether you want a noise latent space sample
 
         Returns:
-            if get_stage2_inputs, returns latent space representation of input image, otherwise, returns the
             reconstructed image, and the mu and sigma vectors of the encoder.
         """
-        if get_stage2_inputs:
-            return self.get_stage2_inputs(x)
-        else:
-            z_mu, z_sigma = self.encode(x)
-            z = self.sampling(z_mu, z_sigma)
-            reconstruction = self.decode(z)
-            return reconstruction, z_mu, z_sigma
-
-    def get_stage2_inputs(self, img: torch.Tensor) -> torch.Tensor:
-        """
-        For the LDM, you need the latent space representation of the input image. This forwards an image and
-        gets the sample by adding noise to the resulting sigma and mu via function sampling.
-
-        Args:
-            img: BxCx[SPATIAL DIMS] input image tensor.
-
-        Returns:
-            z: Bx[Z_CHANNELS]x[LATENT SPACE SHAPE] tensor
-        """
-        z_mu, z_sigma = self.encode(img)
+        z_mu, z_sigma = self.encode(x)
         z = self.sampling(z_mu, z_sigma)
-        return z
-
-    def decode_stage2_outputs(self, z: torch.Tensor) -> torch.Tensor:
-        """
-        Based on a denoised sample from the LDM, reconstructs it via the Decoder.
-
-        Args:
-            z: Bx[Z_CHANNELS]x[LATENT SPACE SHAPE] sample
-
-        Returns:
-             Bx[C]x[SPATIAL DIMS] reconstructed tensor
-        """
-        x_hat = self.decode(z)
-        return x_hat
+        reconstruction = self.decode(z)
+        return reconstruction, z_mu, z_sigma
