@@ -1,23 +1,41 @@
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.cuda.amp as amp
 
-from typing import Tuple
+from typing import Tuple, Sequence
 
-# TODO: Discuss the AMP workaround issue implementation.
-class VectorQuantizerEMA(nn.Module):
+__all__ = ["VectorQuantizer", "EMAQuantizer"]
+
+
+class EMAQuantizer(torch.nn.Module):
     """
     Vector Quantization module using Exponential Moving Average (EMA) to learn the codebook parameters [1].
 
+    This module is not compatible with TorchScript due to lack of TorchScript support for torch.distributed module as
+    per https://github.com/pytorch/pytorch/issues/41353 on 22/10/2022. If you want to TorchScript your model, please
+    turn set `ddp_sync` to False.
+
     Args:
-        dimensions:  number of spatial dimensions.
-        num_embeddings: number of atomic elements in the codebook.
-        embedding_dim: number of channels of the input and atomic elements.
-        commitment_cost: scaling factor of the MSE loss between input and its quantized version.
+        dimensions (int):  number of spatial spatial_dims.
+        num_embeddings (int): number of atomic elements in the codebook.
+        embedding_dim (int): number of channels of the input and atomic elements.
+        commitment_cost (float): scaling factor of the MSE loss between input and its quantized version.
             Defaults to 0.25 as per [1].
-        decay: EMA decay. Defaults to 0.99 as per [1].
-        epsilon: epsilon value. Defaults to 1e-5 as per [1].
+        decay (float): EMA decay. Defaults to 0.99 as per [1].
+        epsilon (float): epsilon value. Defaults to 1e-5 as per [1].
+        embedding_init (str): initialization method for the codebook. Defaults to "normal".
+        ddp_sync (bool): whether to synchronize the codebook across processes. Defaults to True.
+
+    Attributes:
+        _spatial_dims (int):  number of spatial spatial_dims.
+        _num_embeddings (int): number of atomic elements in the codebook.
+        _embedding_dim (int): number of channels of the input and atomic elements.
+        _embedding (torch.nn.Embedding): codebook.
+        _commitment_cost (float): scaling factor of the MSE loss between input and its quantized version.
+        _decay (float): EMA decay.
+        _epsilon (float): epsilon value.
+        _ddp_sync (bool): whether to synchronize the codebook across processes.
+        _flatten_permutation (Sequence[int]): permutation for flattening the input.
+        _quantization_permutation (Sequence[int]): permutation for quantizing the input. Reversing the
+            '_flatten_permutation'.
 
     References:
         [1] Oord, A., Vinyals, O., and kavukcuoglu, k. 2017.
@@ -30,93 +48,45 @@ class VectorQuantizerEMA(nn.Module):
 
     def __init__(
         self,
-        dimensions: int,
+        spatial_dims: int,
         num_embeddings: int,
         embedding_dim: int,
         commitment_cost: float = 0.25,
         decay: float = 0.99,
         epsilon: float = 1e-5,
         embedding_init: str = "normal",
+        ddp_sync: bool = True,
     ):
-        super(VectorQuantizerEMA, self).__init__()
+        super().__init__()
+        self._spatial_dims: int = spatial_dims
+        self._embedding_dim: int = embedding_dim
+        self._num_embeddings: int = num_embeddings
 
-        self._dimensions = dimensions
-        self._embedding_dim = embedding_dim
-        self._num_embeddings = num_embeddings
-
-        self._embedding = nn.Embedding(self._num_embeddings, self._embedding_dim)
+        self._embedding: torch.nn.Embedding = torch.nn.Embedding(self._num_embeddings, self._embedding_dim)
         if embedding_init == "normal":
             # Initialization is passed since the default one is normal inside the nn.Embedding
             pass
         elif embedding_init == "kaiming_uniform":
-            nn.init.kaiming_uniform_(self._embedding.weight.data, mode="fan_in", nonlinearity="linear")
+            torch.nn.init.kaiming_uniform_(self._embedding.weight.data, mode="fan_in", nonlinearity="linear")
         self._embedding.weight.requires_grad = False
 
-        self._commitment_cost = commitment_cost
+        self._commitment_cost: float = commitment_cost
 
         self.register_buffer("_ema_cluster_size", torch.zeros(self._num_embeddings))
         self.register_buffer("_ema_w", self._embedding.weight.data.clone())
 
-        self._decay = decay
-        self._epsilon = epsilon
+        self._decay: float = decay
+        self._epsilon: float = epsilon
 
-        self._perplexity = torch.rand(1)
+        self._ddp_sync: bool = ddp_sync
 
         # Precalculating required permutation shapes
-        self._flatten_permutation = [0] + list(range(2, self._dimensions + 2)) + [1]
-        self._quantization_permutation = [0, self._dimensions + 1] + list(range(1, self._dimensions + 1))
-
-    def forward(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        flat_input, encodings, encoding_indices = self.quantize(inputs)
-        quantized = self.embed(encoding_indices)
-
-        # Use EMA to update the embedding vectors
-        if self.training:
-            with torch.no_grad():
-                self._ema_cluster_size.data.mul_(self._decay).add_(torch.mul(encodings.sum(0), 1 - self._decay))
-
-                # Laplace smoothing of the cluster size
-                n = self._ema_cluster_size.sum()
-                weights = (self._ema_cluster_size + self._epsilon) / (n + self._num_embeddings * self._epsilon) * n
-
-                dw = torch.mm(encodings.t(), flat_input)
-                self._ema_w.data.mul_(self._decay).add_(torch.mul(dw, 1 - self._decay))
-
-                self._embedding.weight.data.copy_(self._ema_w / weights.unsqueeze(1))
-
-        # Encoding Loss
-        loss = self._commitment_cost * F.mse_loss(quantized.detach(), inputs)
-
-        # Straight Through Estimator
-        quantized = inputs + (quantized - inputs).detach()
-
-        # Perplexity calculations
-        avg_probs = (
-            torch.histc(encoding_indices.float(), bins=self._num_embeddings, max=self._num_embeddings)
-            .float()
-            .div(encoding_indices.numel())
+        self._flatten_permutation: Sequence[int] = [0] + list(range(2, self._spatial_dims + 2)) + [1]
+        self._quantization_permutation: Sequence[int] = [0, self._spatial_dims + 1] + list(
+            range(1, self._spatial_dims + 1)
         )
 
-        self._perplexity = torch.exp(-torch.sum(avg_probs * torch.log(avg_probs + 1e-10)))
-
-        return loss, quantized
-
-    def set_ema_decay(self, decay: float) -> None:
-        self._decay = decay
-
-    def get_ema_decay(self) -> float:
-        return self._decay
-
-    def set_commitment_cost(self, commitment_cost: float) -> None:
-        self._commitment_cost = commitment_cost
-
-    def get_commitment_cost(self) -> float:
-        return self._commitment_cost
-
-    def get_perplexity(self) -> torch.Tensor:
-        return self._perplexity
-
-    @amp.autocast(enabled=False)
+    @torch.cuda.amp.autocast(enabled=False)
     def quantize(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Given an input it projects it to the quantized space and returns additional tensors needed for EMA loss.
@@ -138,7 +108,7 @@ class VectorQuantizerEMA(nn.Module):
         # Converting to channel last format
         flat_input = inputs.permute(self._flatten_permutation).contiguous().view(-1, self._embedding_dim)
 
-        # Calculate eucledian distances
+        # Calculate Euclidean distances
         distances = (
             (flat_input ** 2).sum(dim=1, keepdim=True)
             + (self._embedding.weight.t() ** 2).sum(dim=0, keepdim=True)
@@ -147,14 +117,14 @@ class VectorQuantizerEMA(nn.Module):
 
         # Mapping distances to indexes
         encoding_indices = torch.max(-distances, dim=1)[1]
-        encodings = F.one_hot(encoding_indices, self._num_embeddings).float()
+        encodings = torch.nn.functional.one_hot(encoding_indices, self._num_embeddings).float()
 
         # Quantize and reshape
         encoding_indices = encoding_indices.view(encoding_indices_view)
 
         return flat_input, encodings, encoding_indices
 
-    @amp.autocast(enabled=False)
+    @torch.cuda.amp.autocast(enabled=False)
     def embed(self, embedding_indices: torch.Tensor) -> torch.Tensor:
         """
         Given encoding indices of shape [B,D,H,W,1] embeds them in the quantized space
@@ -169,3 +139,117 @@ class VectorQuantizerEMA(nn.Module):
             torch.Tensor: Quantize space representation of encoding_indices in channel first format.
         """
         return self._embedding(embedding_indices).permute(self._quantization_permutation).contiguous()
+
+    @torch.jit.unused
+    def ddp_sync(self, encodings_sum: torch.Tensor, dw: torch.Tensor) -> None:
+        """
+        TorchScript does not support torch.distributed.all_reduce. This function is a bypassing trick based on the
+        example: https://pytorch.org/docs/stable/generated/torch.jit.unused.html#torch.jit.unused
+
+        Args:
+            encodings_sum (torch.Tensor): The summation of one hot representation of what encoding was used for each
+                position.
+            dw (torch.Tensor): The multiplication of the one hot representation of what encoding was used for each
+                position with the flattened input.
+
+        Returns:
+            None
+        """
+        if self._ddp_sync and torch.distributed.is_initialized():
+            torch.distributed.all_reduce(tensor=encodings_sum, op=torch.distributed.ReduceOp.SUM)
+            torch.distributed.all_reduce(tensor=dw, op=torch.distributed.ReduceOp.SUM)
+        else:
+            pass
+
+    def forward(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        flat_input, encodings, encoding_indices = self.quantize(inputs)
+        quantized = self.embed(encoding_indices)
+
+        # Use EMA to update the embedding vectors
+        if self.training:
+            with torch.no_grad():
+                encodings_sum = encodings.sum(0)
+                dw = torch.mm(encodings.t(), flat_input)
+
+                if self._ddp_sync:
+                    self.ddp_sync(encodings_sum, dw)
+
+                self._ema_cluster_size.data.mul_(self._decay).add_(torch.mul(encodings_sum, 1 - self._decay))
+
+                # Laplace smoothing of the cluster size
+                n = self._ema_cluster_size.sum()
+                weights = (self._ema_cluster_size + self._epsilon) / (n + self._num_embeddings * self._epsilon) * n
+                self._ema_w.data.mul_(self._decay).add_(torch.mul(dw, 1 - self._decay))
+                self._embedding.weight.data.copy_(self._ema_w / weights.unsqueeze(1))
+
+        # Encoding Loss
+        loss = self._commitment_cost * torch.nn.functional.mse_loss(quantized.detach(), inputs)
+
+        # Straight Through Estimator
+        quantized = inputs + (quantized - inputs).detach()
+
+        return quantized, loss, encoding_indices
+
+    def set_ema_decay(self, decay: float) -> None:
+        self._decay = decay
+
+    def get_ema_decay(self) -> float:
+        return self._decay
+
+    def set_commitment_cost(self, commitment_cost: float) -> None:
+        self._commitment_cost = commitment_cost
+
+    def get_commitment_cost(self) -> float:
+        return self._commitment_cost
+
+
+class VectorQuantizer(torch.nn.Module):
+    """
+    Vector Quantization wrapper that is needed as a workaround for the AMP to isolate the non fp16 compatible parts of
+    the quantization in their own class.
+
+    Args:
+        quantizer (torch.nn.Module):  Quantizer module that needs to return its quantized representation, loss and index
+            based quantized representation. Defaults to None
+
+    Attributes:
+        _quantizer (torch.nn.Module): Quantizer module that needs to return its quantized representation, loss and index
+            based quantized representation.
+        _perplexity (torch.Tensor): Perplexity of the quantized representation.
+    """
+
+    def __init__(self, quantizer: torch.nn.Module = None):
+        super(VectorQuantizer, self).__init__()
+
+        self._quantizer: torch.nn.Module = quantizer
+
+        self._perplexity: torch.Tensor = torch.rand(1)
+
+    def forward(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        quantized, loss, encoding_indices = self._quantizer(inputs)
+
+        # Perplexity calculations
+        avg_probs = (
+            torch.histc(
+                encoding_indices.float(), bins=self._quantizer._num_embeddings, max=self._quantizer._num_embeddings
+            )
+            .float()
+            .div(encoding_indices.numel())
+        )
+
+        self._perplexity = torch.exp(-torch.sum(avg_probs * torch.log(avg_probs + 1e-10)))
+
+        return loss, quantized
+
+    def get_perplexity(self) -> torch.Tensor:
+        return self._perplexity
+
+    def get_quantizer(self) -> torch.nn.Module:
+        return self._quantizer
+
+    def embed(self, embedding_indices: torch.Tensor) -> torch.Tensor:
+        return self.quantizer.embed(embedding_indices=embedding_indices)
+
+    def quantize(self, encodings: torch.Tensor) -> torch.Tensor:
+        _, _, encoding_indices = self.impl(encodings, self.decay, self.commitment_cost)
+        return encoding_indices
