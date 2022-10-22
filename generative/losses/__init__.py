@@ -9,4 +9,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .spectral_loss import SpectralLoss
+from .spectral_loss import JukeboxLoss
