@@ -55,6 +55,10 @@ class EMAQuantizer(nn.Module):
         self.embedding_dim: int = embedding_dim
         self.num_embeddings: int = num_embeddings
 
+        assert self.spatial_dims in [2, 3], ValueError(
+            f"EMAQuantizer only supports 4D and 5D tensor inputs but received spatial dims {spatial_dims}."
+        )
+
         self.embedding: torch.nn.Embedding = torch.nn.Embedding(self.num_embeddings, self.embedding_dim)
         if embedding_init == "normal":
             # Initialization is passed since the default one is normal inside the nn.Embedding
