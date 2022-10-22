@@ -26,32 +26,128 @@ TEST_CASE_0 = [
         "in_channels": 1,
         "out_channels": 1,
         "n_channels": 32,
-        "latent_channels": 32,
+        "latent_channels": 8,
         "ch_mult": [1, 1, 1],
         "num_res_blocks": 1,
         "resolution": (64, 64),
         "with_attention": False,
     },
-    (1, 1, 128, 128),
-    (1, 1, 128, 128),
+    (2, 1, 64, 64),
+    (2, 1, 64, 64),
+    (2, 8, 16, 16),
 ]
 
-CASES = [TEST_CASE_0]
+TEST_CASE_1 = [
+    {
+        "spatial_dims": 2,
+        "in_channels": 1,
+        "out_channels": 1,
+        "n_channels": 32,
+        "latent_channels": 32,
+        "ch_mult": [1, 1, 1, 1],
+        "num_res_blocks": 1,
+        "resolution": (64, 64),
+        "with_attention": True,
+        "attn_resolutions": [16, 8],
+    },
+    (2, 1, 64, 64),
+    (2, 1, 64, 64),
+    (2, 32, 8, 8),
+]
+
+TEST_CASE_2 = [
+    {
+        "spatial_dims": 2,
+        "in_channels": 1,
+        "out_channels": 1,
+        "n_channels": 32,
+        "latent_channels": 32,
+        "ch_mult": [1, 1, 1, 1],
+        "num_res_blocks": 1,
+        "resolution": (64, 64),
+        "with_attention": True,
+        "attn_resolutions": [16, 8],
+        "with_encoder_nonlocal_attn": False,
+    },
+    (2, 1, 64, 64),
+    (2, 1, 64, 64),
+    (2, 32, 8, 8),
+]
+
+TEST_CASE_3 = [
+    {
+        "spatial_dims": 2,
+        "in_channels": 1,
+        "out_channels": 1,
+        "n_channels": 32,
+        "latent_channels": 32,
+        "ch_mult": [1, 1, 1, 1],
+        "num_res_blocks": 1,
+        "resolution": (64, 64),
+        "with_attention": True,
+        "attn_resolutions": [16, 8],
+        "with_encoder_nonlocal_attn": False,
+        "with_decoder_nonlocal_attn": False,
+    },
+    (2, 1, 64, 64),
+    (2, 1, 64, 64),
+    (2, 32, 8, 8),
+]
+
+CASES = [TEST_CASE_0, TEST_CASE_1]
 
 
 class TestAutoEncoderKL(unittest.TestCase):
     @parameterized.expand(CASES)
-    def test_shape(self, input_param, input_shape, expected_shape):
+    def test_shape(self, input_param, input_shape, expected_shape, expected_latent_shape):
         net = AutoencoderKL(**input_param).to(device)
         with eval_mode(net):
             result = net.forward(torch.randn(input_shape).to(device))
             self.assertEqual(result[0].shape, expected_shape)
+            self.assertEqual(result[1].shape, expected_latent_shape)
+            self.assertEqual(result[2].shape, expected_latent_shape)
 
     def test_script(self):
-        input_param, input_shape, _ = CASES[0]
+        input_param, input_shape, _, _ = CASES[0]
         net = AutoencoderKL(**input_param)
         test_data = torch.randn(input_shape)
         test_script_save(net, test_data)
+
+    def test_model_channels_not_multiple_of_norm_num_group(self):
+        with self.assertRaises(ValueError):
+            AutoencoderKL(
+                spatial_dims=2,
+                in_channels=1,
+                out_channels=1,
+                n_channels=24,
+                latent_channels=8,
+                ch_mult=[1, 1, 1],
+                num_res_blocks=1,
+                resolution=(64, 64),
+                norm_num_groups=16,
+                with_attention=False,
+            )
+
+    @parameterized.expand(CASES)
+    def test_shape_stage2_inputs(self, input_param, input_shape, _, expected_latent_shape):
+        net = AutoencoderKL(**input_param).to(device)
+        with eval_mode(net):
+            result = net.get_stage2_inputs(torch.randn(input_shape).to(device))
+            self.assertEqual(result.shape, expected_latent_shape)
+
+    @parameterized.expand(CASES)
+    def test_shape_decoded_stage2_outputs(self, input_param, input_shape, _, expected_latent_shape):
+        net = AutoencoderKL(**input_param).to(device)
+        with eval_mode(net):
+            result = net.decode_stage2_outputs(torch.randn(expected_latent_shape).to(device))
+            self.assertEqual(result.shape, input_shape)
+
+    @parameterized.expand(CASES)
+    def test_shape_reconstruction(self, input_param, input_shape, expected_shape, _):
+        net = AutoencoderKL(**input_param).to(device)
+        with eval_mode(net):
+            result = net.reconstruct(torch.randn(input_shape).to(device))
+            self.assertEqual(result.shape, expected_shape)
 
 
 if __name__ == "__main__":

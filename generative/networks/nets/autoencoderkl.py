@@ -506,7 +506,7 @@ class Decoder(nn.Module):
         return x
 
 
-# TODO: Discuss common interface between VQVAE and AEKL via get_ldm_inputs and reconstruct_ldm_outputs methods
+# TODO: Discuss common interface between VQVAE and AEKL via get_stage2_inputs and decode_stage2_outputs methods
 class AutoencoderKL(nn.Module):
     """
     Autoencoder model with KL-regularized latent space based on
@@ -654,26 +654,26 @@ class AutoencoderKL(nn.Module):
         return dec
 
     def forward(
-        self, x: torch.Tensor, get_ldm_inputs: bool = False
+        self, x: torch.Tensor, get_stage2_inputs: bool = False
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]:
         """
         Args:
             x: BxCx[SPATIAL DIMS] input image tensor
-            get_ldm_inputs: bool, whether you want a noise latent space sample
+            get_stage2_inputs: bool, whether you want a noise latent space sample
 
         Returns:
-            if get_dlm_inputs, returns latent space representation of input image, otherwise, returns the
+            if get_stage2_inputs, returns latent space representation of input image, otherwise, returns the
             reconstructed image, and the mu and sigma vectors of the encoder.
         """
-        if get_ldm_inputs:
-            return self.get_ldm_inputs(x)
+        if get_stage2_inputs:
+            return self.get_stage2_inputs(x)
         else:
             z_mu, z_sigma = self.encode(x)
             z = self.sampling(z_mu, z_sigma)
             reconstruction = self.decode(z)
             return reconstruction, z_mu, z_sigma
 
-    def get_ldm_inputs(self, img: torch.Tensor) -> torch.Tensor:
+    def get_stage2_inputs(self, img: torch.Tensor) -> torch.Tensor:
         """
         For the LDM, you need the latent space representation of the input image. This forwards an image and
         gets the sample by adding noise to the resulting sigma and mu via function sampling.
@@ -688,7 +688,7 @@ class AutoencoderKL(nn.Module):
         z = self.sampling(z_mu, z_sigma)
         return z
 
-    def reconstruct_ldm_outputs(self, z: torch.Tensor) -> torch.Tensor:
+    def decode_stage2_outputs(self, z: torch.Tensor) -> torch.Tensor:
         """
         Based on a denoised sample from the LDM, reconstructs it via the Decoder.
 
