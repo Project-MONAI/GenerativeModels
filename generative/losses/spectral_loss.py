@@ -72,8 +72,6 @@ class JukeboxLoss(_Loss):
             loss = loss.sum()
         elif self.reduction == LossReduction.NONE.value:
             pass
-        else:
-            raise ValueError(f'Unsupported reduction: {self.reduction}, available options are ["mean", "sum", "none"].')
 
         return loss
 
