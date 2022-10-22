@@ -24,16 +24,15 @@ class EMAQuantizer(nn.Module):
     that can be found at https://github.com/deepmind/sonnet/blob/v2/sonnet/src/nets/vqvae.py#L148 and commit
     58d9a2746493717a7c9252938da7efa6006f3739.
 
-    This module is not compatible with TorchScript due to lack of TorchScript support for torch.distributed module as
-    per https://github.com/pytorch/pytorch/issues/41353 on 22/10/2022. If you want to TorchScript your model, please
-    turn set `ddp_sync` to False.
+    This module is not compatible with TorchScript while working in a Distributed Data Parallelism Module. This is due
+    to lack of TorchScript support for torch.distributed module as per https://github.com/pytorch/pytorch/issues/41353
+    on 22/10/2022. If you want to TorchScript your model, please turn set `ddp_sync` to False.
 
     Args:
         spatial_dims :  number of spatial spatial_dims.
         num_embeddings: number of atomic elements in the codebook.
         embedding_dim: number of channels of the input and atomic elements.
-        commitment_cost: scaling factor of the MSE loss between input and its quantized version.
-            Defaults to 0.25.
+        commitment_cost: scaling factor of the MSE loss between input and its quantized version. Defaults to 0.25.
         decay: EMA decay. Defaults to 0.99.
         epsilon: epsilon value. Defaults to 1e-5.
         embedding_init: initialization method for the codebook. Defaults to "normal".
