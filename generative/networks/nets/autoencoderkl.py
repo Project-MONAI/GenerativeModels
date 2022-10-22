@@ -489,8 +489,8 @@ class Decoder(nn.Module):
 class AutoencoderKL(nn.Module):
     """
     Autoencoder model with KL-regularized latent space based on
-    Rombach et al. "High-Resolution Image Synthesis with Latent Diffusion Models"
-    https://arxiv.org/abs/2112.10752
+    Rombach et al. "High-Resolution Image Synthesis with Latent Diffusion Models" https://arxiv.org/abs/2112.10752
+    and Pinaya et al. "Brain Imaging Generation with Latent Diffusion Models" https://arxiv.org/abs/2209.07162
 
     Args:
         spatial_dims: number of spatial dimensions (1D, 2D, 3D).
