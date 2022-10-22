@@ -23,14 +23,15 @@ __all__ = ["ResidualUnit", "VQVAE"]
 
 class ResidualUnit(nn.Module):
     """
-    Implementation of the ResidualLayer used in the VQVAE network.
+    Implementation of the ResidualLayer used in the VQVAE network as originally used in Morphology-preserving
+    Autoregressive 3D Generative Modelling of the Brain by Tudosiu et al. (https://arxiv.org/pdf/2209.03177.pdf) and
+    the original implementation that can be found at https://github.com/AmigoLab/SynthAnatomy/blob/main/src/networks/vqvae/baseline.py#L150.
 
-    Arg:
+    Args:
         spatial_dims: number of spatial spatial_dims of the input data.
         no_channels: number of input channels.
         no_res_channels: number of channels in the residual layers.
-        adn_ordering : a string representing the ordering of activation, normalization, and dropout.
-            Defaults to "NDA".
+        adn_ordering : a string representing the ordering of activation, normalization, and dropout. Defaults to "NDA".
         act: activation type and arguments. Defaults to RELU.
         dropout: dropout ratio. Defaults to no dropout.
         dropout_dim: dimension along which to apply dropout. Defaults to 1.
@@ -92,40 +93,34 @@ class ResidualUnit(nn.Module):
 
 class VQVAE(nn.Module):
     """
-    Single bottleneck implementation of Vector-Quantised Variational Autoencoder (VQ-VAE).
+    Single bottleneck implementation of Vector-Quantised Variational Autoencoder (VQ-VAE) as originally used in
+    Morphology-preserving Autoregressive 3D Generative Modelling of the Brain by Tudosiu et al.
+    (https://arxiv.org/pdf/2209.03177.pdf) and the original implementation that can be found at
+    https://github.com/AmigoLab/SynthAnatomy/blob/main/src/networks/vqvae/baseline.py#L163/
 
     Args:
-        spatial_dims (int): number of spatial spatial_dims.
-        in_channels (int): number of input channels.
-        out_channels (int): number of output channels.
-        no_levels (int): number of levels that the network has. Defaults to 3.
-        downsample_parameters (Tuple[Tuple[int,int,int,int],...]): A Tuple of Tuples for defining the downsampling
-            convolutions. Each Tuple should hold the following information stride (int), kernel_size (int),
-            dilation(int) and padding (int). Defaults to ((2,4,1,1),(2,4,1,1),(2,4,1,1)).
-        upsample_parameters (Tuple[Tuple[int,int,int,int,int],...]): A Tuple of Tuples for defining the upsampling
-            convolutions. Each Tuple should hold the following information stride (int), kernel_size (int),
-            dilation(int), padding (int), output_padding (int). If use_subpixel_conv is True, only the stride will
-            be used for the last conv as the scale_factor. Defaults to ((2,4,1,1,0),(2,4,1,1,0),(2,4,1,1,0)).
-        no_res_layers (int): number of sequential residual layers at each level. Defaults to 3.
-        no_channels (int): number of channels at the deepest level, besides that is no_channels//2 .
-            Defaults to 192.
-        num_embeddings (int): VectorQuantization number of atomic elements in the codebook. Defaults to 32.
-        embedding_dim (int): VectorQuantization number of channels of the input and atomic elements.
-            Defaults to 64.
-        commitment_cost (float): VectorQuantization commitment_cost. Defaults to 0.25 as per [1].
-        decay (float): VectorQuantization decay. Defaults to 0.5.
-        epsilon (float): VectorQuantization epsilon. Defaults to 1e-5 as per [1].
-        adn_ordering (str): a string representing the ordering of activation, normalization, and dropout.
-            Defaults to "NDA".
-        act Optional[Union[Tuple, str]]: activation type and arguments. Defaults to Relu.
-        dropout (Optional[Union[Tuple, str, float]]): dropout ratio. Defaults to 0.1.
-        ddp_sync (bool): whether to synchronize the codebook across processes. Defaults to True.
-
-    References:
-        [1] Oord, A., Vinyals, O., and kavukcuoglu, k. 2017.
-        Neural Discrete Representation Learning.
-        In Advances in Neural Information Processing Systems (pp. 6306–6315).
-        Curran Associates, Inc..
+        spatial_dims: number of spatial spatial_dims.
+        in_channels: number of input channels.
+        out_channels: number of output channels.
+        no_levels: number of levels that the network has. Defaults to 3.
+        downsample_parameters: A Tuple of Tuples for defining the downsampling convolutions. Each Tuple should hold the
+            following information stride (int), kernel_size (int), dilation(int) and padding (int).
+            Defaults to ((2,4,1,1),(2,4,1,1),(2,4,1,1)).
+        upsample_parameters: A Tuple of Tuples for defining the upsampling convolutions. Each Tuple should hold the
+            following information stride (int), kernel_size (int), dilation(int), padding (int), output_padding (int).
+            If use_subpixel_conv is True, only the stride will be used for the last conv as the scale_factor.
+            Defaults to ((2,4,1,1,0),(2,4,1,1,0),(2,4,1,1,0)).
+        no_res_layers: number of sequential residual layers at each level. Defaults to 3.
+        no_channels: number of channels at the deepest level, besides that is no_channels//2 . Defaults to 192.
+        num_embeddings: VectorQuantization number of atomic elements in the codebook. Defaults to 32.
+        embedding_dim: VectorQuantization number of channels of the input and atomic elements. Defaults to 64.
+        commitment_cost: VectorQuantization commitment_cost. Defaults to 0.25.
+        decay: VectorQuantization decay. Defaults to 0.5.
+        epsilon: VectorQuantization epsilon. Defaults to 1e-5 as.
+        adn_ordering: a string representing the ordering of activation, normalization, and dropout. Defaults to "NDA".
+        act: activation type and arguments. Defaults to Relu.
+        dropout: dropout ratio. Defaults to 0.1.
+        ddp_sync: whether to synchronize the codebook across processes. Defaults to True.
     """
 
     # < Python 3.9 TorchScript requirement for ModuleList
@@ -157,7 +152,7 @@ class VQVAE(nn.Module):
         output_act: Optional[Union[Tuple, str]] = None,
         ddp_sync: bool = True,
     ):
-        super(VQVAE, self).__init__()
+        super().__init__()
 
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -192,25 +187,6 @@ class VQVAE(nn.Module):
         self.encoder = self.construct_encoder()
         self.quantizer = self.construct_quantizer()
         self.decoder = self.construct_decoder()
-
-    def get_ema_decay(self) -> float:
-        return self.quantizer.get_ema_decay()
-
-    def set_ema_decay(self, decay: float) -> float:
-        self.quantizer.set_ema_decay(decay)
-
-        return self.get_ema_decay()
-
-    def get_commitment_cost(self) -> float:
-        return self.quantizer.get_commitment_cost()
-
-    def set_commitment_cost(self, commitment_factor: float) -> float:
-        self.quantizer.set_commitment_cost(commitment_factor)
-
-        return self.get_commitment_cost()
-
-    def get_perplexity(self) -> float:
-        return self.quantizer.get_perplexity()
 
     def construct_encoder(self) -> torch.nn.Sequential:
         encoder = []
