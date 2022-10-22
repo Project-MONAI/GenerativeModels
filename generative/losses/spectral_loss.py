@@ -28,7 +28,7 @@ class JukeboxLoss(_Loss):
     Args:
         spatial_dims: number of spatial dimensions.
         fft_signal_size: signal size in the transformed dimensions. See torch.fft.fftn() for more information.
-        fft_dims: dimensions to be transformed. See torch.fft.fftn() for more information.
+        fft_dim: dimensions to be transformed. See torch.fft.fftn() for more information.
         fft_norm: {``"forward"``, ``"backward"``, ``"ortho"``} Specifies the normalization mode in the fft. See
             torch.fft.fftn() for more information.
 
@@ -44,18 +44,18 @@ class JukeboxLoss(_Loss):
         self,
         spatial_dims: int,
         fft_signal_size: Optional[Tuple[int]] = None,
-        fft_dims: Optional[Tuple[int]] = None,
+        fft_dim: Optional[Tuple[int]] = None,
         fft_norm: str = "ortho",
         reduction: Union[LossReduction, str] = LossReduction.MEAN,
     ) -> None:
         super().__init__(reduction=LossReduction(reduction).value)
 
-        if fft_dims is None:
-            fft_dims = tuple(range(1, spatial_dims + 2))
+        if fft_dim is None:
+            fft_dim = tuple(range(1, spatial_dims + 2))
 
         self.spatial_dims = spatial_dims
         self.fft_signal_size = fft_signal_size
-        self.fft_dims = fft_dims
+        self.fft_dim = fft_dim
         self.fft_norm = fft_norm
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
@@ -64,7 +64,16 @@ class JukeboxLoss(_Loss):
 
         # Compute distance between amplitude of frequency components
         # See Section 3.3 from https://arxiv.org/abs/2005.00341
-        loss = F.mse_loss(target_amplitude, input_amplitude)
+        loss = F.mse_loss(target_amplitude, input_amplitude, reduction="none")
+
+        if self.reduction == LossReduction.MEAN.value:
+            loss = loss.mean()
+        elif self.reduction == LossReduction.SUM.value:
+            loss = loss.sum()
+        elif self.reduction == LossReduction.NONE.value:
+            pass
+        else:
+            raise ValueError(f'Unsupported reduction: {self.reduction}, available options are ["mean", "sum", "none"].')
 
         return loss
 
@@ -81,7 +90,7 @@ class JukeboxLoss(_Loss):
         img_fft = fftn(
             input=images,
             s=self.fft_signal_size,
-            dims=self.fft_dims,
+            dim=self.fft_dim,
             norm=self.fft_norm,
         )
 
