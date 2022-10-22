@@ -28,7 +28,6 @@ class JukeboxLoss(_Loss):
     Args:
         spatial_dims: number of spatial dimensions.
         fft_signal_size: signal size in the transformed dimensions. See torch.fft.fftn() for more information.
-        fft_dim: dimensions to be transformed. See torch.fft.fftn() for more information.
         fft_norm: {``"forward"``, ``"backward"``, ``"ortho"``} Specifies the normalization mode in the fft. See
             torch.fft.fftn() for more information.
 
@@ -44,18 +43,14 @@ class JukeboxLoss(_Loss):
         self,
         spatial_dims: int,
         fft_signal_size: Optional[Tuple[int]] = None,
-        fft_dim: Optional[Tuple[int]] = None,
         fft_norm: str = "ortho",
         reduction: Union[LossReduction, str] = LossReduction.MEAN,
     ) -> None:
         super().__init__(reduction=LossReduction(reduction).value)
 
-        if fft_dim is None:
-            fft_dim = tuple(range(1, spatial_dims + 2))
-
         self.spatial_dims = spatial_dims
         self.fft_signal_size = fft_signal_size
-        self.fft_dim = fft_dim
+        self.fft_dim = tuple(range(1, spatial_dims + 2))
         self.fft_norm = fft_norm
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
