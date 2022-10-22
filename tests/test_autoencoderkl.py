@@ -94,7 +94,7 @@ TEST_CASE_3 = [
     (2, 32, 8, 8),
 ]
 
-CASES = [TEST_CASE_0, TEST_CASE_1]
+CASES = [TEST_CASE_0, TEST_CASE_1, TEST_CASE_2, TEST_CASE_3]
 
 
 class TestAutoEncoderKL(unittest.TestCase):
