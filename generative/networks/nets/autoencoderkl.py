@@ -45,10 +45,6 @@ class Upsample(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-           x: BxCx[SPATIAL DIMS] tensor
-        """
         x = F.interpolate(x, scale_factor=2.0, mode="nearest")
         x = self.conv(x)
         return x
@@ -85,10 +81,6 @@ class Downsample(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: BxCx[SPATIAL DIMS] tensor
-        """
         x = nn.functional.pad(x, self.pad, mode="constant", value=0.0)
         x = self.conv(x)
         return x
@@ -150,10 +142,6 @@ class ResBlock(nn.Module):
             self.nin_shortcut = nn.Identity()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: BxCx[SPATIAL DIMS]
-        """
         h = x
         h = self.norm1(h)
         h = F.silu(h)
@@ -231,10 +219,6 @@ class AttnBlock(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: BxCx[SPATIAL DIMS] tensor
-        """
         h_ = x
         h_ = self.norm(h_)
         q = self.q(h_)
@@ -386,10 +370,6 @@ class Encoder(nn.Module):
         self.blocks = nn.ModuleList(blocks)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: BxCx[SPATIAL DIMS] tensor
-        """
         for block in self.blocks:
             x = block(x)
         return x
@@ -653,13 +633,6 @@ class AutoencoderKL(nn.Module):
         return dec
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Args:
-            x: BxCx[SPATIAL DIMS] input image tensor
-
-        Returns:
-            reconstructed image, and the mu and sigma vectors of the encoder.
-        """
         z_mu, z_sigma = self.encode(x)
         z = self.sampling(z_mu, z_sigma)
         reconstruction = self.decode(z)
