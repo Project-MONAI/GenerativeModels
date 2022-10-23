@@ -65,10 +65,7 @@ class Downsample(nn.Module):
         in_channels: int,
     ) -> None:
         super().__init__()
-        if spatial_dims == 2:
-            self.pad = (0, 1, 0, 1)
-        elif spatial_dims == 3:
-            self.pad = (0, 1, 0, 1, 0, 1)
+        self.pad = (0, 1) * spatial_dims
 
         self.conv = Convolution(
             spatial_dims=spatial_dims,
@@ -101,7 +98,7 @@ class ResBlock(nn.Module):
     """
 
     def __init__(
-        self, spatial_dims: int, in_channels: int, norm_num_groups: int, norm_eps: float, out_channels
+        self, spatial_dims: int, in_channels: int, norm_num_groups: int, norm_eps: float, out_channels: int
     ) -> None:
         super().__init__()
         self.in_channels = in_channels
