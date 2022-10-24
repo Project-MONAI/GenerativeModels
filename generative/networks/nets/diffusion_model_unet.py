@@ -642,8 +642,10 @@ def get_attention_parameters(
 
 
 class DiffusionModelUNet(nn.Module):
-    # TODO: Add docstring
     """
+    Unet network with timestep embedding and attention mechanisms for conditioning based on
+    Rombach et al. "High-Resolution Image Synthesis with Latent Diffusion Models" https://arxiv.org/abs/2112.10752
+    and Pinaya et al. "Brain Imaging Generation with Latent Diffusion Models" https://arxiv.org/abs/2209.07162
 
     Args:
         spatial_dims: number of spatial dimensions.
