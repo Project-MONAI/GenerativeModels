@@ -641,6 +641,8 @@ def get_attention_parameters(
     return dim_head, num_heads
 
 
+# TODO: Replace TimestepEmbedSequential by using an approach similar to huggingface diffusers
+#  https://github.com/huggingface/diffusers/blob/2d35f6733a2d698e8917896071444a5923993ae7/src/diffusers/models/unet_2d.py#L38
 class DiffusionModelUNet(nn.Module):
     """
     Unet network with timestep embedding and attention mechanisms for conditioning based on
