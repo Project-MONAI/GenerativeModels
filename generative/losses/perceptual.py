@@ -9,79 +9,113 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict
-
 import torch
 import torch.nn as nn
-
-# import torch.nn.functional as F
 from lpips import LPIPS
 
-# from torch.nn.modules.loss import _Loss
 
-
+# TODO: Check difference between this and MONAI's DeepSupervisionLoss (when not using LPIPS)
+#  https://github.com/Project-MONAI/MONAI/blob/06cb0fa3b4aa04744cbf9eff46f5860a7681b25f/monai/losses/ds_loss.py#L21
+# TODO: Define model_path for lpips networks.
 # TODO: Add MedicalNet for true 3D computation (https://github.com/Tencent/MedicalNet)
 # TODO: Add RadImageNet for 2D computaion with networks pretrained using radiological images
 #  (https://github.com/BMEII-AI/RadImageNet)
 class PerceptualLoss(nn.Module):
     """
-    Perceptual loss based on the lpips library. The 3D implementation is based on a 2.5D approach where we batchify
-    every spatial dimension one after another so we obtain better spatial consistency. There is also a pixel
-    component as well.
-
-    Based on: Zhang, et al. "The unreasonable effectiveness of deep features as a perceptual metric."
-    https://arxiv.org/abs/1801.03924
+    Perceptual loss using features from pretrained deep neural networks trained. The function supports networks
+    pretrained on IMageNet that use the LPIPS approach from: Zhang, et al. "The unreasonable effectiveness of deep
+    features as a perceptual metric." https://arxiv.org/abs/1801.03924
+    The fake 3D implementation is based on a 2.5D approach where we calculate the 2D perceptual on slices from the
+    three axis.
 
     Args:
         spatial_dims: number of spatial dimensions.
-        is_fake_3d: whether we use 2.5D approach for a 3D perceptual loss
-        fake_3d_n_slices: how many, as a ratio, slices we drop in the 2.5D approach
-
-    References:
-        [1] Zhang, R., Isola, P., Efros, A.A., Shechtman, E. and Wang, O., 2018.
-        The unreasonable effectiveness of deep features as a perceptual metric.
-        In Proceedings of the IEEE conference on computer vision and pattern recognition (pp. 586-595).
+        network_type: {``"squeeze"``, ``"vgg"``, ``"alex"``}
+            Specifies the network architecture to use. Defaults to ``"squeeze"``.
+        is_fake_3d: if True use 2.5D approach for a 3D perceptual loss
+        n_slices_per_axis: number of slices per axis used in the 2.5D approach
     """
 
     def __init__(
         self,
         spatial_dims: int,
+        network_type: str = "squeeze",
         is_fake_3d: bool = True,
-        fake_3d_n_slices: float = 0.0,
-        lpips_kwargs: Dict = None,
-        lpips_normalize: bool = True,
+        n_slices_per_axis: int = 1,
     ):
         super().__init__()
 
-        if not (spatial_dims in [2, 3]):
+        if spatial_dims not in [2, 3]:
             raise NotImplementedError("Perceptual loss is implemented only in 2D and 3D.")
 
         if spatial_dims == 3 and is_fake_3d is False:
-            raise NotImplementedError("True 3D perceptual loss is not implemented yet.")
+            raise NotImplementedError("True 3D perceptual loss is not implemented.")
 
         self.spatial_dims = spatial_dims
-        self.lpips_kwargs = (
-            {
-                "pretrained": True,
-                "net": "alex",
-                "version": "0.1",
-                "lpips": True,
-                "spatial": False,
-                "pnet_rand": False,
-                "pnet_tune": False,
-                "use_dropout": True,
-                "model_path": None,
-                "eval_mode": True,
-                "verbose": False,
-            }
-            if lpips_kwargs is None
-            else lpips_kwargs
+        self.perceptual_function = LPIPS(
+            pretrained=True,
+            net=network_type,
+            verbose=False,
         )
+        self.is_fake_3d = is_fake_3d
+        self.n_slices_per_axis = n_slices_per_axis
 
-        self.lpips_normalize = lpips_normalize
-        self.perceptual_function = LPIPS(**self.lpips_kwargs) if self.dimensions == 2 or is_fake_3d else None
+    def _calculate_fake_3d_loss(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        Calculating perceptual loss after one spatial axis is batchified according to permute dims and we drop random
+         slices as per self.keep_ratio.
+        """
+
+        # Sagittal axis
+        input_2d_slices = input.float().permute(0, 2, 1, 3, 4).contiguous()
+        input_2d_slices = input_2d_slices.view(-1, input.shape[1], input.shape[3], input.shape[4])
+
+        target_2d_slices = target.float().permute(0, 2, 1, 3, 4).contiguous()
+        target_2d_slices = target_2d_slices.view(-1, target.shape[1], target.shape[3], target.shape[4])
+
+        indices = torch.randperm(input_2d_slices.shape[0])[: self.n_slices_per_axis]
+        input_2d_slices = input_2d_slices[indices]
+        target_2d_slices = target_2d_slices[indices]
+
+        loss_sagital = torch.mean(self.perceptual_function(input_2d_slices, target_2d_slices))
+
+        # Axial axis
+        input_2d_slices = input.float().permute(0, 4, 1, 2, 3).contiguous()
+        input_2d_slices = input_2d_slices.view(-1, input.shape[1], input.shape[2], input.shape[3])
+
+        target_2d_slices = target.float().permute(0, 4, 1, 2, 3).contiguous()
+        target_2d_slices = target_2d_slices.view(-1, target.shape[1], target.shape[2], target.shape[3])
+
+        indices = torch.randperm(input_2d_slices.shape[0])[: self.n_slices_per_axis]
+        input_2d_slices = input_2d_slices[indices]
+        target_2d_slices = target_2d_slices[indices]
+
+        loss_axial = torch.mean(self.perceptual_function(input_2d_slices, target_2d_slices))
+
+        # Coronal axis
+        input_2d_slices = input.float().permute(0, 3, 1, 2, 4).contiguous()
+        input_2d_slices = input_2d_slices.view(-1, input.shape[1], input.shape[2], input.shape[4])
+
+        target_2d_slices = target.float().permute(0, 3, 1, 2, 4).contiguous()
+        target_2d_slices = target_2d_slices.view(-1, target.shape[1], target.shape[2], target.shape[4])
+
+        indices = torch.randperm(input_2d_slices.shape[0])[: self.n_slices_per_axis]
+        input_2d_slices = input_2d_slices[indices]
+        target_2d_slices = target_2d_slices[indices]
+
+        loss_coronal = torch.mean(self.perceptual_function(input_2d_slices, target_2d_slices))
+
+        return loss_sagital + loss_axial + loss_coronal
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        loss = torch.mean(self.perceptual_function.forward(input, target, normalize=self.lpips_normalize))
+        """
+        Args:
+            input: the shape should be BNHW[D].
+            target: the shape should be BNHW[D].
+        """
+        if self.spatial_dims == 2:
+            loss = self.perceptual_function(input, target)
+        elif self.spatial_dims == 3 and self.is_fake_3d:
+            loss = self._calculate_fake_3d_loss(input, target)
 
-        return loss
+        return torch.mean(loss)
