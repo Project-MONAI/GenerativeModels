@@ -8,14 +8,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import torch
 import torch.nn.functional as F
 
 
-from monai.metrics.metric import CumulativeIterationMetric
-from monai.metrics.regression import SSIMMetric
+from monai.metrics import CumulativeIterationMetric
+from monai.metrics import SSIMMetric
+from monai.utils import MetricReduction
 
 
 
@@ -28,13 +29,17 @@ class MS_SSIM(CumulativeIterationMetric):
             In The Thrity-Seventh Asilomar Conference on Signals, Systems & Computers, 2003 (Vol. 2, pp. 1398-1402). Ieee.
 
     Args:
-        data_range (torch.Tensor) : synamic range of the data
-        win_size (int): gaussian weighting window size
-        k1 (float): stability constant used in the luminance denominator
-        k2 (float): stability constant used in the contrast denominator
-        spatial_dims (int): if 2, input shape is expected to be (B,C,W,H); if 3, it is expected to be (B,C,W,H,D)
-        weights (list, optional): parameters for image similarity and contrast sensitivity at different resolution scores.
-        mean_reduction (bool, optional): if the mean should be taken to reduce metric score over labels. If False, returns sim per image.
+        data_range: synamic range of the data
+        win_size: gaussian weighting window size
+        k1: stability constant used in the luminance denominator
+        k2: stability constant used in the contrast denominator
+        spatial_dims: if 2, input shape is expected to be (B,C,W,H); if 3, it is expected to be (B,C,W,H,D)
+        weights: parameters for image similarity and contrast sensitivity at different resolution scores.
+        reduction: {``"none"``, ``"mean"``, ``"sum"``}
+            Specifies the reduction to apply to the output. Defaults to ``"mean"``.
+            - ``"none"``: no reduction will be applied.
+            - ``"mean"``: the sum of the output will be divided by the number of elements in the output.
+            - ``"sum"``: the output will be summed.
     """
 
     def __init__(
@@ -45,7 +50,7 @@ class MS_SSIM(CumulativeIterationMetric):
         k2: float = 0.03,
         spatial_dims: int = 2,
         weights:  Optional[List] = None,
-        mean_reduction: Optional[bool] = True
+        reduction: Union[MetricReduction, str] = MetricReduction.MEAN,
     ) -> None:
         super().__init__()
 
@@ -57,14 +62,14 @@ class MS_SSIM(CumulativeIterationMetric):
         self.k1, self.k2 = k1, k2
         self.spatial_dims = spatial_dims
         self.weights = weights
-        self.mean_reduction = mean_reduction
+        self.reduction = reduction
 
         self.SSIM = SSIMMetric(
             self.data_range,
             self.win_size,
             self.k1,
             self.k2,
-            self.spatial_dims
+            self.spatial_dims,
             )
 
 
@@ -124,9 +129,14 @@ class MS_SSIM(CumulativeIterationMetric):
 
         ssim = torch.relu(ssim)  # (batch, channel)
         mcs_and_ssim = torch.stack(mcs_list + [ssim], dim=0)  # (level, batch, channel)
-        ms_ssim_val = torch.prod(mcs_and_ssim ** self.weights.view(-1, 1, 1), dim=0)
+        ms_ssim = torch.prod(mcs_and_ssim ** self.weights.view(-1, 1, 1), dim=0)
 
-        if self.mean_reduction:
-            return ms_ssim_val.mean()
-        else:
-            return ms_ssim_val.mean(1)
+        if self.reduction == MetricReduction.MEAN.value:
+            ms_ssim = ms_ssim.mean()
+        elif self.reduction == MetricReduction.SUM.value:
+            ms_ssim = ms_ssim.sum()
+        elif self.reduction == MetricReduction.NONE.value:
+            pass
+
+        return ms_ssim
+        
