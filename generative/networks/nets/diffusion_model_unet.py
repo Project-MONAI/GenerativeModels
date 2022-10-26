@@ -15,12 +15,12 @@ from typing import Optional, Sequence, Tuple
 
 import torch
 import torch.nn.functional as F
-from einops import rearrange, repeat
+from einops import rearrange
 from monai.networks.blocks import Convolution
 from monai.networks.layers.factories import Pool
 from torch import einsum, nn
 
-from generative.utils.misc import default, exists
+from generative.utils.misc import default
 
 __all__ = ["DiffusionModelUNet"]
 
@@ -104,9 +104,7 @@ class CrossAttention(nn.Module):
 
         self.to_out = nn.Sequential(nn.Linear(inner_dim, query_dim), nn.Dropout(dropout))
 
-    def forward(
-        self, x: torch.Tensor, context: Optional[torch.Tensor] = None, mask: Optional[torch.Tensor] = None
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
         h = self.heads
 
         q = self.to_q(x)
@@ -118,13 +116,6 @@ class CrossAttention(nn.Module):
         q, k, v = map(lambda t: rearrange(t, "b n (h d) -> (b h) n d", h=h), (q, k, v))
 
         sim = einsum("b i d, b j d -> b i j", q, k) * self.scale
-
-        # TODO: Try to remove exists usage
-        if exists(mask):
-            mask = rearrange(mask, "b ... -> b (...)")
-            max_neg_value = -torch.finfo(sim.dtype).max
-            mask = repeat(mask, "b j -> (b h) () j", h=h)
-            sim.masked_fill_(~mask, max_neg_value)
 
         attn = sim.softmax(dim=-1)
 
