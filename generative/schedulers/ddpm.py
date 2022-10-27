@@ -29,13 +29,31 @@
 # limitations under the License.
 # =========================================================================
 
+from typing import Optional, Union
+
+import numpy as np
 import torch
 import torch.nn as nn
 
 
-# TODO: Use diffuser as reference
-# https://github.com/huggingface/diffusers/blob/main/src/diffusers/schedulers/scheduling_ddpm.py
 class DDPMScheduler(nn.Module):
+    """
+    Denoising diffusion probabilistic models (DDPMs) explores the connections between denoising score matching and
+    Langevin dynamics sampling. For more details, see the original paper: https://arxiv.org/abs/2006.11239
+
+    Args:
+        num_train_timesteps: number of diffusion steps used to train the model.
+        beta_start: the starting `beta` value of inference.
+        beta_end: the final `beta` value.
+        beta_schedule:
+            the beta schedule, a mapping from a beta range to a sequence of betas for stepping the model. Choose from
+            `linear` or `scaled_linear`.
+        variance_type:
+            options to clip the variance used when adding noise to the denoised sample. Choose from `fixed_small`,
+            `fixed_large`, `learned` or `learned_range`.
+        clip_sample: option to clip predicted sample between -1 and 1 for numerical stability.
+    """
+
     def __init__(
         self,
         num_train_timesteps: int = 1000,
@@ -57,6 +75,7 @@ class DDPMScheduler(nn.Module):
         else:
             raise NotImplementedError(f"{beta_schedule} does is not implemented for {self.__class__}")
 
+        self.num_train_timesteps = num_train_timesteps
         self.alphas = 1.0 - self.betas
         self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
         self.one = torch.tensor(1.0)
@@ -64,34 +83,40 @@ class DDPMScheduler(nn.Module):
         self.clip_sample = clip_sample
         self.variance_type = variance_type
 
-    def _get_variance(self, t, predicted_variance=None, variance_type=None):
-        alpha_prod_t = self.alphas_cumprod[t]
-        alpha_prod_t_prev = self.alphas_cumprod[t - 1] if t > 0 else self.one
+    def set_timesteps(self, num_inference_steps: int, device: Union[str, torch.device] = None) -> None:
+        """
+        Sets the discrete timesteps used for the diffusion chain. Supporting function to be run before inference.
+
+        Args:
+            num_inference_steps (`int`):
+                the number of diffusion steps used when generating samples with a pre-trained model.
+        """
+        num_inference_steps = min(self.num_train_timesteps, num_inference_steps)
+        self.num_inference_steps = num_inference_steps
+        timesteps = np.arange(0, self.num_train_timesteps, self.num_train_timesteps // self.num_inference_steps)[
+            ::-1
+        ].copy()
+        self.timesteps = torch.from_numpy(timesteps).to(device)
+
+    def _get_variance(self, timestep: int, predicted_variance: Optional[torch.Tensor] = None) -> torch.Tensor:
+        alpha_prod_t = self.alphas_cumprod[timestep]
+        alpha_prod_t_prev = self.alphas_cumprod[timestep - 1] if timestep > 0 else self.one
 
         # For t > 0, compute predicted variance βt (see formula (6) and (7) from https://arxiv.org/pdf/2006.11239.pdf)
         # and sample from it to get previous sample
         # x_{t-1} ~ N(pred_prev_sample, variance) == add variance to pred_sample
-        variance = (1 - alpha_prod_t_prev) / (1 - alpha_prod_t) * self.betas[t]
-
-        if variance_type is None:
-            variance_type = self.config.variance_type
+        variance = (1 - alpha_prod_t_prev) / (1 - alpha_prod_t) * self.betas[timestep]
 
         # hacks - were probably added for training stability
-        if variance_type == "fixed_small":
+        if self.variance_type == "fixed_small":
             variance = torch.clamp(variance, min=1e-20)
-        # for rl-diffuser https://arxiv.org/abs/2205.09991
-        elif variance_type == "fixed_small_log":
-            variance = torch.log(torch.clamp(variance, min=1e-20))
-        elif variance_type == "fixed_large":
-            variance = self.betas[t]
-        elif variance_type == "fixed_large_log":
-            # Glide max_log
-            variance = torch.log(self.betas[t])
-        elif variance_type == "learned":
+        elif self.variance_type == "fixed_large":
+            variance = self.betas[timestep]
+        elif self.variance_type == "learned":
             return predicted_variance
-        elif variance_type == "learned_range":
+        elif self.variance_type == "learned_range":
             min_log = variance
-            max_log = self.betas[t]
+            max_log = self.betas[timestep]
             frac = (predicted_variance + 1) / 2
             variance = frac * max_log + (1 - frac) * min_log
 
@@ -99,12 +124,23 @@ class DDPMScheduler(nn.Module):
 
     def step(
         self,
-        model_output: torch.FloatTensor,
+        model_output: torch.Tensor,
         timestep: int,
-        sample: torch.FloatTensor,
+        sample: torch.Tensor,
         predict_epsilon=True,
-        generator=None,
-    ):
+        generator: Optional[torch.Generator] = None,
+    ) -> torch.Tensor:
+        """
+        Predict the sample at the previous timestep by reversing the SDE. Core function to propagate the diffusion
+        process from the learned model outputs (most often the predicted noise).
+
+        Args:
+            model_output: direct output from learned diffusion model.
+            timestep: current discrete timestep in the diffusion chain.
+            sample: current instance of sample being created by diffusion process.
+            predict_epsilon: flag to use when model predicts the samples directly instead of the noise, epsilon.
+            generator: random number generator.
+        """
         t = timestep
 
         if model_output.shape[1] == sample.shape[1] * 2 and self.variance_type in ["learned", "learned_range"]:
@@ -152,10 +188,10 @@ class DDPMScheduler(nn.Module):
 
     def add_noise(
         self,
-        original_samples: torch.FloatTensor,
-        noise: torch.FloatTensor,
-        timesteps: torch.IntTensor,
-    ) -> torch.FloatTensor:
+        original_samples: torch.Tensor,
+        noise: torch.Tensor,
+        timesteps: torch.Tensor,
+    ) -> torch.Tensor:
         # Make sure alphas_cumprod and timestep have same device and dtype as original_samples
         self.alphas_cumprod = self.alphas_cumprod.to(device=original_samples.device, dtype=original_samples.dtype)
         timesteps = timesteps.to(original_samples.device)
