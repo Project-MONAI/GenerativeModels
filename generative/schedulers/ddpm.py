@@ -88,8 +88,9 @@ class DDPMScheduler(nn.Module):
         Sets the discrete timesteps used for the diffusion chain. Supporting function to be run before inference.
 
         Args:
-            num_inference_steps (`int`):
+            num_inference_steps:
                 the number of diffusion steps used when generating samples with a pre-trained model.
+            device: target device to put the data.
         """
         num_inference_steps = min(self.num_train_timesteps, num_inference_steps)
         self.num_inference_steps = num_inference_steps
@@ -99,6 +100,16 @@ class DDPMScheduler(nn.Module):
         self.timesteps = torch.from_numpy(timesteps).to(device)
 
     def _get_variance(self, timestep: int, predicted_variance: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """
+        Compute the variance.
+
+        Args:
+            timestep: current timestep
+            predicted_variance:
+
+        Returns:
+            Returns the predicted variance
+        """
         alpha_prod_t = self.alphas_cumprod[timestep]
         alpha_prod_t_prev = self.alphas_cumprod[timestep - 1] if timestep > 0 else self.one
 
@@ -140,6 +151,9 @@ class DDPMScheduler(nn.Module):
             sample: current instance of sample being created by diffusion process.
             predict_epsilon: flag to use when model predicts the samples directly instead of the noise, epsilon.
             generator: random number generator.
+        Returns:
+            pred_prev_sample: Predicted previous sample
+
         """
         t = timestep
 
@@ -192,6 +206,17 @@ class DDPMScheduler(nn.Module):
         noise: torch.Tensor,
         timesteps: torch.Tensor,
     ) -> torch.Tensor:
+        """
+        Add noise to the original samples.
+
+        Args:
+            original_samples: original samples
+            noise: noise to add to samples
+            timesteps:
+
+        Returns:
+            noisy_samples: sample with added noise
+        """
         # Make sure alphas_cumprod and timestep have same device and dtype as original_samples
         self.alphas_cumprod = self.alphas_cumprod.to(device=original_samples.device, dtype=original_samples.dtype)
         timesteps = timesteps.to(original_samples.device)
