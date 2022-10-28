@@ -39,23 +39,20 @@ import torch.nn as nn
 class DDIMScheduler(nn.Module):
     """
     Denoising diffusion implicit models is a scheduler that extends the denoising procedure introduced in denoising
-    diffusion probabilistic models (DDPMs) with non-Markovian guidance. For more details, see the original paper:
-    https://arxiv.org/abs/2010.02502
+    diffusion probabilistic models (DDPMs) with non-Markovian guidance. Based on: Song et al. "Denoising Diffusion
+    Implicit Models" https://arxiv.org/abs/2010.02502
 
     Args:
         num_train_timesteps: number of diffusion steps used to train the model.
         beta_start: the starting `beta` value of inference.
         beta_end: the final `beta` value.
-        beta_schedule:
-            the beta schedule, a mapping from a beta range to a sequence of betas for stepping the model. Choose from
-            `linear` or `scaled_linear`.
+        beta_schedule: {``"linear"``, ``"scaled_linear"``}
+            the beta schedule, a mapping from a beta range to a sequence of betas for stepping the model.
         clip_sample: option to clip predicted sample between -1 and 1 for numerical stability.
-        set_alpha_to_one (`bool`, default `True`):
-            each diffusion step uses the value of alphas product at that step and at the previous one. For the final
-            step there is no previous alpha. When this option is `True` the previous alpha product is fixed to `1`,
-            otherwise it uses the value of alpha at step 0.
-        steps_offset (`int`, default `0`):
-            an offset added to the inference steps. You can use a combination of `offset=1` and
+        set_alpha_to_one: each diffusion step uses the value of alphas product at that step and at the previous one.
+            For the final step there is no previous alpha. When this option is `True` the previous alpha product is
+            fixed to `1`, otherwise it uses the value of alpha at step 0.
+        steps_offset: an offset added to the inference steps. You can use a combination of `steps_offset=1` and
             `set_alpha_to_one=False`, to make the last step use step 0 for the previous alpha product, as done in
             stable diffusion.
     """
@@ -107,8 +104,7 @@ class DDIMScheduler(nn.Module):
         Sets the discrete timesteps used for the diffusion chain. Supporting function to be run before inference.
 
         Args:
-            num_inference_steps (`int`):
-                the number of diffusion steps used when generating samples with a pre-trained model.
+            num_inference_steps: number of diffusion steps used when generating samples with a pre-trained model.
         """
         self.num_inference_steps = num_inference_steps
         step_ratio = self.num_train_timesteps // self.num_inference_steps
@@ -144,7 +140,7 @@ class DDIMScheduler(nn.Module):
             model_output: direct output from learned diffusion model.
             timestep: current discrete timestep in the diffusion chain.
             sample: current instance of sample being created by diffusion process.
-            eta (`float`): weight of noise for added noise in diffusion step.
+            eta: weight of noise for added noise in diffusion step.
             predict_epsilon: flag to use when model predicts the samples directly instead of the noise, epsilon.
             generator: random number generator.
         """
@@ -153,7 +149,7 @@ class DDIMScheduler(nn.Module):
         # Ideally, read DDIM paper in-detail understanding
 
         # Notation (<variable name> -> <name in paper>
-        # - pred_noise_t -> e_theta(x_t, t)
+        # - model_output -> e_theta(x_t, t)
         # - pred_original_sample -> f_theta(x_t, t) or x_0
         # - std_dev_t -> sigma_t
         # - eta -> η
@@ -185,8 +181,8 @@ class DDIMScheduler(nn.Module):
         # 6. compute "direction pointing to x_t" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
         pred_sample_direction = (1 - alpha_prod_t_prev - std_dev_t**2) ** (0.5) * model_output
 
-        # 7. compute x_t without "random noise" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
-        prev_sample = alpha_prod_t_prev ** (0.5) * pred_original_sample + pred_sample_direction
+        # 7. compute x_t-1 without "random noise" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
+        pred_prev_sample = alpha_prod_t_prev ** (0.5) * pred_original_sample + pred_sample_direction
 
         if eta > 0:
             # randn_like does not support generator https://github.com/pytorch/pytorch/issues/27072
@@ -194,9 +190,9 @@ class DDIMScheduler(nn.Module):
             noise = torch.randn(model_output.shape, dtype=model_output.dtype, generator=generator).to(device)
             variance = self._get_variance(timestep, prev_timestep) ** (0.5) * eta * noise
 
-            prev_sample = prev_sample + variance
+            pred_prev_sample = pred_prev_sample + variance
 
-        return prev_sample
+        return pred_prev_sample
 
     def add_noise(
         self,
