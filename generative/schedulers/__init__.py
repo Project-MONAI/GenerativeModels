@@ -10,3 +10,4 @@
 # limitations under the License.
 
 from .ddim import DDIMScheduler
+from .ddpm import DDPMScheduler
