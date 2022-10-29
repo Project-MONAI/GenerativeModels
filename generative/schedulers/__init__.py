@@ -9,4 +9,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from .ddim import DDIMScheduler
 from .ddpm import DDPMScheduler
