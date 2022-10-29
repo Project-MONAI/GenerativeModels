@@ -143,6 +143,10 @@ class DDIMScheduler(nn.Module):
             eta: weight of noise for added noise in diffusion step.
             predict_epsilon: flag to use when model predicts the samples directly instead of the noise, epsilon.
             generator: random number generator.
+
+        Returns:
+            pred_prev_sample: Predicted previous sample
+            pred_original_sample: Predicted original sample
         """
 
         # See formulas (12) and (16) of DDIM paper https://arxiv.org/pdf/2010.02502.pdf
@@ -192,7 +196,7 @@ class DDIMScheduler(nn.Module):
 
             pred_prev_sample = pred_prev_sample + variance
 
-        return pred_prev_sample
+        return pred_prev_sample, pred_original_sample
 
     def add_noise(
         self,
@@ -200,6 +204,17 @@ class DDIMScheduler(nn.Module):
         noise: torch.Tensor,
         timesteps: torch.Tensor,
     ) -> torch.Tensor:
+        """
+        Add noise to the original samples.
+
+        Args:
+            original_samples: original samples
+            noise: noise to add to samples
+            timesteps: timesteps tensor indicating the timestep to be computed for each sample.
+
+        Returns:
+            noisy_samples: sample with added noise
+        """
         # Make sure alphas_cumprod and timestep have same device and dtype as original_samples
         self.alphas_cumprod = self.alphas_cumprod.to(device=original_samples.device, dtype=original_samples.dtype)
         timesteps = timesteps.to(original_samples.device)
