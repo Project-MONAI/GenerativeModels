@@ -50,7 +50,8 @@ class TestDDPMScheduler(unittest.TestCase):
         model_output = torch.randn(input_shape)
         sample = torch.randn(input_shape)
         output_step = scheduler.step(model_output=model_output, timestep=500, sample=sample)
-        self.assertEqual(output_step.shape, expected_shape)
+        self.assertEqual(output_step[0].shape, expected_shape)
+        self.assertEqual(output_step[1].shape, expected_shape)
 
     def test_step_learned(self):
         for variance_type in ["learned", "learned_range"]:
@@ -60,7 +61,8 @@ class TestDDPMScheduler(unittest.TestCase):
         model_output = torch.randn(2, 6, 16, 16)
         sample = torch.randn(2, 3, 16, 16)
         output_step = scheduler.step(model_output=model_output, timestep=500, sample=sample)
-        self.assertEqual(output_step.shape, sample.shape)
+        self.assertEqual(output_step[0].shape, sample.shape)
+        self.assertEqual(output_step[1].shape, sample.shape)
 
     def test_set_timesteps(self):
         scheduler = DDPMScheduler(

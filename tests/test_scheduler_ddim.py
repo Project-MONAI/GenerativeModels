@@ -46,7 +46,8 @@ class TestDDPMScheduler(unittest.TestCase):
         model_output = torch.randn(input_shape)
         sample = torch.randn(input_shape)
         output_step = scheduler.step(model_output=model_output, timestep=500, sample=sample)
-        self.assertEqual(output_step.shape, expected_shape)
+        self.assertEqual(output_step[0].shape, expected_shape)
+        self.assertEqual(output_step[1].shape, expected_shape)
 
     def test_set_timesteps(self):
         scheduler = DDIMScheduler(
