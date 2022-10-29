@@ -45,12 +45,10 @@ class DDPMScheduler(nn.Module):
         num_train_timesteps: number of diffusion steps used to train the model.
         beta_start: the starting `beta` value of inference.
         beta_end: the final `beta` value.
-        beta_schedule:
-            the beta schedule, a mapping from a beta range to a sequence of betas for stepping the model. Choose from
-            `linear` or `scaled_linear`.
-        variance_type:
-            options to clip the variance used when adding noise to the denoised sample. Choose from `fixed_small`,
-            `fixed_large`, `learned` or `learned_range`.
+        beta_schedule: {``"linear"``, ``"scaled_linear"``}
+            the beta schedule, a mapping from a beta range to a sequence of betas for stepping the model.
+        variance_type: {``"fixed_small"``, ``"fixed_large"``, ``"learned"``, ``"learned_range"``}
+            options to clip the variance used when adding noise to the denoised sample.
         clip_sample: option to clip predicted sample between -1 and 1 for numerical stability.
     """
 
@@ -83,13 +81,16 @@ class DDPMScheduler(nn.Module):
         self.clip_sample = clip_sample
         self.variance_type = variance_type
 
+        # setable values
+        self.num_inference_steps = None
+        self.timesteps = torch.from_numpy(np.arange(0, num_train_timesteps)[::-1].copy())
+
     def set_timesteps(self, num_inference_steps: int, device: Union[str, torch.device] = None) -> None:
         """
         Sets the discrete timesteps used for the diffusion chain. Supporting function to be run before inference.
 
         Args:
-            num_inference_steps:
-                the number of diffusion steps used when generating samples with a pre-trained model.
+            num_inference_steps: number of diffusion steps used when generating samples with a pre-trained model.
             device: target device to put the data.
         """
         num_inference_steps = min(self.num_train_timesteps, num_inference_steps)
@@ -104,11 +105,11 @@ class DDPMScheduler(nn.Module):
         Compute the variance.
 
         Args:
-            timestep: current timestep
-            predicted_variance:
+            timestep: current timestep.
+            predicted_variance: variance predicted by the model.
 
         Returns:
-            Returns the predicted variance
+            Returns the variance
         """
         alpha_prod_t = self.alphas_cumprod[timestep]
         alpha_prod_t_prev = self.alphas_cumprod[timestep - 1] if timestep > 0 else self.one
@@ -212,7 +213,7 @@ class DDPMScheduler(nn.Module):
         Args:
             original_samples: original samples
             noise: noise to add to samples
-            timesteps:
+            timesteps: timesteps tensor indicating the timestep to be computed for each sample.
 
         Returns:
             noisy_samples: sample with added noise
