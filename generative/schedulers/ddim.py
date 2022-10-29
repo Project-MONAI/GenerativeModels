@@ -29,7 +29,7 @@
 # limitations under the License.
 # =========================================================================
 
-from typing import Optional, Union
+from typing import Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -105,6 +105,7 @@ class DDIMScheduler(nn.Module):
 
         Args:
             num_inference_steps: number of diffusion steps used when generating samples with a pre-trained model.
+            device: target device to put the data.
         """
         self.num_inference_steps = num_inference_steps
         step_ratio = self.num_train_timesteps // self.num_inference_steps
@@ -131,7 +132,7 @@ class DDIMScheduler(nn.Module):
         sample: torch.Tensor,
         eta: float = 0.0,
         generator: Optional[torch.Generator] = None,
-    ) -> torch.Tensor:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Predict the sample at the previous timestep by reversing the SDE. Core function to propagate the diffusion
         process from the learned model outputs (most often the predicted noise).
@@ -148,7 +149,6 @@ class DDIMScheduler(nn.Module):
             pred_prev_sample: Predicted previous sample
             pred_original_sample: Predicted original sample
         """
-
         # See formulas (12) and (16) of DDIM paper https://arxiv.org/pdf/2010.02502.pdf
         # Ideally, read DDIM paper in-detail understanding
 
