@@ -129,10 +129,8 @@ for t in tqdm(scheduler.timesteps):
 
     # 2. compute previous image: x_t -> x_t-1
     image, _ = scheduler.step(model_output, t, image)
-    if t % 200 == 0:
+    if t % 100 == 0:
         intermediary.append(image)
-
-intermediary.append(image)
 
 plt.imshow(image[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
 plt.axis("off")
@@ -140,6 +138,7 @@ plt.show()
 
 chain = torch.concat(intermediary, dim=-1)
 plt.imshow(chain[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
+plt.tight_layout()
 plt.axis("off")
 plt.show()
 
