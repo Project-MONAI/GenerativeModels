@@ -121,6 +121,7 @@ image = torch.randn(
 image = image.to(device)
 scheduler.set_timesteps(1000)
 
+intermediary = []
 for t in tqdm(scheduler.timesteps):
     # 1. predict noise model_output
     with torch.no_grad():
@@ -128,7 +129,18 @@ for t in tqdm(scheduler.timesteps):
 
     # 2. compute previous image: x_t -> x_t-1
     image, _ = scheduler.step(model_output, t, image)
+    if t % 200 == 0:
+        intermediary.append(image)
+
+intermediary.append(image)
 
 plt.imshow(image[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
 plt.axis("off")
 plt.show()
+
+chain = torch.concat(intermediary, dim=-1)
+plt.imshow(chain[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
+plt.axis("off")
+plt.show()
+
+# TODO: Get fidelity and variability metrics
