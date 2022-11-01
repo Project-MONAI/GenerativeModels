@@ -38,6 +38,13 @@ class TestTverskyLoss(unittest.TestCase):
         result = loss(torch.randn(input_shape), torch.randn(target_shape))
         self.assertEqual(result.shape, torch.Size([]))
 
+    @parameterized.expand(TEST_CASES)
+    def test_identical_input(self, input_param, input_shape, target_shape):
+        loss = PerceptualLoss(**input_param)
+        tensor = torch.randn(input_shape)
+        result = loss(tensor, tensor)
+        self.assertEqual(result, torch.Tensor([0.0]))
+
     def test_true_3d(self):
         with self.assertRaises(NotImplementedError):
             PerceptualLoss(spatial_dims=3, is_fake_3d=False)
