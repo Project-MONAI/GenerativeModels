@@ -31,7 +31,7 @@ TEST_CASES = [
 ]
 
 
-class TestTverskyLoss(unittest.TestCase):
+class TestPerceptualLoss(unittest.TestCase):
     @parameterized.expand(TEST_CASES)
     def test_shape(self, input_param, input_shape, target_shape):
         loss = PerceptualLoss(**input_param)
