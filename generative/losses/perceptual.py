@@ -113,6 +113,9 @@ class PerceptualLoss(nn.Module):
             input: the shape should be BNHW[D].
             target: the shape should be BNHW[D].
         """
+        if target.shape != input.shape:
+            raise ValueError(f"ground truth has differing shape ({target.shape}) from input ({input.shape})")
+
         if self.spatial_dims == 2:
             loss = self.perceptual_function(input, target)
         elif self.spatial_dims == 3 and self.is_fake_3d:
