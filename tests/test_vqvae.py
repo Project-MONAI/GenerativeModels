@@ -12,11 +12,11 @@
 import unittest
 
 import torch
-from parameterized import parameterized
-
 from monai.networks import eval_mode
-from generative.networks.nets.vqvae import VQVAE
+from parameterized import parameterized
 from tests.utils import test_script_save
+
+from generative.networks.nets.vqvae import VQVAE
 
 CASES_2D = CASES_3D = []
 # Number of downsamplings
@@ -35,11 +35,11 @@ for no_levels in [2, 4]:
                                 "spatial_dims": 2,
                                 "in_channels": in_channels,
                                 "out_channels": in_channels,
-                                "no_levels": no_levels,
+                                "num_levels": no_levels,
                                 "downsample_parameters": [(2, 4, 1, 1)] * no_levels,
                                 "upsample_parameters": [(2, 4, 1, 1, 0)] * no_levels,
-                                "no_res_layers": 1,
-                                "no_channels": 8,
+                                "num_res_layers": 1,
+                                "num_channels": 8,
                                 "num_embeddings": 2048,
                                 "embedding_dim": embedding_dim,
                                 "embedding_init": "normal",
@@ -62,11 +62,11 @@ for no_levels in [2, 4]:
                                 "spatial_dims": 3,
                                 "in_channels": in_channels,
                                 "out_channels": in_channels,
-                                "no_levels": no_levels,
+                                "num_levels": no_levels,
                                 "downsample_parameters": [(2, 4, 1, 1)] * no_levels,
                                 "upsample_parameters": [(2, 4, 1, 1, 0)] * no_levels,
-                                "no_res_layers": 1,
-                                "no_channels": 8,
+                                "num_res_layers": 1,
+                                "num_channels": 8,
                                 "num_embeddings": 2048,
                                 "embedding_dim": embedding_dim,
                                 "embedding_init": "normal",
@@ -89,11 +89,11 @@ TEST_CASE_FAIL = {
     "spatial_dims": 3,
     "in_channels": 1,
     "out_channels": 1,
-    "no_levels": 3,
+    "num_levels": 3,
     "downsample_parameters": [(2, 4, 1, 1)] * 2,
     "upsample_parameters": [(2, 4, 1, 1, 0)] * 4,
-    "no_res_layers": 1,
-    "no_channels": 8,
+    "num_res_layers": 1,
+    "num_channels": 8,
     "num_embeddings": 2048,
     "embedding_dim": 32,
     "embedding_init": "normal",
@@ -110,11 +110,11 @@ TEST_LATENT_SHAPE = {
     "spatial_dims": 2,
     "in_channels": 1,
     "out_channels": 1,
-    "no_levels": 4,
+    "num_levels": 4,
     "downsample_parameters": [(2, 4, 1, 1)] * 4,
     "upsample_parameters": [(2, 4, 1, 1, 0)] * 4,
-    "no_res_layers": 1,
-    "no_channels": 8,
+    "num_res_layers": 1,
+    "num_channels": 8,
     "num_embeddings": 2048,
     "embedding_dim": 32,
     "embedding_init": "normal",
@@ -144,11 +144,11 @@ class TestVQVAE(unittest.TestCase):
                 "spatial_dims": 2,
                 "in_channels": 1,
                 "out_channels": 1,
-                "no_levels": 4,
+                "num_levels": 4,
                 "downsample_parameters": [(2, 4, 1, 1)] * 4,
                 "upsample_parameters": [(2, 4, 1, 1, 0)] * 4,
-                "no_res_layers": 1,
-                "no_channels": 256,
+                "num_res_layers": 1,
+                "num_channels": 256,
                 "num_embeddings": 2048,
                 "embedding_dim": 32,
                 "embedding_init": "normal",
@@ -177,6 +177,15 @@ class TestVQVAE(unittest.TestCase):
             latent = net.encode(test_data)
 
         self.assertEqual(latent.shape, (2, 32, 16, 16))
+
+    def test_quantized_shape(self):
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        net = VQVAE(**TEST_LATENT_SHAPE).to(device)
+        test_data = torch.randn(2, 1, 256, 256).to(device)
+        with eval_mode(net):
+            latent = net.index_quantize(test_data)
+
+        self.assertEqual(latent.shape, (2, 16, 16))
 
 
 if __name__ == "__main__":

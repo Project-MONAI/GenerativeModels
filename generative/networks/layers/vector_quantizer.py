@@ -223,4 +223,6 @@ class VectorQuantizer(torch.nn.Module):
         return self.quantizer.embed(embedding_indices=embedding_indices)
 
     def quantize(self, encodings: torch.Tensor) -> torch.Tensor:
-        _, _, encoding_indices = self.impl(encodings, self.decay, self.commitment_cost)
+        _, _, encoding_indices = self.quantizer(encodings)
+
+        return encoding_indices

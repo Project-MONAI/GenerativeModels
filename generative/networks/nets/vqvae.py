@@ -18,10 +18,10 @@ from monai.networks.layers import Act
 
 from generative.networks.layers.vector_quantizer import EMAQuantizer, VectorQuantizer
 
-__all__ = ["ResidualUnit", "VQVAE"]
+__all__ = ["VQVAE"]
 
 
-class ResidualUnit(nn.Module):
+class VQVAEResidualUnit(nn.Module):
     """
     Implementation of the ResidualLayer used in the VQVAE network as originally used in Morphology-preserving
     Autoregressive 3D Generative Modelling of the Brain by Tudosiu et al. (https://arxiv.org/pdf/2209.03177.pdf) and
@@ -48,7 +48,6 @@ class ResidualUnit(nn.Module):
         act: Optional[Union[Tuple, str]] = "RELU",
         dropout: Optional[Union[Tuple, str, float]] = None,
         dropout_dim: Optional[int] = 1,
-        groups: int = 1,
         bias: bool = True,
     ) -> None:
         super().__init__()
@@ -60,7 +59,6 @@ class ResidualUnit(nn.Module):
         self.act = act
         self.dropout = dropout
         self.dropout_dim = dropout_dim
-        self.groups = groups
         self.bias = bias
 
         self.conv1 = Convolution(
@@ -102,7 +100,7 @@ class VQVAE(nn.Module):
         spatial_dims: number of spatial spatial_dims.
         in_channels: number of input channels.
         out_channels: number of output channels.
-        no_levels: number of levels that the network has. Defaults to 3.
+        num_levels: number of levels that the network has. Defaults to 3.
         downsample_parameters: A Tuple of Tuples for defining the downsampling convolutions. Each Tuple should hold the
             following information stride (int), kernel_size (int), dilation(int) and padding (int).
             Defaults to ((2,4,1,1),(2,4,1,1),(2,4,1,1)).
@@ -110,8 +108,8 @@ class VQVAE(nn.Module):
             following information stride (int), kernel_size (int), dilation(int), padding (int), output_padding (int).
             If use_subpixel_conv is True, only the stride will be used for the last conv as the scale_factor.
             Defaults to ((2,4,1,1,0),(2,4,1,1,0),(2,4,1,1,0)).
-        no_res_layers: number of sequential residual layers at each level. Defaults to 3.
-        no_channels: number of channels at the deepest level, besides that is no_channels//2 . Defaults to 192.
+        num_res_layers: number of sequential residual layers at each level. Defaults to 3.
+        num_channels: number of channels at the deepest level, besides that is num_channels//2 . Defaults to 192.
         num_embeddings: VectorQuantization number of atomic elements in the codebook. Defaults to 32.
         embedding_dim: VectorQuantization number of channels of the input and atomic elements. Defaults to 64.
         commitment_cost: VectorQuantization commitment_cost. Defaults to 0.25.
@@ -131,15 +129,15 @@ class VQVAE(nn.Module):
         spatial_dims: int,
         in_channels: int,
         out_channels: int,
-        no_levels: int = 3,
+        num_levels: int = 3,
         downsample_parameters: Tuple[Tuple[int, int, int, int], ...] = ((2, 4, 1, 1), (2, 4, 1, 1), (2, 4, 1, 1)),
         upsample_parameters: Tuple[Tuple[int, int, int, int, int], ...] = (
             (2, 4, 1, 1, 0),
             (2, 4, 1, 1, 0),
             (2, 4, 1, 1, 0),
         ),
-        no_res_layers: int = 3,
-        no_channels: int = 192,
+        num_res_layers: int = 3,
+        num_channels: int = 192,
         num_embeddings: int = 32,
         embedding_dim: int = 64,
         embedding_init: str = "normal",
@@ -158,16 +156,16 @@ class VQVAE(nn.Module):
         self.out_channels = out_channels
         self.spatial_dims = spatial_dims
 
-        assert no_levels == len(downsample_parameters) and no_levels == len(upsample_parameters), (
+        assert num_levels == len(downsample_parameters) and num_levels == len(upsample_parameters), (
             f"downsample_parameters, upsample_parameters must have the same number of elements as no_levels. "
-            f"But got {len(downsample_parameters)} and {len(upsample_parameters)}, instead of {no_levels}."
+            f"But got {len(downsample_parameters)} and {len(upsample_parameters)}, instead of {num_levels}."
         )
 
-        self.no_levels = no_levels
+        self.num_levels = num_levels
         self.downsample_parameters = downsample_parameters
         self.upsample_parameters = upsample_parameters
-        self.no_res_layers = no_res_layers
-        self.no_channels = no_channels
+        self.num_res_layers = num_res_layers
+        self.num_channels = num_channels
 
         self.dropout = dropout
         self.act = act
@@ -191,12 +189,12 @@ class VQVAE(nn.Module):
     def construct_encoder(self) -> torch.nn.Sequential:
         encoder = []
 
-        for idx in range(self.no_levels):
+        for idx in range(self.num_levels):
             encoder.append(
                 Convolution(
                     spatial_dims=self.spatial_dims,
-                    in_channels=self.in_channels if idx == 0 else self.no_channels // 2,
-                    out_channels=self.no_channels // (2 if idx != self.no_levels - 1 else 1),
+                    in_channels=self.in_channels if idx == 0 else self.num_channels // 2,
+                    out_channels=self.num_channels // (2 if idx != self.num_levels - 1 else 1),
                     strides=self.downsample_parameters[idx][0],
                     kernel_size=self.downsample_parameters[idx][1],
                     adn_ordering=self.adn_ordering,
@@ -214,29 +212,24 @@ class VQVAE(nn.Module):
                 )
             )
 
-            encoder.append(
-                nn.Sequential(
-                    *[
-                        ResidualUnit(
-                            spatial_dims=self.spatial_dims,
-                            no_channels=self.no_channels // (2 if idx != self.no_levels - 1 else 1),
-                            no_res_channels=self.no_channels // (2 if idx != self.no_levels - 1 else 1),
-                            adn_ordering=self.adn_ordering,
-                            act=self.act,
-                            dropout=self.dropout,
-                            dropout_dim=1,
-                            groups=1,
-                            bias=True,
-                        )
-                        for _ in range(self.no_res_layers)
-                    ]
+            for _ in range(self.num_res_layers):
+                encoder.append(
+                    VQVAEResidualUnit(
+                        spatial_dims=self.spatial_dims,
+                        no_channels=self.num_channels // (2 if idx != self.num_levels - 1 else 1),
+                        no_res_channels=self.num_channels // (2 if idx != self.num_levels - 1 else 1),
+                        adn_ordering=self.adn_ordering,
+                        act=self.act,
+                        dropout=self.dropout,
+                        dropout_dim=1,
+                        bias=True,
+                    )
                 )
-            )
 
         encoder.append(
             Convolution(
                 spatial_dims=self.spatial_dims,
-                in_channels=self.no_channels,
+                in_channels=self.num_channels,
                 out_channels=self.embedding_dim,
                 strides=1,
                 kernel_size=3,
@@ -276,7 +269,7 @@ class VQVAE(nn.Module):
             Convolution(
                 spatial_dims=self.spatial_dims,
                 in_channels=self.embedding_dim,
-                out_channels=self.no_channels,
+                out_channels=self.num_channels,
                 strides=1,
                 kernel_size=3,
                 adn_ordering=self.adn_ordering,
@@ -292,42 +285,37 @@ class VQVAE(nn.Module):
             )
         ]
 
-        for idx in range(self.no_levels):
-            decoder.append(
-                nn.Sequential(
-                    *[
-                        ResidualUnit(
-                            spatial_dims=self.spatial_dims,
-                            no_channels=self.no_channels // (1 if idx == 0 else 2),
-                            no_res_channels=self.no_channels // (1 if idx == 0 else 2),
-                            adn_ordering=self.adn_ordering,
-                            act=self.act,
-                            dropout=self.dropout,
-                            dropout_dim=1,
-                            groups=1,
-                            bias=True,
-                        )
-                        for _ in range(self.no_res_layers)
-                    ]
+        for idx in range(self.num_levels):
+            for _ in range(self.num_res_layers):
+                decoder.append(
+                    VQVAEResidualUnit(
+                        spatial_dims=self.spatial_dims,
+                        no_channels=self.num_channels // (1 if idx == 0 else 2),
+                        no_res_channels=self.num_channels // (1 if idx == 0 else 2),
+                        adn_ordering=self.adn_ordering,
+                        act=self.act,
+                        dropout=self.dropout,
+                        dropout_dim=1,
+                        bias=True,
+                    )
                 )
-            )
 
             decoder.append(
                 Convolution(
                     spatial_dims=self.spatial_dims,
-                    in_channels=self.no_channels // (1 if idx == 0 else 2),
-                    out_channels=self.out_channels if idx == self.no_levels - 1 else self.no_channels // 2,
+                    in_channels=self.num_channels // (1 if idx == 0 else 2),
+                    out_channels=self.out_channels if idx == self.num_levels - 1 else self.num_channels // 2,
                     strides=self.upsample_parameters[idx][0],
                     kernel_size=self.upsample_parameters[idx][1],
                     adn_ordering=self.adn_ordering,
                     act=self.act,
-                    dropout=self.dropout if idx != self.no_levels - 1 else None,
+                    dropout=self.dropout if idx != self.num_levels - 1 else None,
                     norm=None,
                     dropout_dim=1,
                     dilation=self.upsample_parameters[idx][2],
                     groups=1,
                     bias=True,
-                    conv_only=idx == self.no_levels - 1,
+                    conv_only=idx == self.num_levels - 1,
                     is_transposed=True,
                     padding=self.upsample_parameters[idx][3],
                     output_padding=self.upsample_parameters[idx][4],
