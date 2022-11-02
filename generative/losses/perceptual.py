@@ -49,7 +49,7 @@ class PerceptualLoss(nn.Module):
             raise NotImplementedError("Perceptual loss is implemented only in 2D and 3D.")
 
         if spatial_dims == 3 and is_fake_3d is False:
-            raise NotImplementedError("True 3D perceptual loss is not implemented.")
+            raise NotImplementedError("True 3D perceptual loss is not implemented. Try setting is_fake_3d=False")
 
         self.spatial_dims = spatial_dims
         self.perceptual_function = LPIPS(
