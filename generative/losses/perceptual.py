@@ -23,17 +23,17 @@ from lpips import LPIPS
 class PerceptualLoss(nn.Module):
     """
     Perceptual loss using features from pretrained deep neural networks trained. The function supports networks
-    pretrained on IMageNet that use the LPIPS approach from: Zhang, et al. "The unreasonable effectiveness of deep
+    pretrained on ImageNet that use the LPIPS approach from: Zhang, et al. "The unreasonable effectiveness of deep
     features as a perceptual metric." https://arxiv.org/abs/1801.03924
     The fake 3D implementation is based on a 2.5D approach where we calculate the 2D perceptual on slices from the
     three axis.
 
     Args:
         spatial_dims: number of spatial dimensions.
-        network_type: {``"squeeze"``, ``"vgg"``, ``"alex"``}
-            Specifies the network architecture to use. Defaults to ``"squeeze"``.
-        is_fake_3d: if True use 2.5D approach for a 3D perceptual loss
-        n_slices_per_axis: number of slices per axis used in the 2.5D approach
+        network_type: {``"alex"``, ``"vgg"``, ``"squeeze"``}
+            Specifies the network architecture to use. Defaults to ``"alex"``.
+        is_fake_3d: if True use 2.5D approach for a 3D perceptual loss.
+        slices_per_axis_ratio: ratio of how many slices per axis are used in the 2.5D approach.
     """
 
     def __init__(
@@ -41,7 +41,7 @@ class PerceptualLoss(nn.Module):
         spatial_dims: int,
         network_type: str = "alex",
         is_fake_3d: bool = True,
-        n_slices_per_axis: int = 1,
+        slices_per_axis_ratio: float = 0.5,
     ):
         super().__init__()
 
@@ -58,12 +58,11 @@ class PerceptualLoss(nn.Module):
             verbose=False,
         )
         self.is_fake_3d = is_fake_3d
-        self.n_slices_per_axis = n_slices_per_axis
+        self.slices_per_axis_ratio = slices_per_axis_ratio
 
     def _calculate_fake_3d_loss(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """
-        Calculating perceptual loss after one spatial axis is batchified according to permute dims and we drop random
-         slices as per self.keep_ratio.
+        Calculating perceptual loss after one spatial axis is batchified according to permute dims.
         """
 
         # Sagittal axis
@@ -73,7 +72,8 @@ class PerceptualLoss(nn.Module):
         target_2d_slices = target.float().permute(0, 2, 1, 3, 4).contiguous()
         target_2d_slices = target_2d_slices.view(-1, target.shape[1], target.shape[3], target.shape[4])
 
-        indices = torch.randperm(input_2d_slices.shape[0])[: self.n_slices_per_axis]
+        num_slices = input_2d_slices.shape[0]
+        indices = torch.randperm(num_slices)[: int(num_slices * self.slices_per_axis_ratio)]
         input_2d_slices = input_2d_slices[indices]
         target_2d_slices = target_2d_slices[indices]
 
@@ -86,7 +86,8 @@ class PerceptualLoss(nn.Module):
         target_2d_slices = target.float().permute(0, 4, 1, 2, 3).contiguous()
         target_2d_slices = target_2d_slices.view(-1, target.shape[1], target.shape[2], target.shape[3])
 
-        indices = torch.randperm(input_2d_slices.shape[0])[: self.n_slices_per_axis]
+        num_slices = input_2d_slices.shape[0]
+        indices = torch.randperm(num_slices)[: int(num_slices * self.slices_per_axis_ratio)]
         input_2d_slices = input_2d_slices[indices]
         target_2d_slices = target_2d_slices[indices]
 
@@ -99,7 +100,8 @@ class PerceptualLoss(nn.Module):
         target_2d_slices = target.float().permute(0, 3, 1, 2, 4).contiguous()
         target_2d_slices = target_2d_slices.view(-1, target.shape[1], target.shape[2], target.shape[4])
 
-        indices = torch.randperm(input_2d_slices.shape[0])[: self.n_slices_per_axis]
+        num_slices = input_2d_slices.shape[0]
+        indices = torch.randperm(num_slices)[: int(num_slices * self.slices_per_axis_ratio)]
         input_2d_slices = input_2d_slices[indices]
         target_2d_slices = target_2d_slices[indices]
 

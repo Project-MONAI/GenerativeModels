@@ -24,7 +24,7 @@ TEST_CASES = [
         (2, 1, 64, 64),
     ],
     [
-        {"spatial_dims": 3, "network_type": "squeeze", "is_fake_3d": True, "n_slices_per_axis": 20},
+        {"spatial_dims": 3, "network_type": "squeeze", "is_fake_3d": True, "slices_per_axis_ratio": 0.1},
         (2, 1, 64, 64, 64),
         (2, 1, 64, 64, 64),
     ],
