@@ -9,16 +9,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Tuple
+
 import torch
 import torch.nn as nn
 from lpips import LPIPS
 
 
-# TODO: Check difference between this and MONAI's DeepSupervisionLoss (when not using LPIPS)
-#  https://github.com/Project-MONAI/MONAI/blob/06cb0fa3b4aa04744cbf9eff46f5860a7681b25f/monai/losses/ds_loss.py#L21
 # TODO: Define model_path for lpips networks.
 # TODO: Add MedicalNet for true 3D computation (https://github.com/Tencent/MedicalNet)
-# TODO: Add RadImageNet for 2D computaion with networks pretrained using radiological images
+# TODO: Add RadImageNet for 2D computation with networks pretrained using radiological images
 #  (https://github.com/BMEII-AI/RadImageNet)
 class PerceptualLoss(nn.Module):
     """
@@ -33,7 +33,7 @@ class PerceptualLoss(nn.Module):
         network_type: {``"alex"``, ``"vgg"``, ``"squeeze"``}
             Specifies the network architecture to use. Defaults to ``"alex"``.
         is_fake_3d: if True use 2.5D approach for a 3D perceptual loss.
-        slices_per_axis_ratio: ratio of how many slices per axis are used in the 2.5D approach.
+        fake_3d_ratio: ratio of how many slices per axis are used in the 2.5D approach.
     """
 
     def __init__(
@@ -41,7 +41,7 @@ class PerceptualLoss(nn.Module):
         spatial_dims: int,
         network_type: str = "alex",
         is_fake_3d: bool = True,
-        slices_per_axis_ratio: float = 0.5,
+        fake_3d_ratio: float = 0.5,
     ):
         super().__init__()
 
@@ -58,56 +58,55 @@ class PerceptualLoss(nn.Module):
             verbose=False,
         )
         self.is_fake_3d = is_fake_3d
-        self.slices_per_axis_ratio = slices_per_axis_ratio
+        self.fake_3d_ratio = fake_3d_ratio
 
-    def _calculate_fake_3d_loss(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    def _calculate_axis_loss(self, input: torch.Tensor, target: torch.Tensor, spatial_axis: int) -> torch.Tensor:
         """
-        Calculating perceptual loss after one spatial axis is batchified according to permute dims.
+        Calculate perceptual loss in one of the axis used in the 2.5D approach. After the slices of one spatial axis
+        is transformed into different instances in the batch, we compute the loss using the 2D approach.
+
+        Args:
+            input: input 5D tensor. BNHWD
+            target: target 5D tensor. BNHWD
+            spatial_axis: spatial axis to obtain the 2D slices.
         """
 
-        # Sagittal axis
-        input_2d_slices = input.float().permute(0, 2, 1, 3, 4).contiguous()
-        input_2d_slices = input_2d_slices.view(-1, input.shape[1], input.shape[3], input.shape[4])
+        def batchify_axis(x: torch.Tensor, fake_3d_perm: Tuple) -> torch.Tensor:
+            """
+            Transform slices from one spatial axis into different instances in the batch.
+            """
+            slices = x.float().permute((0,) + fake_3d_perm).contiguous()
+            slices = slices.view(-1, x.shape[fake_3d_perm[1]], x.shape[fake_3d_perm[2]], x.shape[fake_3d_perm[3]])
 
-        target_2d_slices = target.float().permute(0, 2, 1, 3, 4).contiguous()
-        target_2d_slices = target_2d_slices.view(-1, target.shape[1], target.shape[3], target.shape[4])
+            return slices
 
-        num_slices = input_2d_slices.shape[0]
-        indices = torch.randperm(num_slices)[: int(num_slices * self.slices_per_axis_ratio)]
-        input_2d_slices = input_2d_slices[indices]
-        target_2d_slices = target_2d_slices[indices]
+        preserved_axes = [2, 3, 4]
+        preserved_axes.remove(spatial_axis)
 
-        loss_sagital = torch.mean(self.perceptual_function(input_2d_slices, target_2d_slices))
+        channel_axis = 1
+        input_slices = batchify_axis(
+            x=input,
+            fake_3d_perm=(
+                spatial_axis,
+                channel_axis,
+            )
+            + tuple(preserved_axes),
+        )
+        indices = torch.randperm(input_slices.shape[0])[: int(input_slices.shape[0] * self.fake_3d_ratio)]
+        input_slices = input_slices[indices]
+        target_slices = batchify_axis(
+            x=target,
+            fake_3d_perm=(
+                spatial_axis,
+                channel_axis,
+            )
+            + tuple(preserved_axes),
+        )
+        target_slices = target_slices[indices]
 
-        # Axial axis
-        input_2d_slices = input.float().permute(0, 4, 1, 2, 3).contiguous()
-        input_2d_slices = input_2d_slices.view(-1, input.shape[1], input.shape[2], input.shape[3])
+        axis_loss = torch.mean(self.perceptual_function(input_slices, target_slices))
 
-        target_2d_slices = target.float().permute(0, 4, 1, 2, 3).contiguous()
-        target_2d_slices = target_2d_slices.view(-1, target.shape[1], target.shape[2], target.shape[3])
-
-        num_slices = input_2d_slices.shape[0]
-        indices = torch.randperm(num_slices)[: int(num_slices * self.slices_per_axis_ratio)]
-        input_2d_slices = input_2d_slices[indices]
-        target_2d_slices = target_2d_slices[indices]
-
-        loss_axial = torch.mean(self.perceptual_function(input_2d_slices, target_2d_slices))
-
-        # Coronal axis
-        input_2d_slices = input.float().permute(0, 3, 1, 2, 4).contiguous()
-        input_2d_slices = input_2d_slices.view(-1, input.shape[1], input.shape[2], input.shape[4])
-
-        target_2d_slices = target.float().permute(0, 3, 1, 2, 4).contiguous()
-        target_2d_slices = target_2d_slices.view(-1, target.shape[1], target.shape[2], target.shape[4])
-
-        num_slices = input_2d_slices.shape[0]
-        indices = torch.randperm(num_slices)[: int(num_slices * self.slices_per_axis_ratio)]
-        input_2d_slices = input_2d_slices[indices]
-        target_2d_slices = target_2d_slices[indices]
-
-        loss_coronal = torch.mean(self.perceptual_function(input_2d_slices, target_2d_slices))
-
-        return loss_sagital + loss_axial + loss_coronal
+        return axis_loss
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """
@@ -121,6 +120,10 @@ class PerceptualLoss(nn.Module):
         if self.spatial_dims == 2:
             loss = self.perceptual_function(input, target)
         elif self.spatial_dims == 3 and self.is_fake_3d:
-            loss = self._calculate_fake_3d_loss(input, target)
+            # Compute 2.5D approach
+            loss_sagittal = self._calculate_axis_loss(input, target, spatial_axis=2)
+            loss_coronal = self._calculate_axis_loss(input, target, spatial_axis=3)
+            loss_axial = self._calculate_axis_loss(input, target, spatial_axis=4)
+            loss = loss_sagittal + loss_axial + loss_coronal
 
         return torch.mean(loss)
