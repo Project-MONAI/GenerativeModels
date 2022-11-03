@@ -13,6 +13,7 @@ from typing import Tuple, Union
 
 import torch
 from monai.metrics import CumulativeIterationMetric
+from monai.metrics.utils import do_metric_reduction
 from monai.utils import MetricReduction
 from torchvision.models import Inception_V3_Weights, inception_v3
 
@@ -23,6 +24,7 @@ RADIMAGENET_WEIGHTS = "RadImageNet-InceptionV3_notop.h5"
 # TODO: get a better name for parameters
 # TODO: Transform radimagenet's Keras weight to Torch weights following https://github.com/BMEII-AI/RadImageNet/issues/3
 # TODO: Create Mednet3D
+# TODO: Remove CumulativeIterationMetric
 class FID(CumulativeIterationMetric):
     """
     Frechet Inception Distance (FID). FID can compare two data distributions with different number of samples.
@@ -49,29 +51,45 @@ class FID(CumulativeIterationMetric):
         # TODO: Download pretrained network.
         self.network = None
         if extract_features:
-            if feature_extractor == "imagenet:":
-                self.network = inception_v3(Inception_V3_Weights.IMAGENET1K_V1)
+            if feature_extractor == "imagenet":
+                weights = Inception_V3_Weights.IMAGENET1K_V1
+                self.network = inception_v3(weights=weights).eval()
             elif feature_extractor == "radimagenet":
-                self.network = inception_v3()
+                self.network = inception_v3().eval()
             elif feature_extractor == "medicalnet":
                 pass
 
-    def _compute_tensor(self, y_pred: torch.Tensor, y: torch.Tensor):
+    def _compute_tensor(self, y_pred: torch.Tensor, y: torch.Tensor):  # type: ignore
         """
         Args:
             y_pred:
             y:
         """
-        pass
+        # check dimension
+        dims = y_pred.ndimension()
+        if dims < 2:
+            raise ValueError("y_pred should have at least two dimensions.")
+
+        #     TODO: GET features
+        y_pred_features = None
+        y_features = None
+
+        return compute_fid_from_features(y_pred_features, y_features)
 
     def aggregate(self, reduction: Union[MetricReduction, str, None] = None):
         """
         Args:
-            reduction:
-
-        Returns:
+            reduction: define mode of reduction to the metrics, will only apply reduction on `not-nan` values,
+                available reduction modes: {``"none"``, ``"mean"``, ``"sum"``, ``"mean_batch"``, ``"sum_batch"``,
+                ``"mean_channel"``, ``"sum_channel"``}, default to `self.reduction`. if "none", will not do reduction.
         """
-        pass
+        data = self.get_buffer()
+        if not isinstance(data, torch.Tensor):
+            raise ValueError("The data to aggregate must be a PyTorch Tensor.")
+
+        # do metric reduction
+        f, not_nans = do_metric_reduction(data, reduction or self.reduction)
+        return (f, not_nans) if self.get_not_nans else f
 
 
 def _sqrtm_newton_schulz(matrix: torch.Tensor, num_iters: int = 100) -> Tuple[torch.Tensor, torch.Tensor]:
