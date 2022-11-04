@@ -10,4 +10,5 @@
 # limitations under the License.
 
 from .autoencoderkl import AutoencoderKL
+from .ddpm_model import DDPM
 from .diffusion_model_unet import DiffusionModelUNet
