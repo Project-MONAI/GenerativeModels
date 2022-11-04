@@ -45,7 +45,7 @@ from monai.data import CacheDataset, DataLoader
 from monai.utils import first, set_determinism
 from tqdm import tqdm
 
-from generative.networks.nets import DiffusionModelUNet
+from generative.networks.nets import DDPM, DiffusionModelUNet
 from generative.schedulers import DDPMScheduler
 
 print_config()
@@ -124,7 +124,7 @@ plt.show()
 # %%
 device = torch.device("cuda")
 
-model = DiffusionModelUNet(
+unet = DiffusionModelUNet(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
@@ -134,23 +134,25 @@ model = DiffusionModelUNet(
     channel_mult=[1, 2, 2],
     num_heads=1,
 )
-model.to(device)
+unet.to(device)
 
 scheduler = DDPMScheduler(
     num_train_timesteps=1000,
 )
 
-optimizer = torch.optim.Adam(model.parameters(), 2.5e-5)
+optimizer = torch.optim.Adam(unet.parameters(), 2.5e-5)
 
+# Combine model and scheduler in a DDPM class
+ddpm = DDPM(unet_network=unet, scheduler=scheduler)
 # %%
 # ### Model training
 # %%
 n_epochs = 10
-val_interval = 2
+val_interval = 5
 epoch_loss_list = []
 val_epoch_loss_list = []
 for epoch in range(n_epochs):
-    model.train()
+    ddpm.train()
     epoch_loss = 0
     progress_bar = tqdm(enumerate(train_loader), total=len(train_loader))
     progress_bar.set_description(f"Epoch {epoch}")
@@ -163,12 +165,12 @@ for epoch in range(n_epochs):
 
         # Add noise to the minibatch images with intensity defined by the scheduler and timesteps
         noise = torch.randn_like(images).to(device)
-        noisy_image = scheduler.add_noise(original_samples=images, noise=noise, timesteps=timesteps)
+        noisy_image = ddpm.add_noise(original_samples=images, noise=noise, timesteps=timesteps)
 
         # In this example, we are parametrising our DDPM to learn the added noise (epsilon).
         # For this reason, we are using our network to predict the added noise and then using L1 loss to predict
         # its performance.
-        noise_pred = model(x=noisy_image, timesteps=timesteps)
+        noise_pred = ddpm(x=noisy_image, timesteps=timesteps)
         loss = F.l1_loss(noise_pred.float(), noise.float())
 
         loss.backward()
@@ -183,7 +185,7 @@ for epoch in range(n_epochs):
     epoch_loss_list.append(epoch_loss / (step + 1))
 
     if (epoch + 1) % val_interval == 0:
-        model.eval()
+        ddpm.eval()
         val_epoch_loss = 0
         progress_bar = tqdm(enumerate(val_loader), total=len(train_loader))
         progress_bar.set_description(f"Epoch {epoch} - Validation set")
@@ -192,8 +194,8 @@ for epoch in range(n_epochs):
             timesteps = torch.randint(0, scheduler.num_train_timesteps, (images.shape[0],), device=device).long()
             noise = torch.randn_like(images).to(device)
             with torch.no_grad():
-                noisy_image = scheduler.add_noise(original_samples=images, noise=noise, timesteps=timesteps)
-                noise_pred = model(x=noisy_image, timesteps=timesteps)
+                noisy_image = ddpm.add_noise(original_samples=images, noise=noise, timesteps=timesteps)
+                noise_pred = ddpm(x=noisy_image, timesteps=timesteps)
                 val_loss = F.l1_loss(noise_pred.float(), noise.float())
 
             val_epoch_loss += val_loss.item()
@@ -205,19 +207,10 @@ for epoch in range(n_epochs):
         val_epoch_loss_list.append(val_epoch_loss / (step + 1))
 
         # Sampling image during training
-        image = torch.randn((1, 1, 64, 64))
-        image = image.to(device)
-        scheduler.set_timesteps(1000)
-        progress_bar = tqdm(scheduler.timesteps)
-        progress_bar.set_description(f"Epoch {epoch} - Sampling...")
-        for t in progress_bar:
-            # 1. predict noise model_output
-            with torch.no_grad():
-                model_output = model(image, torch.asarray((t,)).to(device))
-            # 2. compute previous image: x_t -> x_t-1
-            image, _ = scheduler.step(model_output, t, image)
+        print(f"Epoch {epoch} - Sampling...")
+        sample = ddpm.sample(sample_shape=(1, 1, 64, 64), num_timesteps=1000, device=device)
 
-        plt.imshow(image[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
+        plt.imshow(sample[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
         plt.tight_layout()
         plt.axis("off")
         plt.show()
@@ -233,23 +226,11 @@ plt.show()
 # %%
 # ### Plotting sampling process along DDPM's Markov chain
 # %%
-model.eval()
-image = torch.randn(
-    (1, 1, 64, 64),
+ddpm.eval()
+sample, intermediary = ddpm.sample(
+    sample_shape=(1, 1, 64, 64), num_timesteps=1000, device=device, save_intermediates=True, intermediate_steps=100
 )
-image = image.to(device)
-scheduler.set_timesteps(1000)
 
-intermediary = []
-for t in tqdm(scheduler.timesteps):
-    # 1. predict noise model_output
-    with torch.no_grad():
-        model_output = model(image, torch.asarray((t,)).to(device))
-
-    # 2. compute previous image: x_t -> x_t-1
-    image, _ = scheduler.step(model_output, t, image)
-    if t % 100 == 0:
-        intermediary.append(image)
 
 chain = torch.concat(intermediary, dim=-1)
 plt.imshow(chain[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
