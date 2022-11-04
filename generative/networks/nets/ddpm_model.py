@@ -17,8 +17,6 @@ __all__ = ["DDPM"]
 
 
 # TODO: Discuss other methods that should be included
-
-
 class DDPM(nn.Module):
     """
     DDPM Model class. This class takes care of storing all components for the DDPM and handles methods for sampling.
