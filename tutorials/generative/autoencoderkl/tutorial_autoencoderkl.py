@@ -22,11 +22,9 @@
 
 # ## Set up environment using Colab
 
-# !pip install -q "monai-weekly==1.1.dev2239"
+# !pip install -q "monai-weekly[tqdm]==1.1.dev2239"
 # !pip install -q matplotlib
-# !pip install -q  torch>=1.7
-# !pip install numpy>=1.17
-# !pip install tqdm
+# !pip install -q einops
 # %matplotlib inline
 
 # ## Setup imports
@@ -70,8 +68,6 @@ print(root_dir)
 
 train_data = MedNISTDataset(root_dir=root_dir, section="training", download=True, seed=0)
 train_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "Hand"]
-# TODO: Add affine
-# TODO: Add correct flip
 image_size = 64
 train_transforms = transforms.Compose(
     [
