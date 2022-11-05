@@ -1,9 +1,19 @@
-""" Tutorial for training an unconditioned Latent Diffusion Model on MEDNIST
-Based on
-https://github.com/Project-MONAI/tutorials/blob/main/2d_registration/registration_mednist.ipynb
-https://github.com/Project-MONAI/tutorials/blob/main/2d_classification/mednist_tutorial.ipynb
-"""
-# %%
+# ---
+# jupyter:
+#   jupytext:
+#     formats: ipynb,py:percent
+#     text_representation:
+#       extension: .py
+#       format_name: percent
+#       format_version: '1.3'
+#       jupytext_version: 1.14.1
+#   kernelspec:
+#     display_name: Python 3
+#     language: python
+#     name: python3
+# ---
+
+# %% [markdown]
 # # Denoising Diffusion Probabilistic Models with MedNIST Dataset
 #
 # This tutorial illustrates how to use MONAI for training a denoising diffusion probabilistic model (DDPM)[1] to create
@@ -14,12 +24,15 @@ https://github.com/Project-MONAI/tutorials/blob/main/2d_classification/mednist_t
 # TODO: Add Open in Colab
 #
 # ## Setup environment
+
 # %%
 # !python -c "import monai" || pip install -q "monai-weekly[pillow, tqdm, einops]"
 # !python -c "import matplotlib" || pip install -q matplotlib
 # %matplotlib inline
-# %%
+
+# %% [markdown]
 # ## Setup imports
+
 # %%
 # Copyright 2020 MONAI Consortium
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -45,33 +58,42 @@ from monai.data import CacheDataset, DataLoader
 from monai.utils import first, set_determinism
 from tqdm import tqdm
 
+# TODO: Add right import reference after deployed
 from generative.networks.nets import DiffusionModelUNet
 from generative.schedulers import DDPMScheduler
 
 print_config()
-# %%
+
+# %% [markdown]
 # ## Setup data directory
 #
 # You can specify a directory with the MONAI_DATA_DIRECTORY environment variable.
+#
 # This allows you to save results and reuse downloads.
+#
 # If not specified a temporary directory will be used.
+
 # %%
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
 root_dir = tempfile.mkdtemp() if directory is None else directory
 print(root_dir)
 
-# %%
+# %% [markdown]
 # ## Set deterministic training for reproducibility
+
 # %%
 set_determinism(0)
-# %%
+
+# %% [markdown]
 # ## Setup MedNIST Dataset and training and validation dataloaders
 # In this tutorial, we will train our models on the MedNIST dataset available on MONAI
 # (https://docs.monai.io/en/stable/apps.html#monai.apps.MedNISTDataset). In order to train faster, we will select just
 # one of the available classes ("Hand"), resulting in a training set with 7999 2D images.
+
 # %%
 train_data = MedNISTDataset(root_dir=root_dir, section="training", download=True, seed=0)
 train_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "Hand"]
+
 # %%
 train_transforms = transforms.Compose(
     [
@@ -91,6 +113,7 @@ train_transforms = transforms.Compose(
 )
 train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
 train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=4)
+
 # %%
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, seed=0)
 val_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "Hand"]
@@ -103,8 +126,10 @@ val_transforms = transforms.Compose(
 )
 val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
 val_loader = DataLoader(val_ds, batch_size=128, shuffle=False, num_workers=4)
-# %%
+
+# %% [markdown]
 # ### Visualisation of the training images
+
 # %%
 check_data = first(train_loader)
 print(f"batch shape: {check_data['image'].shape}")
@@ -116,11 +141,13 @@ plt.imshow(image_visualisation, vmin=0, vmax=1, cmap="gray")
 plt.axis("off")
 plt.tight_layout()
 plt.show()
-# %%
+
+# %% [markdown]
 # ### Define network, scheduler and optimizer
 # At this step, we instantiate the MONAI components to create a DDPM, the UNET and the noise scheduler. We are using
 # the original ddpm scheduler containing 1000 timesteps in its Markov chain, and a 2D unet with attention mechanisms
 # in the 2nd and 4th levels, each with 1 attention head.
+
 # %%
 device = torch.device("cuda")
 
@@ -142,10 +169,11 @@ scheduler = DDPMScheduler(
 
 optimizer = torch.optim.Adam(model.parameters(), 2.5e-5)
 
-# %%
+# %% [markdown]
 # ### Model training
+
 # %%
-n_epochs = 25
+n_epochs = 50
 val_interval = 5
 epoch_loss_list = []
 val_epoch_loss_list = []
@@ -222,16 +250,18 @@ for epoch in range(n_epochs):
         plt.axis("off")
         plt.show()
 
-# %%
+# %% [markdown]
 # ### Learning curves
+
 # %%
 plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list)
 plt.plot(np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)), val_epoch_loss_list)
 plt.tight_layout()
 plt.show()
 
-# %%
+# %% [markdown]
 # ### Plotting sampling process along DDPM's Markov chain
+
 # %%
 model.eval()
 image = torch.randn(
