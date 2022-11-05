@@ -254,9 +254,21 @@ for epoch in range(n_epochs):
 # ### Learning curves
 
 # %%
-plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list)
-plt.plot(np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)), val_epoch_loss_list)
-plt.tight_layout()
+plt.style.use("seaborn-v0_8")
+plt.title("Learning Curves", fontsize=20)
+plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, color="C0", linewidth=2.0, label="Train")
+plt.plot(
+    np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
+    val_epoch_loss_list,
+    color="C1",
+    linewidth=2.0,
+    label="Validation",
+)
+plt.yticks(fontsize=12)
+plt.xticks(fontsize=12)
+plt.xlabel("Epochs", fontsize=16)
+plt.ylabel("Loss", fontsize=16)
+plt.legend(prop={"size": 14})
 plt.show()
 
 # %% [markdown]
@@ -282,6 +294,7 @@ for t in tqdm(scheduler.timesteps):
         intermediary.append(image)
 
 chain = torch.concat(intermediary, dim=-1)
+plt.style.use("default")
 plt.imshow(chain[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
 plt.tight_layout()
 plt.axis("off")
