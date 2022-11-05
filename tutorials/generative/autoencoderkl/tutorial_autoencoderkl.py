@@ -72,6 +72,7 @@ train_data = MedNISTDataset(root_dir=root_dir, section="training", download=True
 train_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "Hand"]
 # TODO: Add affine
 # TODO: Add correct flip
+image_size = 64
 train_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),
@@ -82,9 +83,9 @@ train_transforms = transforms.Compose(
             rotate_range=[(-np.pi / 36, np.pi / 36), (-np.pi / 36, np.pi / 36)],
             translate_range=[(-1, 1), (-1, 1)],
             scale_range=[(-0.05, 0.05), (-0.05, 0.05)],
-            spatial_size=[64, 64],
+            spatial_size=[image_size, image_size],
             padding_mode="zeros",
-            prob=1,
+            prob=0.5,
         ),
     ]
 )
@@ -98,7 +99,7 @@ check_data = first(train_loader)
 fig, ax = plt.subplots(nrows=1, ncols=3)
 for image_n in range(3):
     ax[image_n].imshow(check_data["image"][image_n, 0, :, :], cmap="gray")
-plt.axis("off")
+    ax[image_n].axis("off")
 
 # ### Download the validation set
 
@@ -126,7 +127,7 @@ model = AutoencoderKL(
     latent_channels=8,
     ch_mult=(1, 2, 3),
     num_res_blocks=1,
-    resolution=(64, 64),
+    resolution=(image_size, image_size),
     norm_num_groups=16,
     with_attention=False,
 )
@@ -138,10 +139,11 @@ model.to(device)
 kl_weight = 1e-6
 optimizer = torch.optim.Adam(model.parameters(), 1e-5)
 n_epochs = 50
-val_interval = 5
+val_interval = 10
 epoch_loss_list = []
 val_epoch_loss_list = []
 intermediary_images = []
+n_example_images = 4
 
 for epoch in range(n_epochs):
     model.train()
@@ -184,7 +186,7 @@ for epoch in range(n_epochs):
                 # get the first sammple from the first validation batch for visualisation
                 # purposes
                 if val_step == 1:
-                    intermediary_images.append(reconstruction[0, 0])
+                    intermediary_images.append(reconstruction[:n_example_images, 0])
 
                 l1_loss = F.l1_loss(reconstruction.float(), images.float())
 
@@ -209,8 +211,9 @@ progress_bar.close()
 # ### Visualise the loss
 
 plt.figure()
+val_samples = np.linspace(val_interval, n_epochs, int(n_epochs / val_interval))
 plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, label="Train")
-plt.plot(np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)), val_epoch_loss_list, label="Test")
+plt.plot(val_samples, val_epoch_loss_list, label="Validation")
 plt.xlabel("Epochs")
 plt.ylabel("Loss")
 plt.legend()
@@ -220,11 +223,11 @@ plt.close()
 
 # ### Visualise some reconstruction images
 
-# plot the reconstructions at each of the evaluation steps
-reconstructions = torch.concat(intermediary_images, dim=-1)
-plt.figure()
-plt.imshow(reconstructions.cpu(), vmin=0, vmax=1, cmap="gray")
-plt.tight_layout()
-plt.axis("off")
-plt.show()
-plt.close()
+# Plot every evaluation as a new line and example as columns
+fig, ax = plt.subplots(nrows=len(val_samples), ncols=1, sharey=True)
+for image_n in range(len(val_samples)):
+    reconstructions = torch.reshape(intermediary_images[image_n], (image_size * n_example_images, image_size)).T
+    ax[image_n].imshow(reconstructions.cpu(), cmap="gray")
+    ax[image_n].set_xticks([])
+    ax[image_n].set_yticks([])
+    ax[image_n].set_ylabel(f"Epoch {val_samples[image_n]:.0f}")
