@@ -63,7 +63,7 @@ print(root_dir)
 # %%
 # ## Set deterministic training for reproducibility
 # %%
-set_determinism(42)
+set_determinism(0)
 # %%
 # ## Setup MedNIST Dataset and training and validation dataloaders
 # In this tutorial, we will train our models on the MedNIST dataset available on MONAI
@@ -145,8 +145,8 @@ optimizer = torch.optim.Adam(model.parameters(), 2.5e-5)
 # %%
 # ### Model training
 # %%
-n_epochs = 10
-val_interval = 2
+n_epochs = 25
+val_interval = 5
 epoch_loss_list = []
 val_epoch_loss_list = []
 for epoch in range(n_epochs):
