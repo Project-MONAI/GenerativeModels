@@ -10,6 +10,7 @@
 # limitations under the License.
 
 import unittest
+from itertools import product
 
 import torch
 from monai.networks import eval_mode
@@ -18,71 +19,77 @@ from tests.utils import test_script_save
 
 from generative.networks.nets.vqvae import VQVAE
 
-CASES_2D = CASES_3D = []
-# Number of downsamplings
-for no_levels in [2, 4]:
-    # Embedding dimension
-    for embedding_dim in [16, 64]:
-        # Batch size
-        for batch_size in [1, 3]:
-            # Number of input channels
-            for in_channels in [1, 3]:
-                # Input shape
-                for d1 in [64, 256]:
-                    CASES_2D.append(
-                        [
-                            {
-                                "spatial_dims": 2,
-                                "in_channels": in_channels,
-                                "out_channels": in_channels,
-                                "num_levels": no_levels,
-                                "downsample_parameters": [(2, 4, 1, 1)] * no_levels,
-                                "upsample_parameters": [(2, 4, 1, 1, 0)] * no_levels,
-                                "num_res_layers": 1,
-                                "num_channels": 8,
-                                "num_embeddings": 2048,
-                                "embedding_dim": embedding_dim,
-                                "embedding_init": "normal",
-                                "commitment_cost": 0.25,
-                                "decay": 0.5,
-                                "epsilon": 1e-5,
-                                "adn_ordering": "NDA",
-                                "dropout": 0.1,
-                                "act": "RELU",
-                                "output_act": None,
-                            },
-                            (batch_size, in_channels, d1, d1),
-                            (batch_size, in_channels, d1, d1),
-                        ]
-                    )
+configurations = product(
+    [2, 4],  # Number of downsamplings
+    [16, 64],  # Embedding dimension
+    [1, 3],  # Batch size
+    [1, 3],  # Number of input channels
+    [64, 256],  # Spatial input shape
+)
 
-                    CASES_3D.append(
-                        [
-                            {
-                                "spatial_dims": 3,
-                                "in_channels": in_channels,
-                                "out_channels": in_channels,
-                                "num_levels": no_levels,
-                                "downsample_parameters": [(2, 4, 1, 1)] * no_levels,
-                                "upsample_parameters": [(2, 4, 1, 1, 0)] * no_levels,
-                                "num_res_layers": 1,
-                                "num_channels": 8,
-                                "num_embeddings": 2048,
-                                "embedding_dim": embedding_dim,
-                                "embedding_init": "normal",
-                                "commitment_cost": 0.25,
-                                "decay": 0.5,
-                                "epsilon": 1e-5,
-                                "adn_ordering": "NDA",
-                                "dropout": 0.1,
-                                "act": "RELU",
-                                "output_act": None,
-                            },
-                            (batch_size, in_channels, d1, d1, d1),
-                            (batch_size, in_channels, d1, d1, d1),
-                        ]
-                    )
+CASES_2D = [
+    [
+        {
+            "spatial_dims": 2,
+            "in_channels": in_channels,
+            "out_channels": in_channels,
+            "num_levels": no_levels,
+            "downsample_parameters": [(2, 4, 1, 1)] * no_levels,
+            "upsample_parameters": [(2, 4, 1, 1, 0)] * no_levels,
+            "num_res_layers": 1,
+            "num_channels": 8,
+            "num_embeddings": 256,
+            "embedding_dim": embedding_dim,
+            "embedding_init": "normal",
+            "commitment_cost": 0.25,
+            "decay": 0.5,
+            "epsilon": 1e-5,
+            "adn_ordering": "NDA",
+            "dropout": 0.1,
+            "act": "RELU",
+            "output_act": None,
+        },
+        (batch_size, in_channels, spatial_input_shape, spatial_input_shape),
+        (batch_size, in_channels, spatial_input_shape, spatial_input_shape),
+    ]
+    for no_levels, embedding_dim, batch_size, in_channels, spatial_input_shape in configurations
+]
 
+configurations = product(
+    [2, 4],  # Number of downsamplings
+    [16, 64],  # Embedding dimension
+    [1, 3],  # Batch size
+    [1, 3],  # Number of input channels
+    [64, 256],  # Spatial input shape
+)
+
+CASES_3D = [
+    [
+        {
+            "spatial_dims": 3,
+            "in_channels": in_channels,
+            "out_channels": in_channels,
+            "num_levels": no_levels,
+            "downsample_parameters": [(2, 4, 1, 1)] * no_levels,
+            "upsample_parameters": [(2, 4, 1, 1, 0)] * no_levels,
+            "num_res_layers": 1,
+            "num_channels": 8,
+            "num_embeddings": 256,
+            "embedding_dim": embedding_dim,
+            "embedding_init": "normal",
+            "commitment_cost": 0.25,
+            "decay": 0.5,
+            "epsilon": 1e-5,
+            "adn_ordering": "NDA",
+            "dropout": 0.1,
+            "act": "RELU",
+            "output_act": None,
+        },
+        (batch_size, in_channels, spatial_input_shape, spatial_input_shape, spatial_input_shape),
+        (batch_size, in_channels, spatial_input_shape, spatial_input_shape, spatial_input_shape),
+    ]
+    for no_levels, embedding_dim, batch_size, in_channels, spatial_input_shape in configurations
+]
 
 # 1-channel 2D, should fail because of number of levels, number of downsamplings, number of upsamplings mismatch.
 TEST_CASE_FAIL = {
@@ -94,7 +101,7 @@ TEST_CASE_FAIL = {
     "upsample_parameters": [(2, 4, 1, 1, 0)] * 4,
     "num_res_layers": 1,
     "num_channels": 8,
-    "num_embeddings": 2048,
+    "num_embeddings": 256,
     "embedding_dim": 32,
     "embedding_init": "normal",
     "commitment_cost": 0.25,
@@ -115,7 +122,7 @@ TEST_LATENT_SHAPE = {
     "upsample_parameters": [(2, 4, 1, 1, 0)] * 4,
     "num_res_layers": 1,
     "num_channels": 8,
-    "num_embeddings": 2048,
+    "num_embeddings": 256,
     "embedding_dim": 32,
     "embedding_init": "normal",
     "commitment_cost": 0.25,
@@ -132,35 +139,35 @@ class TestVQVAE(unittest.TestCase):
     @parameterized.expand(CASES_2D + CASES_3D)
     def test_shape(self, input_param, input_shape, expected_shape):
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(input_param)
+
         net = VQVAE(**input_param).to(device)
+
         with eval_mode(net):
             result, _ = net(torch.randn(input_shape).to(device))
+
         self.assertEqual(result.shape, expected_shape)
 
     def test_script(self):
         net = VQVAE(
-            **{
-                "spatial_dims": 2,
-                "in_channels": 1,
-                "out_channels": 1,
-                "num_levels": 4,
-                "downsample_parameters": [(2, 4, 1, 1)] * 4,
-                "upsample_parameters": [(2, 4, 1, 1, 0)] * 4,
-                "num_res_layers": 1,
-                "num_channels": 256,
-                "num_embeddings": 2048,
-                "embedding_dim": 32,
-                "embedding_init": "normal",
-                "commitment_cost": 0.25,
-                "decay": 0.5,
-                "epsilon": 1e-5,
-                "adn_ordering": "NDA",
-                "dropout": 0.1,
-                "act": "RELU",
-                "output_act": None,
-                "ddp_sync": False,
-            }
+            spatial_dims=2,
+            in_channels=1,
+            out_channels=1,
+            num_levels=4,
+            downsample_parameters=tuple([(2, 4, 1, 1)] * 4),
+            upsample_parameters=tuple([(2, 4, 1, 1, 0)] * 4),
+            num_res_layers=1,
+            num_channels=256,
+            num_embeddings=2048,
+            embedding_dim=32,
+            embedding_init="normal",
+            commitment_cost=0.25,
+            decay=0.5,
+            epsilon=1e-5,
+            adn_ordering="NDA",
+            dropout=0.1,
+            act="RELU",
+            output_act=None,
+            ddp_sync=False,
         )
         test_data = torch.randn(2, 1, 256, 256)
         test_script_save(net, test_data)
@@ -169,23 +176,45 @@ class TestVQVAE(unittest.TestCase):
         with self.assertRaises(AssertionError):
             VQVAE(**TEST_CASE_FAIL)
 
-    def test_latent_shape(self):
+    def test_encode_shape(self):
         device = "cuda" if torch.cuda.is_available() else "cpu"
+
         net = VQVAE(**TEST_LATENT_SHAPE).to(device)
-        test_data = torch.randn(2, 1, 256, 256).to(device)
+
         with eval_mode(net):
-            latent = net.encode(test_data)
+            latent = net.encode(torch.randn(2, 1, 256, 256).to(device))
 
         self.assertEqual(latent.shape, (2, 32, 16, 16))
 
-    def test_quantized_shape(self):
+    def test_index_quantize_shape(self):
         device = "cuda" if torch.cuda.is_available() else "cpu"
+
         net = VQVAE(**TEST_LATENT_SHAPE).to(device)
-        test_data = torch.randn(2, 1, 256, 256).to(device)
+
         with eval_mode(net):
-            latent = net.index_quantize(test_data)
+            latent = net.index_quantize(torch.randn(2, 1, 256, 256).to(device))
 
         self.assertEqual(latent.shape, (2, 16, 16))
+
+    def test_decode_shape(self):
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        net = VQVAE(**TEST_LATENT_SHAPE).to(device)
+
+        with eval_mode(net):
+            latent = net.decode(torch.randn(2, 32, 16, 16).to(device))
+
+        self.assertEqual(latent.shape, (2, 1, 256, 256))
+
+    def test_decode_samples_shape(self):
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        net = VQVAE(**TEST_LATENT_SHAPE).to(device)
+
+        with eval_mode(net):
+            latent = net.decode_samples(torch.randint(low=0, high=256, size=(2, 16, 16)).to(device))
+
+        self.assertEqual(latent.shape, (2, 1, 256, 256))
 
 
 if __name__ == "__main__":
