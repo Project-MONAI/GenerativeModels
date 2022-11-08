@@ -19,8 +19,6 @@ from monai.networks.blocks import Convolution
 from monai.networks.layers.factories import Pool
 from torch import einsum, nn
 
-from generative.utils.misc import default
-
 __all__ = ["DiffusionModelUNet"]
 
 
@@ -59,8 +57,7 @@ class FeedForward(nn.Module):
     ) -> None:
         super().__init__()
         inner_dim = int(dim * mult)
-        # TODO: Try to remove default usage
-        dim_out = default(dim_out, dim)
+        dim_out = dim_out if dim_out is not None else dim
         project_in = nn.Sequential(nn.Linear(dim, inner_dim), nn.GELU()) if not glu else GEGLU(dim, inner_dim)
 
         self.net = nn.Sequential(project_in, nn.Dropout(dropout), nn.Linear(inner_dim, dim_out))
@@ -91,8 +88,7 @@ class CrossAttention(nn.Module):
     ) -> None:
         super().__init__()
         inner_dim = dim_head * heads
-        # TODO: Try to remove default usage
-        context_dim = default(context_dim, query_dim)
+        context_dim = context_dim if context_dim is not None else query_dim
 
         self.scale = dim_head**-0.5
         self.heads = heads
@@ -107,8 +103,7 @@ class CrossAttention(nn.Module):
         h = self.heads
 
         q = self.to_q(x)
-        # TODO: Try to remove default usage
-        context = default(context, x)
+        context = context if context is not None else x
         k = self.to_k(context)
         v = self.to_v(context)
 
@@ -573,7 +568,7 @@ class ResnetBlock(nn.Module):
 
 
 def get_attention_parameters(
-    ch: int, num_head_channels: int, num_heads: int, legacy: bool, use_spatial_transformer: bool
+    ch: int, num_head_channels: int, num_heads: int, legacy: bool, with_conditioning: bool
 ) -> Tuple[int, int]:
     """
     Get the number of attention heads and their dimensions depending on the model parameters.
@@ -583,7 +578,7 @@ def get_attention_parameters(
         num_head_channels: number of channels in each head.
         num_heads: number of attention heads.
         legacy: if True, use legacy way to compute dim_head for attention blocks.
-        use_spatial_transformer: if true together with legacy, use ch // num_heads as head dimension.
+        with_conditioning: if true together with legacy, use ch // num_heads as head dimension.
 
     """
     if num_head_channels == -1:
@@ -592,7 +587,7 @@ def get_attention_parameters(
         num_heads = ch // num_head_channels
         dim_head = num_head_channels
     if legacy:
-        dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
+        dim_head = ch // num_heads if with_conditioning else num_head_channels
     return dim_head, num_heads
 
 
@@ -604,13 +599,21 @@ class DownBlock(nn.Module):
         out_channels: int,
         temb_channels: int,
         num_res_blocks: int = 1,
-        norm_eps: float = 1e-6,
         norm_num_groups: int = 32,
-        add_downsample=True,
-        downsample_padding=1,
+        norm_eps: float = 1e-6,
+        add_downsample: bool = True,
+        downsample_padding: int = 1,
+        with_attn: bool = False,
+        with_cross_attn: bool = False,
+        num_heads: int = 1,
+        num_head_channels: int = 1,
+        transformer_num_layers: int = 1,
+        cross_attention_dim: Optional[int] = None,
     ):
         super().__init__()
         resnets = []
+        attentions = []
+        cross_attentions = []
 
         for i in range(num_res_blocks):
             in_channels = in_channels if i == 0 else out_channels
@@ -624,8 +627,33 @@ class DownBlock(nn.Module):
                     norm_eps=norm_eps,
                 )
             )
+            if with_attn:
+                attentions.append(
+                    AttentionBlock(
+                        channels=out_channels,
+                        num_heads=num_heads,
+                        num_head_channels=num_head_channels,
+                        norm_num_groups=norm_num_groups,
+                        norm_eps=norm_eps,
+                    )
+                )
+            if with_cross_attn:
+                cross_attentions.append(
+                    SpatialTransformer(
+                        spatial_dims=spatial_dims,
+                        in_channels=out_channels,
+                        n_heads=num_heads,
+                        d_head=num_head_channels,
+                        depth=transformer_num_layers,
+                        norm_num_groups=norm_num_groups,
+                        norm_eps=norm_eps,
+                        context_dim=cross_attention_dim,
+                    )
+                )
 
         self.resnets = nn.ModuleList(resnets)
+        self.attentions = nn.ModuleList(attentions)
+        self.cross_attentions = nn.ModuleList(cross_attentions)
 
         if add_downsample:
             self.downsampler = Downsample(
@@ -638,11 +666,18 @@ class DownBlock(nn.Module):
         else:
             self.downsampler = None
 
-    def forward(self, hidden_states: torch.Tensor, temb: torch.Tensor) -> Tuple[torch.Tensor, Tuple]:
+    def forward(self, hidden_states: torch.Tensor, temb: torch.Tensor, context=None) -> Tuple[torch.Tensor, Tuple]:
         output_states = ()
 
-        for resnet in self.resnets:
-            hidden_states = resnet(hidden_states, temb)
+        for i in range(len(self.resnets)):
+            hidden_states = self.resnets[i](hidden_states, temb)
+
+            if len(self.attentions) != 0:
+                hidden_states = self.attentions[i](hidden_states)
+
+            if len(self.cross_attentions) != 0:
+                hidden_states = self.cross_attentions[i](hidden_states, context=context)
+
             output_states += (hidden_states,)
 
         if self.downsampler is not None:
@@ -660,10 +695,15 @@ class MidBlock(nn.Module):
         temb_channels: int,
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
-        num_heads=1,
-        num_head_channels=1,
+        with_cross_attn: bool = False,
+        num_heads: int = 1,
+        num_head_channels: int = 1,
+        transformer_num_layers: int = 1,
+        cross_attention_dim: Optional[int] = None,
     ):
         super().__init__()
+        attentions = []
+        cross_attentions = []
 
         self.resnet_1 = ResnetBlock(
             spatial_dims=spatial_dims,
@@ -673,14 +713,31 @@ class MidBlock(nn.Module):
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
         )
+        if with_cross_attn:
+            cross_attentions.append(
+                SpatialTransformer(
+                    spatial_dims=spatial_dims,
+                    in_channels=in_channels,
+                    n_heads=num_heads,
+                    d_head=num_head_channels,
+                    depth=transformer_num_layers,
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                    context_dim=cross_attention_dim,
+                )
+            )
 
-        self.attention = AttentionBlock(
-            channels=in_channels,
-            num_heads=num_heads,
-            num_head_channels=num_head_channels,
-            norm_num_groups=norm_num_groups,
-            norm_eps=norm_eps,
-        )
+        else:
+            attentions.append(
+                AttentionBlock(
+                    channels=in_channels,
+                    num_heads=num_heads,
+                    num_head_channels=num_head_channels,
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                )
+            )
+
         self.resnet_2 = ResnetBlock(
             spatial_dims=spatial_dims,
             in_channels=in_channels,
@@ -690,9 +747,18 @@ class MidBlock(nn.Module):
             norm_eps=norm_eps,
         )
 
-    def forward(self, hidden_states, temb=None):
+        self.attentions = nn.ModuleList(attentions)
+        self.cross_attentions = nn.ModuleList(cross_attentions)
+
+    def forward(self, hidden_states, temb=None, context=None):
         hidden_states = self.resnet_1(hidden_states, temb)
-        hidden_states = self.attention(hidden_states)
+
+        if len(self.attentions) != 0:
+            hidden_states = self.attentions(hidden_states)
+
+        if len(self.cross_attentions) != 0:
+            hidden_states = self.cross_attentions(hidden_states, context=context)
+
         hidden_states = self.resnet_2(hidden_states, temb)
 
         return hidden_states
@@ -707,12 +773,20 @@ class UpBlock(nn.Module):
         out_channels: int,
         temb_channels: int,
         num_res_blocks: int = 1,
-        norm_eps: float = 1e-6,
         norm_num_groups: int = 32,
-        add_upsample=True,
+        norm_eps: float = 1e-6,
+        add_upsample: bool = True,
+        with_attn: bool = False,
+        with_cross_attn: bool = False,
+        num_heads: int = 1,
+        num_head_channels: int = 1,
+        transformer_num_layers: int = 1,
+        cross_attention_dim: Optional[int] = None,
     ):
         super().__init__()
         resnets = []
+        attentions = []
+        cross_attentions = []
 
         for i in range(num_res_blocks):
             res_skip_channels = in_channels if (i == num_res_blocks - 1) else out_channels
@@ -728,8 +802,33 @@ class UpBlock(nn.Module):
                     norm_eps=norm_eps,
                 )
             )
+            if with_attn:
+                attentions.append(
+                    AttentionBlock(
+                        channels=out_channels,
+                        num_heads=num_heads,
+                        num_head_channels=num_head_channels,
+                        norm_num_groups=norm_num_groups,
+                        norm_eps=norm_eps,
+                    )
+                )
+            if with_cross_attn:
+                cross_attentions.append(
+                    SpatialTransformer(
+                        spatial_dims=spatial_dims,
+                        in_channels=out_channels,
+                        n_heads=num_heads,
+                        d_head=num_head_channels,
+                        norm_num_groups=norm_num_groups,
+                        norm_eps=norm_eps,
+                        depth=transformer_num_layers,
+                        context_dim=cross_attention_dim,
+                    )
+                )
 
         self.resnets = nn.ModuleList(resnets)
+        self.attentions = nn.ModuleList(attentions)
+        self.cross_attentions = nn.ModuleList(cross_attentions)
 
         if add_upsample:
             self.upsampler = Upsample(
@@ -738,14 +837,20 @@ class UpBlock(nn.Module):
         else:
             self.upsampler = None
 
-    def forward(self, hidden_states, res_hidden_states_tuple, temb=None):
-        for resnet in self.resnets:
+    def forward(self, hidden_states, res_hidden_states_tuple, temb=None, context=None):
+        for i in range(len(self.resnets)):
             # pop res hidden states
             res_hidden_states = res_hidden_states_tuple[-1]
             res_hidden_states_tuple = res_hidden_states_tuple[:-1]
             hidden_states = torch.cat([hidden_states, res_hidden_states], dim=1)
 
-            hidden_states = resnet(hidden_states, temb)
+            hidden_states = self.resnets[i](hidden_states, temb)
+
+            if len(self.attentions) != 0:
+                hidden_states = self.attentions[i](hidden_states)
+
+            if len(self.cross_attentions) != 0:
+                hidden_states = self.cross_attentions[i](hidden_states, context=context)
 
         if self.upsampler is not None:
             hidden_states = self.upsampler(hidden_states)
@@ -762,18 +867,18 @@ class DiffusionModelUNet(nn.Module):
     Args:
         spatial_dims: number of spatial dimensions.
         in_channels: number of input channels.
-        model_channels:
         out_channels: number of output channels.
         num_res_blocks: number of residual blocks (see ResBlock) per level.
-        attention_resolutions: list of levels to add attention.
-        num_heads: number of attention heads.
-        num_head_channels: number of channels in each head.
+        block_out_channels:
+        attention_levels: list of levels to add attention.
         norm_num_groups: number of groups for the normalization.
         norm_eps: epsilon for the normalization.
-        use_spatial_transformer: if True add spatial transformers to perform conditioning.
-        transformer_depth: number of layers of Transformer blocks to use.
-        context_dim: number of context dimensions to use.
+        num_heads: number of attention heads.
+        num_head_channels: number of channels in each head.
         legacy: if True, use legacy way to compute dim_head for attention blocks.
+        with_conditioning: if True add spatial transformers to perform conditioning.
+        transformer_num_layers: number of layers of Transformer blocks to use.
+        context_dim: number of context dimensions to use.
     """
 
     def __init__(
@@ -782,40 +887,40 @@ class DiffusionModelUNet(nn.Module):
         in_channels: int,
         out_channels: int,
         num_res_blocks: int,
-        attention_resolutions: Sequence[int] = (False, False, True, True),
         block_out_channels: Sequence[int] = (32, 64, 64, 64),
-        num_heads: int = -1,
-        num_head_channels: int = -1,
+        attention_levels: Sequence[bool] = (False, False, True, True),
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
-        use_spatial_transformer: bool = False,
-        transformer_depth: int = 1,
-        context_dim: Optional[int] = None,
+        num_heads: int = -1,
+        num_head_channels: int = -1,
         legacy: bool = True,
+        with_conditioning: bool = False,
+        transformer_num_layers: int = 1,
+        context_dim: Optional[int] = None,
     ) -> None:
         super().__init__()
-        if use_spatial_transformer is True and context_dim is None:
+        if with_conditioning is True and context_dim is None:
             raise ValueError(
                 (
                     "DiffusionModelUNet expects dimension of the cross-attention conditioning (context_dim) when using "
-                    "use_spatial_transformer."
+                    "with_conditioning."
                 )
             )
-        if context_dim is not None and use_spatial_transformer is False:
+        if context_dim is not None and with_conditioning is False:
             raise ValueError("DiffusionModelUNet expects use_spatial_transformer=True when specifying the context_dim.")
 
         if num_heads == -1 and num_head_channels == -1:
             raise ValueError("DiffusionModelUNet expects that either num_heads or num_head_channels has to be set.")
 
         # The number of channels should be multiple of num_groups
-        # if (model_channels % norm_num_groups) != 0:
-        #     raise ValueError("DiffusionModelUNet expects model_channels being multiple of norm_num_groups")
+        if any((out_channel % norm_num_groups) != 0 for out_channel in block_out_channels):
+            raise ValueError("DiffusionModelUNet expects all block_out_channels being multiple of norm_num_groups")
 
         self.in_channels = in_channels
         self.block_out_channels = block_out_channels
         self.out_channels = out_channels
         self.num_res_blocks = num_res_blocks
-        self.attention_resolutions = attention_resolutions
+        self.attention_levels = attention_levels
         self.num_heads = num_heads
         self.num_head_channels = num_head_channels
 
@@ -846,35 +951,72 @@ class DiffusionModelUNet(nn.Module):
             output_channel = block_out_channels[i]
             is_final_block = i == len(block_out_channels) - 1
 
-            down_block = DownBlock(
-                spatial_dims=spatial_dims,
-                in_channels=input_channel,
-                out_channels=output_channel,
-                temb_channels=time_embed_dim,
-                num_res_blocks=num_res_blocks,
-                norm_num_groups=norm_num_groups,
-                norm_eps=norm_eps,
-                add_downsample=not is_final_block,
-            )
+            if attention_levels[i]:
+                dim_head, num_heads = get_attention_parameters(
+                    input_channel, num_head_channels, num_heads, legacy, with_conditioning
+                )
+
+                down_block = DownBlock(
+                    spatial_dims=spatial_dims,
+                    in_channels=input_channel,
+                    out_channels=output_channel,
+                    temb_channels=time_embed_dim,
+                    num_res_blocks=num_res_blocks,
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                    add_downsample=not is_final_block,
+                    with_attn=not with_conditioning,
+                    with_cross_attn=with_conditioning,
+                    num_heads=num_heads,
+                    num_head_channels=dim_head,
+                    transformer_num_layers=transformer_num_layers,
+                    cross_attention_dim=context_dim,
+                )
+            else:
+                down_block = DownBlock(
+                    spatial_dims=spatial_dims,
+                    in_channels=input_channel,
+                    out_channels=output_channel,
+                    temb_channels=time_embed_dim,
+                    num_res_blocks=num_res_blocks,
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                    add_downsample=not is_final_block,
+                )
             self.down_blocks.append(down_block)
 
         # mid
         dim_head, num_heads = get_attention_parameters(
-            block_out_channels[-1], num_head_channels, num_heads, legacy, use_spatial_transformer
+            block_out_channels[-1], num_head_channels, num_heads, legacy, with_conditioning
         )
-        self.middle_block = MidBlock(
-            spatial_dims=spatial_dims,
-            in_channels=block_out_channels[-1],
-            temb_channels=time_embed_dim,
-            norm_num_groups=norm_num_groups,
-            norm_eps=norm_eps,
-            num_heads=num_heads,
-            num_head_channels=dim_head,
-        )
+        if with_conditioning:
+            self.middle_block = MidBlock(
+                spatial_dims=spatial_dims,
+                in_channels=block_out_channels[-1],
+                temb_channels=time_embed_dim,
+                norm_num_groups=norm_num_groups,
+                norm_eps=norm_eps,
+                with_cross_attn=True,
+                num_heads=num_heads,
+                num_head_channels=dim_head,
+                transformer_num_layers=transformer_num_layers,
+                cross_attention_dim=context_dim,
+            )
+        else:
+            self.middle_block = MidBlock(
+                spatial_dims=spatial_dims,
+                in_channels=block_out_channels[-1],
+                temb_channels=time_embed_dim,
+                norm_num_groups=norm_num_groups,
+                norm_eps=norm_eps,
+                num_heads=num_heads,
+                num_head_channels=dim_head,
+            )
 
         # up
         self.up_blocks = nn.ModuleList([])
         reversed_block_out_channels = list(reversed(block_out_channels))
+        reversed_attention_levels = list(reversed(attention_levels))
         output_channel = reversed_block_out_channels[0]
         for i in range(len(reversed_block_out_channels)):
             prev_output_channel = output_channel
@@ -883,17 +1025,40 @@ class DiffusionModelUNet(nn.Module):
 
             is_final_block = i == len(block_out_channels) - 1
 
-            up_block = UpBlock(
-                spatial_dims=spatial_dims,
-                in_channels=input_channel,
-                prev_output_channel=prev_output_channel,
-                out_channels=output_channel,
-                temb_channels=time_embed_dim,
-                num_res_blocks=num_res_blocks + 1,
-                norm_num_groups=norm_num_groups,
-                norm_eps=norm_eps,
-                add_upsample=not is_final_block,
-            )
+            if reversed_attention_levels[i]:
+                dim_head, num_heads = get_attention_parameters(
+                    output_channel, num_head_channels, num_heads, legacy, with_conditioning
+                )
+
+                up_block = UpBlock(
+                    spatial_dims=spatial_dims,
+                    in_channels=input_channel,
+                    prev_output_channel=prev_output_channel,
+                    out_channels=output_channel,
+                    temb_channels=time_embed_dim,
+                    num_res_blocks=num_res_blocks + 1,
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                    add_upsample=not is_final_block,
+                    with_attn=not with_conditioning,
+                    with_cross_attn=with_conditioning,
+                    num_heads=num_heads,
+                    num_head_channels=dim_head,
+                    transformer_num_layers=transformer_num_layers,
+                    cross_attention_dim=context_dim,
+                )
+            else:
+                up_block = UpBlock(
+                    spatial_dims=spatial_dims,
+                    in_channels=input_channel,
+                    prev_output_channel=prev_output_channel,
+                    out_channels=output_channel,
+                    temb_channels=time_embed_dim,
+                    num_res_blocks=num_res_blocks + 1,
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                    add_upsample=not is_final_block,
+                )
             self.up_blocks.append(up_block)
             prev_output_channel = output_channel
 
@@ -936,18 +1101,18 @@ class DiffusionModelUNet(nn.Module):
         # 3. down
         down_block_res_samples = (h,)
         for downsample_block in self.down_blocks:
-            h, res_samples = downsample_block(hidden_states=h, temb=emb)
+            h, res_samples = downsample_block(hidden_states=h, temb=emb, context=context)
             down_block_res_samples += res_samples
 
         # 4. mid
-        h = self.middle_block(h, emb)
+        h = self.middle_block(hidden_states=h, temb=emb, context=context)
 
         # 5. up
         for upsample_block in self.up_blocks:
             res_samples = down_block_res_samples[-len(upsample_block.resnets) :]
             down_block_res_samples = down_block_res_samples[: -len(upsample_block.resnets)]
 
-            h = upsample_block(h, res_samples, emb)
+            h = upsample_block(hidden_states=h, res_hidden_states_tuple=res_samples, temb=emb, context=context)
 
         # 6. output block
         h = self.out(h)
