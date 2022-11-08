@@ -11,3 +11,4 @@
 
 from .ddim import DDIMScheduler
 from .ddpm import DDPMScheduler
+from .pndm import PNDMScheduler
