@@ -45,7 +45,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import shutil
 import tempfile
+import time
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -91,8 +93,16 @@ set_determinism(0)
 # one of the available classes ("Hand"), resulting in a training set with 7999 2D images.
 
 # %%
-train_data = MedNISTDataset(root_dir=root_dir, section="training", download=True, seed=0)
+train_data = MedNISTDataset(root_dir=root_dir, section="training", download=True, progress=False, seed=0)
 train_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "Hand"]
+
+# %% [markdown]
+# Here we use transforms to augment the training dataset:
+#
+# 1. `LoadImaged` loads the hands images from files.
+# 1. `EnsureChannelFirstd` ensures the original data to construct "channel first" shape.
+# 1. `ScaleIntensityRanged` extracts intensity range [0, 255] and scales to [0, 1].
+# 1. `RandAffined` efficiently performs rotate, scale, shear, translate, etc. together based on PyTorch affine transform.
 
 # %%
 train_transforms = transforms.Compose(
@@ -115,7 +125,7 @@ train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
 train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=4)
 
 # %%
-val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, seed=0)
+val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, progress=False, seed=0)
 val_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "Hand"]
 val_transforms = transforms.Compose(
     [
@@ -145,8 +155,8 @@ plt.show()
 # %% [markdown]
 # ### Define network, scheduler and optimizer
 # At this step, we instantiate the MONAI components to create a DDPM, the UNET and the noise scheduler. We are using
-# the original ddpm scheduler containing 1000 timesteps in its Markov chain, and a 2D unet with attention mechanisms
-# in the 2nd and 4th levels, each with 1 attention head.
+# the original DDPM scheduler containing 1000 timesteps in its Markov chain, and a 2D UNET with attention mechanisms
+# in the 2nd and 3rd levels, each with 1 attention head.
 
 # %%
 device = torch.device("cuda")
@@ -167,20 +177,23 @@ scheduler = DDPMScheduler(
     num_train_timesteps=1000,
 )
 
-optimizer = torch.optim.Adam(model.parameters(), 2.5e-5)
+optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
 
 # %% [markdown]
 # ### Model training
+# Here, we are training our model for 50 epochs (training time: ~20 minutes).
 
 # %%
 n_epochs = 50
 val_interval = 5
 epoch_loss_list = []
 val_epoch_loss_list = []
+
+total_start = time.time()
 for epoch in range(n_epochs):
     model.train()
     epoch_loss = 0
-    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader))
+    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=70)
     progress_bar.set_description(f"Epoch {epoch}")
     for step, batch in progress_bar:
         images = batch["image"].to(device)
@@ -194,10 +207,10 @@ for epoch in range(n_epochs):
         noisy_image = scheduler.add_noise(original_samples=images, noise=noise, timesteps=timesteps)
 
         # In this example, we are parametrising our DDPM to learn the added noise (epsilon).
-        # For this reason, we are using our network to predict the added noise and then using L1 loss to predict
+        # For this reason, we are using our network to predict the added noise and then using L2 loss to predict
         # its performance.
         noise_pred = model(x=noisy_image, timesteps=timesteps)
-        loss = F.l1_loss(noise_pred.float(), noise.float())
+        loss = F.mse_loss(noise_pred.float(), noise.float())
 
         loss.backward()
         optimizer.step()
@@ -213,9 +226,7 @@ for epoch in range(n_epochs):
     if (epoch + 1) % val_interval == 0:
         model.eval()
         val_epoch_loss = 0
-        progress_bar = tqdm(enumerate(val_loader), total=len(train_loader))
-        progress_bar.set_description(f"Epoch {epoch} - Validation set")
-        for step, batch in progress_bar:
+        for step, batch in enumerate(val_loader):
             images = batch["image"].to(device)
             timesteps = torch.randint(0, scheduler.num_train_timesteps, (images.shape[0],), device=device).long()
             noise = torch.randn_like(images).to(device)
@@ -235,21 +246,22 @@ for epoch in range(n_epochs):
         # Sampling image during training
         image = torch.randn((1, 1, 64, 64))
         image = image.to(device)
-        scheduler.set_timesteps(1000)
-        progress_bar = tqdm(scheduler.timesteps)
-        progress_bar.set_description(f"Epoch {epoch} - Sampling...")
-        for t in progress_bar:
+        scheduler.set_timesteps(num_inference_steps=1000)
+        for t in scheduler.timesteps:
             # 1. predict noise model_output
             with torch.no_grad():
                 model_output = model(image, torch.asarray((t,)).to(device))
             # 2. compute previous image: x_t -> x_t-1
             image, _ = scheduler.step(model_output, t, image)
 
+        plt.figure(figsize=(2, 2))
         plt.imshow(image[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
         plt.tight_layout()
         plt.axis("off")
         plt.show()
 
+total_time = time.time() - total_start
+print(f"train completed, total time: {total_time}.")
 # %% [markdown]
 # ### Learning curves
 
@@ -280,10 +292,10 @@ image = torch.randn(
     (1, 1, 64, 64),
 )
 image = image.to(device)
-scheduler.set_timesteps(1000)
+scheduler.set_timesteps(num_inference_steps=1000)
 
 intermediary = []
-for t in tqdm(scheduler.timesteps):
+for t in tqdm(scheduler.timesteps, ncols=70):
     # 1. predict noise model_output
     with torch.no_grad():
         model_output = model(image, torch.asarray((t,)).to(device))
@@ -299,3 +311,12 @@ plt.imshow(chain[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
 plt.tight_layout()
 plt.axis("off")
 plt.show()
+
+# %% [markdown]
+# ### Cleanup data directory
+#
+# Remove directory if a temporary was used.
+
+# %%
+if directory is None:
+    shutil.rmtree(root_dir)
