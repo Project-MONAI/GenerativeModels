@@ -1291,7 +1291,7 @@ class DiffusionModelUNet(nn.Module):
         in_channels: number of input channels.
         out_channels: number of output channels.
         num_res_blocks: number of residual blocks (see ResBlock) per level.
-        block_out_channels: TODO
+        block_out_channels: tuple of block output channels.
         attention_levels: list of levels to add attention.
         norm_num_groups: number of groups for the normalization.
         norm_eps: epsilon for the normalization.
