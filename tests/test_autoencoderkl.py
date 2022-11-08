@@ -29,8 +29,6 @@ TEST_CASE_0 = [
         "latent_channels": 8,
         "ch_mult": [1, 1, 1],
         "num_res_blocks": 1,
-        "resolution": (64, 64),
-        "with_attention": False,
     },
     (2, 1, 64, 64),
     (2, 1, 64, 64),
@@ -46,9 +44,6 @@ TEST_CASE_1 = [
         "latent_channels": 32,
         "ch_mult": [1, 1, 1, 1],
         "num_res_blocks": 1,
-        "resolution": (64, 64),
-        "with_attention": True,
-        "attn_resolutions": [16, 8],
     },
     (2, 1, 64, 64),
     (2, 1, 64, 64),
@@ -64,9 +59,7 @@ TEST_CASE_2 = [
         "latent_channels": 32,
         "ch_mult": [1, 1, 1, 1],
         "num_res_blocks": 1,
-        "resolution": (64, 64),
-        "with_attention": True,
-        "attn_resolutions": [16, 8],
+        "attention_levels": (False, False, False, True),
         "with_encoder_nonlocal_attn": False,
     },
     (2, 1, 64, 64),
@@ -83,9 +76,7 @@ TEST_CASE_3 = [
         "latent_channels": 32,
         "ch_mult": [1, 1, 1, 1],
         "num_res_blocks": 1,
-        "resolution": (64, 64),
-        "with_attention": True,
-        "attn_resolutions": [16, 8],
+        "attention_levels": (True, True, True, True),
         "with_encoder_nonlocal_attn": False,
         "with_decoder_nonlocal_attn": False,
     },
@@ -123,9 +114,21 @@ class TestAutoEncoderKL(unittest.TestCase):
                 latent_channels=8,
                 ch_mult=[1, 1, 1],
                 num_res_blocks=1,
-                resolution=(64, 64),
                 norm_num_groups=16,
-                with_attention=False,
+            )
+
+    def test_model_ch_mult_not_same_size_of_attention_levels(self):
+        with self.assertRaises(ValueError):
+            AutoencoderKL(
+                spatial_dims=2,
+                in_channels=1,
+                out_channels=1,
+                n_channels=24,
+                latent_channels=8,
+                ch_mult=[1, 1, 1],
+                num_res_blocks=1,
+                norm_num_groups=16,
+                attention_levels=(True,),
             )
 
     @parameterized.expand(CASES)
