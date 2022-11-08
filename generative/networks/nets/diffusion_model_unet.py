@@ -10,7 +10,6 @@
 # limitations under the License.
 
 import math
-from abc import abstractmethod
 from typing import Optional, Sequence, Tuple
 
 import torch
@@ -165,6 +164,15 @@ class BasicTransformerBlock(nn.Module):
         return x
 
 
+def zero_module(module: nn.Module) -> nn.Module:
+    """
+    Zero out the parameters of a module and return it.
+    """
+    for p in module.parameters():
+        p.detach().zero_()
+    return module
+
+
 class SpatialTransformer(nn.Module):
     """
     Transformer block for image-like data. First, project the input (aka embedding) and reshape to b, t, d. Then apply
@@ -259,61 +267,6 @@ class SpatialTransformer(nn.Module):
         return x + x_in
 
 
-def timestep_embedding(timesteps: int, dim: int, max_period: int = 10000) -> torch.Tensor:
-    """
-    This matches the implementation in Denoising Diffusion Probabilistic Models: Create sinusoidal timestep embeddings.
-
-    Args:
-        timesteps: a 1-D Tensor of N indices, one per batch element.
-        dim: the dimension of the output.
-        max_period: controls the minimum frequency of the embeddings.
-    """
-    half = dim // 2
-    freqs = torch.exp(-math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half).to(
-        device=timesteps.device
-    )
-    args = timesteps[:, None].float() * freqs[None]
-    embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
-    if dim % 2:
-        embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
-
-    return embedding
-
-
-def zero_module(module: nn.Module) -> nn.Module:
-    """
-    Zero out the parameters of a module and return it.
-    """
-    for p in module.parameters():
-        p.detach().zero_()
-    return module
-
-
-class TimestepBlock(nn.Module):
-    @abstractmethod
-    def forward(self, x: torch.Tensor, emb: torch.Tensor):
-        """
-        Apply the module to `x` given `emb` timestep embeddings.
-        """
-
-
-class TimestepEmbedSequential(nn.Sequential, TimestepBlock):
-    """
-    A sequential module that passes timestep embeddings to the children that
-    support it as an extra input.
-    """
-
-    def forward(self, x: torch.Tensor, emb: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
-        for layer in self:
-            if isinstance(layer, TimestepBlock):
-                x = layer(x, emb)
-            elif isinstance(layer, SpatialTransformer):
-                x = layer(x, context)
-            else:
-                x = layer(x)
-        return x
-
-
 class QKVAttentionLegacy(nn.Module):
     """
     A qkv attention mechanism.
@@ -338,8 +291,6 @@ class QKVAttentionLegacy(nn.Module):
         return a.reshape(bs, -1, length)
 
 
-# TODO: Check if could use MONAI's SABlock instead.
-# https://github.com/Project-MONAI/MONAI/blob/1516ca758090dd8ed2890b64554a77f681a0e224/monai/networks/blocks/selfattention.py#L20
 class AttentionBlock(nn.Module):
     """
     An attention block.
@@ -382,6 +333,31 @@ class AttentionBlock(nn.Module):
         h = self.attention(qkv)
         h = self.proj_out(h)
         return (x + h).reshape(b, c, *spatial)
+
+
+def get_timestep_embedding(timesteps: int, embedding_dim: int, max_period: int = 10000) -> torch.Tensor:
+    """
+    This matches the implementation in Denoising Diffusion Probabilistic Models: Create sinusoidal timestep embeddings.
+
+    Args:
+        timesteps: a 1-D Tensor of N indices, one per batch element.
+        embedding_dim: the dimension of the output.
+        max_period: controls the minimum frequency of the embeddings.
+    """
+    assert len(timesteps.shape) == 1, "Timesteps should be a 1d-array"
+
+    half_dim = embedding_dim // 2
+    exponent = -math.log(max_period) * torch.arange(start=0, end=half_dim, dtype=torch.float32, device=timesteps.device)
+    freqs = torch.exp(exponent / half_dim)
+
+    args = timesteps[:, None].float() * freqs[None, :]
+    embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
+
+    # zero pad
+    if embedding_dim % 2 == 1:
+        embedding = torch.nn.functional.pad(embedding, (0, 1, 0, 0))
+
+    return embedding
 
 
 class Downsample(nn.Module):
@@ -472,18 +448,16 @@ class Upsample(nn.Module):
         return x
 
 
-class ResBlock(TimestepBlock):
+class ResnetBlock(nn.Module):
     """
     Residual block with timestep conditioning.
 
     Args:
         spatial_dims: The number of spatial dimensions.
-        channels: number of input channels
-        emb_channels: number of timestep embedding  channels
-        dropout: dropout probability to use.
+        in_channels: number of input channels
+        temb_channels: number of timestep embedding  channels
         out_channels: number of output channels.
         use_conv: if True uses Convolution instead of Identity in skip connection.
-        use_scale_shift_norm: if True, performs a scale-shift normalization.
         up: if True, performs upsampling.
         down: if True, performs downsampling.
         norm_num_groups: number of groups for the group normalization.
@@ -493,31 +467,27 @@ class ResBlock(TimestepBlock):
     def __init__(
         self,
         spatial_dims: int,
-        channels: int,
-        emb_channels: int,
-        dropout: float = 0.0,
+        in_channels: int,
+        temb_channels: int,
         out_channels: Optional[int] = None,
         use_conv: bool = False,
-        use_scale_shift_norm: bool = False,
         up: bool = False,
         down: bool = False,
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
     ) -> None:
         super().__init__()
-        self.channels = channels
-        self.emb_channels = emb_channels
-        self.dropout = dropout
-        self.out_channels = out_channels or channels
+        self.channels = in_channels
+        self.emb_channels = temb_channels
+        self.out_channels = out_channels or in_channels
         self.use_conv = use_conv
-        self.use_scale_shift_norm = use_scale_shift_norm
 
         self.in_layers = nn.Sequential(
-            nn.GroupNorm(num_groups=norm_num_groups, num_channels=channels, eps=norm_eps, affine=True),
+            nn.GroupNorm(num_groups=norm_num_groups, num_channels=in_channels, eps=norm_eps, affine=True),
             nn.SiLU(),
             Convolution(
                 spatial_dims=spatial_dims,
-                in_channels=channels,
+                in_channels=in_channels,
                 out_channels=self.out_channels,
                 strides=1,
                 kernel_size=3,
@@ -529,25 +499,24 @@ class ResBlock(TimestepBlock):
         self.updown = up or down
 
         if up:
-            self.h_upd = Upsample(spatial_dims, channels, False)
-            self.x_upd = Upsample(spatial_dims, channels, False)
+            self.h_upd = Upsample(spatial_dims, in_channels, False)
+            self.x_upd = Upsample(spatial_dims, in_channels, False)
         elif down:
-            self.h_upd = Downsample(spatial_dims, channels, False)
-            self.x_upd = Downsample(spatial_dims, channels, False)
+            self.h_upd = Downsample(spatial_dims, in_channels, False)
+            self.x_upd = Downsample(spatial_dims, in_channels, False)
         else:
             self.h_upd = self.x_upd = nn.Identity()
 
         self.emb_layers = nn.Sequential(
             nn.SiLU(),
             nn.Linear(
-                emb_channels,
-                2 * self.out_channels if use_scale_shift_norm else self.out_channels,
+                temb_channels,
+                self.out_channels,
             ),
         )
         self.out_layers = nn.Sequential(
             nn.GroupNorm(num_groups=norm_num_groups, num_channels=self.out_channels, eps=norm_eps, affine=True),
             nn.SiLU(),
-            nn.Dropout(p=dropout),
             zero_module(
                 Convolution(
                     spatial_dims=spatial_dims,
@@ -561,12 +530,12 @@ class ResBlock(TimestepBlock):
             ),
         )
 
-        if self.out_channels == channels:
+        if self.out_channels == in_channels:
             self.skip_connection = nn.Identity()
         elif use_conv:
             self.skip_connection = Convolution(
                 spatial_dims=spatial_dims,
-                in_channels=channels,
+                in_channels=in_channels,
                 out_channels=self.out_channels,
                 strides=1,
                 kernel_size=3,
@@ -577,7 +546,7 @@ class ResBlock(TimestepBlock):
         else:
             self.skip_connection = Convolution(
                 spatial_dims=spatial_dims,
-                in_channels=channels,
+                in_channels=in_channels,
                 out_channels=self.out_channels,
                 strides=1,
                 kernel_size=1,
@@ -597,14 +566,9 @@ class ResBlock(TimestepBlock):
         emb_out = self.emb_layers(emb).type(h.dtype)
         while len(emb_out.shape) < len(h.shape):
             emb_out = emb_out[..., None]
-        if self.use_scale_shift_norm:
-            out_norm, out_rest = self.out_layers[0], self.out_layers[1:]
-            scale, shift = torch.chunk(emb_out, 2, dim=1)
-            h = out_norm(h) * (1 + scale) + shift
-            h = out_rest(h)
-        else:
-            h = h + emb_out
-            h = self.out_layers(h)
+
+        h = h + emb_out
+        h = self.out_layers(h)
         return self.skip_connection(x) + h
 
 
@@ -632,8 +596,163 @@ def get_attention_parameters(
     return dim_head, num_heads
 
 
-# TODO: Replace TimestepEmbedSequential by using an approach similar to huggingface diffusers
-#  https://github.com/huggingface/diffusers/blob/2d35f6733a2d698e8917896071444a5923993ae7/src/diffusers/models/unet_2d.py#L38
+class DownBlock(nn.Module):
+    def __init__(
+        self,
+        spatial_dims: int,
+        in_channels: int,
+        out_channels: int,
+        temb_channels: int,
+        num_res_blocks: int = 1,
+        norm_eps: float = 1e-6,
+        norm_num_groups: int = 32,
+        add_downsample=True,
+        downsample_padding=1,
+    ):
+        super().__init__()
+        resnets = []
+
+        for i in range(num_res_blocks):
+            in_channels = in_channels if i == 0 else out_channels
+            resnets.append(
+                ResnetBlock(
+                    spatial_dims=spatial_dims,
+                    in_channels=in_channels,
+                    out_channels=out_channels,
+                    temb_channels=temb_channels,
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                )
+            )
+
+        self.resnets = nn.ModuleList(resnets)
+
+        if add_downsample:
+            self.downsampler = Downsample(
+                spatial_dims=spatial_dims,
+                channels=out_channels,
+                use_conv=True,
+                out_channels=out_channels,
+                padding=downsample_padding,
+            )
+        else:
+            self.downsampler = None
+
+    def forward(self, hidden_states: torch.Tensor, temb: torch.Tensor) -> Tuple[torch.Tensor, Tuple]:
+        output_states = ()
+
+        for resnet in self.resnets:
+            hidden_states = resnet(hidden_states, temb)
+            output_states += (hidden_states,)
+
+        if self.downsampler is not None:
+            hidden_states = self.downsampler(hidden_states)
+            output_states += (hidden_states,)
+
+        return hidden_states, output_states
+
+
+class MidBlock(nn.Module):
+    def __init__(
+        self,
+        spatial_dims: int,
+        in_channels: int,
+        temb_channels: int,
+        norm_num_groups: int = 32,
+        norm_eps: float = 1e-6,
+        num_heads=1,
+        num_head_channels=1,
+    ):
+        super().__init__()
+
+        self.resnet_1 = ResnetBlock(
+            spatial_dims=spatial_dims,
+            in_channels=in_channels,
+            out_channels=in_channels,
+            temb_channels=temb_channels,
+            norm_num_groups=norm_num_groups,
+            norm_eps=norm_eps,
+        )
+
+        self.attention = AttentionBlock(
+            channels=in_channels,
+            num_heads=num_heads,
+            num_head_channels=num_head_channels,
+            norm_num_groups=norm_num_groups,
+            norm_eps=norm_eps,
+        )
+        self.resnet_2 = ResnetBlock(
+            spatial_dims=spatial_dims,
+            in_channels=in_channels,
+            out_channels=in_channels,
+            temb_channels=temb_channels,
+            norm_num_groups=norm_num_groups,
+            norm_eps=norm_eps,
+        )
+
+    def forward(self, hidden_states, temb=None):
+        hidden_states = self.resnet_1(hidden_states, temb)
+        hidden_states = self.attention(hidden_states)
+        hidden_states = self.resnet_2(hidden_states, temb)
+
+        return hidden_states
+
+
+class UpBlock(nn.Module):
+    def __init__(
+        self,
+        spatial_dims: int,
+        in_channels: int,
+        prev_output_channel: int,
+        out_channels: int,
+        temb_channels: int,
+        num_res_blocks: int = 1,
+        norm_eps: float = 1e-6,
+        norm_num_groups: int = 32,
+        add_upsample=True,
+    ):
+        super().__init__()
+        resnets = []
+
+        for i in range(num_res_blocks):
+            res_skip_channels = in_channels if (i == num_res_blocks - 1) else out_channels
+            resnet_in_channels = prev_output_channel if i == 0 else out_channels
+
+            resnets.append(
+                ResnetBlock(
+                    spatial_dims=spatial_dims,
+                    in_channels=resnet_in_channels + res_skip_channels,
+                    out_channels=out_channels,
+                    temb_channels=temb_channels,
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                )
+            )
+
+        self.resnets = nn.ModuleList(resnets)
+
+        if add_upsample:
+            self.upsampler = Upsample(
+                spatial_dims=spatial_dims, channels=out_channels, use_conv=True, out_channels=out_channels
+            )
+        else:
+            self.upsampler = None
+
+    def forward(self, hidden_states, res_hidden_states_tuple, temb=None):
+        for resnet in self.resnets:
+            # pop res hidden states
+            res_hidden_states = res_hidden_states_tuple[-1]
+            res_hidden_states_tuple = res_hidden_states_tuple[:-1]
+            hidden_states = torch.cat([hidden_states, res_hidden_states], dim=1)
+
+            hidden_states = resnet(hidden_states, temb)
+
+        if self.upsampler is not None:
+            hidden_states = self.upsampler(hidden_states)
+
+        return hidden_states
+
+
 class DiffusionModelUNet(nn.Module):
     """
     Unet network with timestep embedding and attention mechanisms for conditioning based on
@@ -647,11 +766,8 @@ class DiffusionModelUNet(nn.Module):
         out_channels: number of output channels.
         num_res_blocks: number of residual blocks (see ResBlock) per level.
         attention_resolutions: list of levels to add attention.
-        channel_mult: list of channel multipliers.
         num_heads: number of attention heads.
         num_head_channels: number of channels in each head.
-        use_scale_shift_norm:  if True, performs a scale-shift normalization in ResBlocks.
-        resblock_updown: if True, use ResBlocks to perform upsampling or downsampling.
         norm_num_groups: number of groups for the normalization.
         norm_eps: epsilon for the normalization.
         use_spatial_transformer: if True add spatial transformers to perform conditioning.
@@ -664,15 +780,12 @@ class DiffusionModelUNet(nn.Module):
         self,
         spatial_dims: int,
         in_channels: int,
-        model_channels: int,
         out_channels: int,
         num_res_blocks: int,
-        attention_resolutions: Sequence[int],
-        channel_mult: Sequence[int] = (1, 2, 4, 8),
+        attention_resolutions: Sequence[int] = (False, False, True, True),
+        block_out_channels: Sequence[int] = (32, 64, 64, 64),
         num_heads: int = -1,
         num_head_channels: int = -1,
-        use_scale_shift_norm: bool = False,
-        resblock_updown: bool = False,
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
         use_spatial_transformer: bool = False,
@@ -695,219 +808,103 @@ class DiffusionModelUNet(nn.Module):
             raise ValueError("DiffusionModelUNet expects that either num_heads or num_head_channels has to be set.")
 
         # The number of channels should be multiple of num_groups
-        if (model_channels % norm_num_groups) != 0:
-            raise ValueError("DiffusionModelUNet expects model_channels being multiple of norm_num_groups")
+        # if (model_channels % norm_num_groups) != 0:
+        #     raise ValueError("DiffusionModelUNet expects model_channels being multiple of norm_num_groups")
 
         self.in_channels = in_channels
-        self.model_channels = model_channels
+        self.block_out_channels = block_out_channels
         self.out_channels = out_channels
         self.num_res_blocks = num_res_blocks
         self.attention_resolutions = attention_resolutions
-        self.channel_mult = channel_mult
         self.num_heads = num_heads
         self.num_head_channels = num_head_channels
 
-        time_embed_dim = model_channels * 4
+        # input
+        self.conv_in = Convolution(
+            spatial_dims=spatial_dims,
+            in_channels=in_channels,
+            out_channels=block_out_channels[0],
+            strides=1,
+            kernel_size=3,
+            padding=1,
+            conv_only=True,
+        )
+
+        # time
+        time_embed_dim = block_out_channels[0] * 4
         self.time_embed = nn.Sequential(
-            nn.Linear(model_channels, time_embed_dim),
+            nn.Linear(block_out_channels[0], time_embed_dim),
             nn.SiLU(),
             nn.Linear(time_embed_dim, time_embed_dim),
         )
 
-        self.input_blocks = nn.ModuleList(
-            [
-                TimestepEmbedSequential(
-                    Convolution(
-                        spatial_dims=spatial_dims,
-                        in_channels=in_channels,
-                        out_channels=model_channels,
-                        strides=1,
-                        kernel_size=3,
-                        padding=1,
-                        conv_only=True,
-                    )
-                )
-            ]
-        )
-        self._feature_size = model_channels
-        input_block_chans = [model_channels]
-        ch = model_channels
-        ds = 1
-        for level, mult in enumerate(channel_mult):
-            for _ in range(num_res_blocks):
-                layers = [
-                    ResBlock(
-                        spatial_dims=spatial_dims,
-                        channels=ch,
-                        emb_channels=time_embed_dim,
-                        out_channels=mult * model_channels,
-                        use_scale_shift_norm=use_scale_shift_norm,
-                        norm_num_groups=norm_num_groups,
-                        norm_eps=norm_eps,
-                    )
-                ]
-                ch = mult * model_channels
-                if ds in attention_resolutions:
-                    dim_head, num_heads = get_attention_parameters(
-                        ch, num_head_channels, num_heads, legacy, use_spatial_transformer
-                    )
+        # down
+        self.down_blocks = nn.ModuleList([])
+        output_channel = block_out_channels[0]
+        for i in range(len(block_out_channels)):
+            input_channel = output_channel
+            output_channel = block_out_channels[i]
+            is_final_block = i == len(block_out_channels) - 1
 
-                    layers.append(
-                        AttentionBlock(
-                            ch,
-                            num_heads=num_heads,
-                            num_head_channels=dim_head,
-                            norm_num_groups=norm_num_groups,
-                            norm_eps=norm_eps,
-                        )
-                        if not use_spatial_transformer
-                        else SpatialTransformer(
-                            spatial_dims=spatial_dims,
-                            in_channels=ch,
-                            n_heads=num_heads,
-                            d_head=dim_head,
-                            depth=transformer_depth,
-                            norm_num_groups=norm_num_groups,
-                            norm_eps=norm_eps,
-                            context_dim=context_dim,
-                        )
-                    )
-                self.input_blocks.append(TimestepEmbedSequential(*layers))
-                self._feature_size += ch
-                input_block_chans.append(ch)
-            if level != len(channel_mult) - 1:
-                out_ch = ch
-                self.input_blocks.append(
-                    TimestepEmbedSequential(
-                        ResBlock(
-                            spatial_dims=spatial_dims,
-                            channels=ch,
-                            emb_channels=time_embed_dim,
-                            out_channels=out_ch,
-                            use_scale_shift_norm=use_scale_shift_norm,
-                            down=True,
-                            norm_num_groups=norm_num_groups,
-                            norm_eps=norm_eps,
-                        )
-                        if resblock_updown
-                        else Downsample(spatial_dims=spatial_dims, channels=ch, use_conv=True, out_channels=out_ch)
-                    )
-                )
-                ch = out_ch
-                input_block_chans.append(ch)
-                ds *= 2
-                self._feature_size += ch
-
-        dim_head, num_heads = get_attention_parameters(
-            ch, num_head_channels, num_heads, legacy, use_spatial_transformer
-        )
-
-        self.middle_block = TimestepEmbedSequential(
-            ResBlock(
+            down_block = DownBlock(
                 spatial_dims=spatial_dims,
-                channels=ch,
-                emb_channels=time_embed_dim,
-                use_scale_shift_norm=use_scale_shift_norm,
+                in_channels=input_channel,
+                out_channels=output_channel,
+                temb_channels=time_embed_dim,
+                num_res_blocks=num_res_blocks,
                 norm_num_groups=norm_num_groups,
                 norm_eps=norm_eps,
-            ),
-            AttentionBlock(
-                ch,
-                num_heads=num_heads,
-                num_head_channels=dim_head,
-                norm_num_groups=norm_num_groups,
-                norm_eps=norm_eps,
+                add_downsample=not is_final_block,
             )
-            if not use_spatial_transformer
-            else SpatialTransformer(
-                spatial_dims=spatial_dims,
-                in_channels=ch,
-                n_heads=num_heads,
-                d_head=dim_head,
-                depth=transformer_depth,
-                norm_num_groups=norm_num_groups,
-                norm_eps=norm_eps,
-                context_dim=context_dim,
-            ),
-            ResBlock(
-                spatial_dims=spatial_dims,
-                channels=ch,
-                emb_channels=time_embed_dim,
-                use_scale_shift_norm=use_scale_shift_norm,
-                norm_num_groups=norm_num_groups,
-                norm_eps=norm_eps,
-            ),
+            self.down_blocks.append(down_block)
+
+        # mid
+        dim_head, num_heads = get_attention_parameters(
+            block_out_channels[-1], num_head_channels, num_heads, legacy, use_spatial_transformer
         )
-        self._feature_size += ch
+        self.middle_block = MidBlock(
+            spatial_dims=spatial_dims,
+            in_channels=block_out_channels[-1],
+            temb_channels=time_embed_dim,
+            norm_num_groups=norm_num_groups,
+            norm_eps=norm_eps,
+            num_heads=num_heads,
+            num_head_channels=dim_head,
+        )
 
-        self.output_blocks = nn.ModuleList([])
-        for level, mult in list(enumerate(channel_mult))[::-1]:
-            for i in range(num_res_blocks + 1):
-                ich = input_block_chans.pop()
-                layers = [
-                    ResBlock(
-                        spatial_dims=spatial_dims,
-                        channels=ch + ich,
-                        emb_channels=time_embed_dim,
-                        out_channels=model_channels * mult,
-                        use_scale_shift_norm=use_scale_shift_norm,
-                        norm_num_groups=norm_num_groups,
-                        norm_eps=norm_eps,
-                    )
-                ]
-                ch = model_channels * mult
-                if ds in attention_resolutions:
-                    dim_head, num_heads = get_attention_parameters(
-                        ch, num_head_channels, num_heads, legacy, use_spatial_transformer
-                    )
+        # up
+        self.up_blocks = nn.ModuleList([])
+        reversed_block_out_channels = list(reversed(block_out_channels))
+        output_channel = reversed_block_out_channels[0]
+        for i in range(len(reversed_block_out_channels)):
+            prev_output_channel = output_channel
+            output_channel = reversed_block_out_channels[i]
+            input_channel = reversed_block_out_channels[min(i + 1, len(block_out_channels) - 1)]
 
-                    layers.append(
-                        AttentionBlock(
-                            ch,
-                            num_heads=num_heads,
-                            num_head_channels=dim_head,
-                            norm_num_groups=norm_num_groups,
-                            norm_eps=norm_eps,
-                        )
-                        if not use_spatial_transformer
-                        else SpatialTransformer(
-                            spatial_dims=spatial_dims,
-                            in_channels=ch,
-                            n_heads=num_heads,
-                            d_head=dim_head,
-                            depth=transformer_depth,
-                            norm_num_groups=norm_num_groups,
-                            norm_eps=norm_eps,
-                            context_dim=context_dim,
-                        )
-                    )
-                if level and i == num_res_blocks:
-                    out_ch = ch
-                    layers.append(
-                        ResBlock(
-                            spatial_dims=spatial_dims,
-                            channels=ch,
-                            emb_channels=time_embed_dim,
-                            out_channels=out_ch,
-                            use_scale_shift_norm=use_scale_shift_norm,
-                            up=True,
-                            norm_num_groups=norm_num_groups,
-                            norm_eps=norm_eps,
-                        )
-                        if resblock_updown
-                        else Upsample(spatial_dims=spatial_dims, channels=ch, use_conv=True, out_channels=out_ch)
-                    )
-                    ds //= 2
-                self.output_blocks.append(TimestepEmbedSequential(*layers))
-                self._feature_size += ch
+            is_final_block = i == len(block_out_channels) - 1
 
+            up_block = UpBlock(
+                spatial_dims=spatial_dims,
+                in_channels=input_channel,
+                prev_output_channel=prev_output_channel,
+                out_channels=output_channel,
+                temb_channels=time_embed_dim,
+                num_res_blocks=num_res_blocks + 1,
+                norm_num_groups=norm_num_groups,
+                norm_eps=norm_eps,
+                add_upsample=not is_final_block,
+            )
+            self.up_blocks.append(up_block)
+            prev_output_channel = output_channel
+
+        # out
         self.out = nn.Sequential(
-            nn.GroupNorm(num_groups=norm_num_groups, num_channels=ch, eps=norm_eps, affine=True),
+            nn.GroupNorm(num_groups=norm_num_groups, num_channels=block_out_channels[0], eps=norm_eps, affine=True),
             nn.SiLU(),
             zero_module(
                 Convolution(
                     spatial_dims=spatial_dims,
-                    in_channels=model_channels,
+                    in_channels=block_out_channels[0],
                     out_channels=out_channels,
                     strides=1,
                     kernel_size=3,
@@ -929,17 +926,30 @@ class DiffusionModelUNet(nn.Module):
             timesteps: timestep tensor (N,)
             context: context tensor (N, 1, ContextDim)
         """
-        hs = []
-        t_emb = timestep_embedding(timesteps, self.model_channels)
+        # 1. time
+        t_emb = get_timestep_embedding(timesteps, self.block_out_channels[0])
         emb = self.time_embed(t_emb)
 
-        h = x
-        for module in self.input_blocks:
-            h = module(h, emb, context)
-            hs.append(h)
-        h = self.middle_block(h, emb, context)
-        for module in self.output_blocks:
-            h = torch.cat([h, hs.pop()], dim=1)
-            h = module(h, emb, context)
+        # 2. initial convolution
+        h = self.conv_in(x)
 
-        return self.out(h)
+        # 3. down
+        down_block_res_samples = (h,)
+        for downsample_block in self.down_blocks:
+            h, res_samples = downsample_block(hidden_states=h, temb=emb)
+            down_block_res_samples += res_samples
+
+        # 4. mid
+        h = self.middle_block(h, emb)
+
+        # 5. up
+        for upsample_block in self.up_blocks:
+            res_samples = down_block_res_samples[-len(upsample_block.resnets) :]
+            down_block_res_samples = down_block_res_samples[: -len(upsample_block.resnets)]
+
+            h = upsample_block(h, res_samples, emb)
+
+        # 6. output block
+        h = self.out(h)
+
+        return h
