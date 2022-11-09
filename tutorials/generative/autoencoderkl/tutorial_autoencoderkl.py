@@ -57,12 +57,9 @@ set_determinism(42)
 # Specify a `MONAI_DATA_DIRECTORY` variable, where the data will be downloaded. If not
 # specified a temporary directory will be used.
 
-# +
-
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
 root_dir = tempfile.mkdtemp() if directory is None else directory
 print(root_dir)
-# -
 
 # ### Download the training set
 
@@ -119,13 +116,12 @@ model = AutoencoderKL(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
-    n_channels=64,
+    num_channels=64,
     latent_channels=8,
     ch_mult=(1, 2, 3),
     num_res_blocks=1,
-    resolution=(image_size, image_size),
     norm_num_groups=16,
-    with_attention=False,
+    attention_levels=(False, False, True),
 )
 model.to(device)
 
@@ -144,7 +140,7 @@ n_example_images = 4
 for epoch in range(n_epochs):
     model.train()
     epoch_loss = 0
-    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader))
+    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=70)
     progress_bar.set_description(f"Epoch {epoch}")
     for step, batch in progress_bar:
         images = batch["image"].to(device)
