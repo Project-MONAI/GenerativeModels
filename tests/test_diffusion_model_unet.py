@@ -165,7 +165,7 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
             num_heads=1,
             with_conditioning=True,
             transformer_num_layers=1,
-            cocross_attention_dimntext_dim=3,
+            cross_attention_dim=3,
             norm_num_groups=8,
         )
         with eval_mode(net):
