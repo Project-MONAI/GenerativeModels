@@ -119,23 +119,38 @@ class CrossAttention(nn.Module):
 
         self.to_out = nn.Sequential(nn.Linear(inner_dim, query_dim), nn.Dropout(dropout))
 
+    def reshape_heads_to_batch_dim(self, x: torch.Tensor) -> torch.Tensor:
+        batch_size, seq_len, dim = x.shape
+        head_size = self.heads
+        x = x.reshape(batch_size, seq_len, head_size, dim // head_size)
+        x = x.permute(0, 2, 1, 3).reshape(batch_size * head_size, seq_len, dim // head_size)
+        return x
+
+    def reshape_batch_dim_to_heads(self, x: torch.Tensor) -> torch.Tensor:
+        batch_size, seq_len, dim = x.shape
+        head_size = self.heads
+        x = x.reshape(batch_size // head_size, head_size, seq_len, dim)
+        x = x.permute(0, 2, 1, 3).reshape(batch_size // head_size, seq_len, dim * head_size)
+        return x
+
     def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
-        h = self.heads
-
-        q = self.to_q(x)
+        query = self.to_q(x)
         context = context if context is not None else x
-        k = self.to_k(context)
-        v = self.to_v(context)
+        key = self.to_k(context)
+        value = self.to_v(context)
 
-        q, k, v = map(lambda t: rearrange(t, "b n (h d) -> (b h) n d", h=h), (q, k, v))
+        # TODO: make use of xformers to improve attention speed
+        query = self.reshape_heads_to_batch_dim(query)
+        key = self.reshape_heads_to_batch_dim(key)
+        value = self.reshape_heads_to_batch_dim(value)
 
-        sim = einsum("b i d, b j d -> b i j", q, k) * self.scale
+        attention_scores = einsum("b i d, b j d -> b i j", query, key) * self.scale
 
-        attn = sim.softmax(dim=-1)
+        attention_probs = attention_scores.softmax(dim=-1)
 
-        out = einsum("b i j, b j d -> b i d", attn, v)
-        out = rearrange(out, "(b h) n d -> b n (h d)", h=h)
-        return self.to_out(out)
+        hidden_states = einsum("b i j, b j d -> b i d", attention_probs, value)
+        hidden_states = self.reshape_batch_dim_to_heads(hidden_states)
+        return self.to_out(hidden_states)
 
 
 class BasicTransformerBlock(nn.Module):
