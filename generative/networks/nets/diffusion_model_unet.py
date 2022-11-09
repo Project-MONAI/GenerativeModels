@@ -30,7 +30,7 @@
 # =========================================================================
 
 import math
-from typing import Optional, Sequence, Tuple
+from typing import Any, Optional, Sequence, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -65,7 +65,7 @@ class FeedForward(nn.Module):
     A feed-forward layer.
 
     Args:
-        dim: number of channels in the input.
+        num_channels: number of channels in the input.
         dim_out: number of channels in the output. If not given, defaults to `dim`.
         mult: multiplier to use for the hidden dimension.
         glu: whether to use GLU activation.
@@ -73,12 +73,14 @@ class FeedForward(nn.Module):
     """
 
     def __init__(
-        self, dim: int, dim_out: Optional[int] = None, mult: int = 4, glu: bool = False, dropout: float = 0.0
+        self, num_channels: int, dim_out: Optional[int] = None, mult: int = 4, glu: bool = False, dropout: float = 0.0
     ) -> None:
         super().__init__()
-        inner_dim = int(dim * mult)
-        dim_out = dim_out if dim_out is not None else dim
-        project_in = nn.Sequential(nn.Linear(dim, inner_dim), nn.GELU()) if not glu else GEGLU(dim, inner_dim)
+        inner_dim = int(num_channels * mult)
+        dim_out = dim_out if dim_out is not None else num_channels
+        project_in = (
+            nn.Sequential(nn.Linear(num_channels, inner_dim), nn.GELU()) if not glu else GEGLU(num_channels, inner_dim)
+        )
 
         self.net = nn.Sequential(project_in, nn.Dropout(dropout), nn.Linear(inner_dim, dim_out))
 
@@ -92,30 +94,30 @@ class CrossAttention(nn.Module):
 
     Args:
         query_dim: number of channels in the query.
-        context_dim: number of channels in the context.
-        heads: number of heads to use for multi-head attention.
-        dim_head: number of channels in each head.
+        cross_attention_dim: number of channels in the context.
+        num_attention_heads: number of heads to use for multi-head attention.
+        attention_head_dim: number of channels in each head.
         dropout: dropout probability to use.
     """
 
     def __init__(
         self,
         query_dim: int,
-        context_dim: Optional[int] = None,
-        heads: int = 8,
-        dim_head: int = 64,
+        cross_attention_dim: Optional[int] = None,
+        num_attention_heads: int = 8,
+        attention_head_dim: int = 64,
         dropout: float = 0.0,
     ) -> None:
         super().__init__()
-        inner_dim = dim_head * heads
-        context_dim = context_dim if context_dim is not None else query_dim
+        inner_dim = attention_head_dim * num_attention_heads
+        cross_attention_dim = cross_attention_dim if cross_attention_dim is not None else query_dim
 
-        self.scale = dim_head**-0.5
-        self.heads = heads
+        self.scale = attention_head_dim**-0.5
+        self.heads = num_attention_heads
 
         self.to_q = nn.Linear(query_dim, inner_dim, bias=False)
-        self.to_k = nn.Linear(context_dim, inner_dim, bias=False)
-        self.to_v = nn.Linear(context_dim, inner_dim, bias=False)
+        self.to_k = nn.Linear(cross_attention_dim, inner_dim, bias=False)
+        self.to_v = nn.Linear(cross_attention_dim, inner_dim, bias=False)
 
         self.to_out = nn.Sequential(nn.Linear(inner_dim, query_dim), nn.Dropout(dropout))
 
@@ -139,7 +141,7 @@ class CrossAttention(nn.Module):
         key = self.to_k(context)
         value = self.to_v(context)
 
-        # TODO: make use of xformers to improve attention speed
+        # TODO: Maybe make use of xformers to improve attention speed
         query = self.reshape_heads_to_batch_dim(query)
         key = self.reshape_heads_to_batch_dim(key)
         value = self.reshape_heads_to_batch_dim(value)
@@ -158,34 +160,41 @@ class BasicTransformerBlock(nn.Module):
     A basic Transformer block.
 
     Args:
-        dim: number of channels in the input and output.
-        n_heads: number of heads to use for multi-head attention.
-        d_head: number of channels in each head.
+        num_channels: number of channels in the input and output.
+        num_attention_heads: number of heads to use for multi-head attention.
+        attention_head_dim: number of channels in each head.
         dropout: dropout probability to use.
-        context_dim: size of the context vector for cross attention.
+        cross_attention_dim: size of the context vector for cross attention.
         gated_ff: whether to use a gated feed-forward network.
     """
 
     def __init__(
         self,
-        dim: int,
-        n_heads: int,
-        d_head: int,
+        num_channels: int,
+        num_attention_heads: int,
+        attention_head_dim: int,
         dropout: float = 0.0,
-        context_dim: Optional[int] = None,
+        cross_attention_dim: Optional[int] = None,
         gated_ff: bool = True,
     ) -> None:
         super().__init__()
         self.attn1 = CrossAttention(
-            query_dim=dim, heads=n_heads, dim_head=d_head, dropout=dropout
+            query_dim=num_channels,
+            num_attention_heads=num_attention_heads,
+            attention_head_dim=attention_head_dim,
+            dropout=dropout,
         )  # is a self-attention
-        self.ff = FeedForward(dim, dropout=dropout, glu=gated_ff)
+        self.ff = FeedForward(num_channels, dropout=dropout, glu=gated_ff)
         self.attn2 = CrossAttention(
-            query_dim=dim, context_dim=context_dim, heads=n_heads, dim_head=d_head, dropout=dropout
+            query_dim=num_channels,
+            cross_attention_dim=cross_attention_dim,
+            num_attention_heads=num_attention_heads,
+            attention_head_dim=attention_head_dim,
+            dropout=dropout,
         )  # is a self-attention if context is None
-        self.norm1 = nn.LayerNorm(dim)
-        self.norm2 = nn.LayerNorm(dim)
-        self.norm3 = nn.LayerNorm(dim)
+        self.norm1 = nn.LayerNorm(num_channels)
+        self.norm2 = nn.LayerNorm(num_channels)
+        self.norm3 = nn.LayerNorm(num_channels)
 
     def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
         x = self.attn1(self.norm1(x)) + x
@@ -211,31 +220,31 @@ class SpatialTransformer(nn.Module):
     Args:
         spatial_dims: number of spatial dimensions.
         in_channels: number of channels in the input and output.
-        n_heads: number of heads to use for multi-head attention.
-        d_head: number of channels in each head.
-        depth: number of layers of Transformer blocks to use.
+        num_attention_heads: number of heads to use for multi-head attention.
+        attention_head_dim: number of channels in each head.
+        num_layers: number of layers of Transformer blocks to use.
         dropout: dropout probability to use.
         norm_num_groups: number of groups for the normalization.
         norm_eps: epsilon for the normalization.
-        context_dim: number of context dimensions to use.
+        cross_attention_dim: number of context dimensions to use.
     """
 
     def __init__(
         self,
         spatial_dims: int,
         in_channels: int,
-        n_heads: int,
-        d_head: int,
-        depth: int = 1,
+        num_attention_heads: int,
+        attention_head_dim: int,
+        num_layers: int = 1,
         dropout: float = 0.0,
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
-        context_dim: Optional[int] = None,
+        cross_attention_dim: Optional[int] = None,
     ) -> None:
         super().__init__()
         self.spatial_dims = spatial_dims
         self.in_channels = in_channels
-        inner_dim = n_heads * d_head
+        inner_dim = num_attention_heads * attention_head_dim
         self.norm = nn.GroupNorm(num_groups=norm_num_groups, num_channels=in_channels, eps=norm_eps, affine=True)
 
         self.proj_in = Convolution(
@@ -251,9 +260,13 @@ class SpatialTransformer(nn.Module):
         self.transformer_blocks = nn.ModuleList(
             [
                 BasicTransformerBlock(
-                    dim=inner_dim, n_heads=n_heads, d_head=d_head, dropout=dropout, context_dim=context_dim
+                    num_channels=inner_dim,
+                    num_attention_heads=num_attention_heads,
+                    attention_head_dim=attention_head_dim,
+                    dropout=dropout,
+                    cross_attention_dim=cross_attention_dim,
                 )
-                for _ in range(depth)
+                for _ in range(num_layers)
             ]
         )
 
@@ -302,18 +315,18 @@ class QKVAttentionLegacy(nn.Module):
     A qkv attention mechanism.
 
     Args:
-        n_heads: number of attention heads.
+        num_attention_heads: number of attention heads.
     """
 
-    def __init__(self, n_heads: int) -> None:
+    def __init__(self, num_attention_heads: int) -> None:
         super().__init__()
-        self.n_heads = n_heads
+        self.num_attention_heads = num_attention_heads
 
     def forward(self, qkv: torch.Tensor) -> torch.Tensor:
         bs, width, length = qkv.shape
-        assert width % (3 * self.n_heads) == 0
-        ch = width // (3 * self.n_heads)
-        q, k, v = qkv.reshape(bs * self.n_heads, ch * 3, length).split(ch, dim=1)
+        assert width % (3 * self.num_attention_heads) == 0
+        ch = width // (3 * self.num_attention_heads)
+        q, k, v = qkv.reshape(bs * self.num_attention_heads, ch * 3, length).split(ch, dim=1)
         scale = 1 / math.sqrt(math.sqrt(ch))
         weight = torch.einsum("bct,bcs->bts", q * scale, k * scale)  # More stable with f16 than dividing afterwards
         weight = torch.softmax(weight.float(), dim=-1).type(weight.dtype)
@@ -326,35 +339,35 @@ class AttentionBlock(nn.Module):
     An attention block.
 
     Args:
-        channels: number of channels in the input and output.
-        num_heads:  number of attention heads.
-        num_head_channels: number of channels in each head.
+        num_channels: number of channels in the input and output.
+        num_attention_heads:  number of attention heads.
+        attention_head_dim: number of channels in each head.
         norm_num_groups: number of groups to use for group norm.
         norm_eps: epsilon value to use for group norm.
     """
 
     def __init__(
         self,
-        channels: int,
-        num_heads: int = 1,
-        num_head_channels: int = -1,
+        num_channels: int,
+        num_attention_heads: int = 1,
+        attention_head_dim: int = -1,
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
     ) -> None:
         super().__init__()
-        self.channels = channels
-        if num_head_channels == -1:
-            self.num_heads = num_heads
+        self.channels = num_channels
+        if attention_head_dim == -1:
+            self.num_heads = num_attention_heads
         else:
             assert (
-                channels % num_head_channels == 0
-            ), f"q,k,v channels {channels} is not divisible by num_head_channels {num_head_channels}"
-            self.num_heads = channels // num_head_channels
-        self.norm = nn.GroupNorm(num_groups=norm_num_groups, num_channels=channels, eps=norm_eps, affine=True)
-        self.qkv = nn.Conv1d(channels, channels * 3, 1)
+                num_channels % attention_head_dim == 0
+            ), f"q,k,v channels {num_channels} is not divisible by attention_head_dim {attention_head_dim}"
+            self.num_heads = num_channels // attention_head_dim
+        self.norm = nn.GroupNorm(num_groups=norm_num_groups, num_channels=num_channels, eps=norm_eps, affine=True)
+        self.qkv = nn.Conv1d(num_channels, num_channels * 3, 1)
         self.attention = QKVAttentionLegacy(self.num_heads)
 
-        self.proj_out = zero_module(nn.Conv1d(channels, channels, 1))
+        self.proj_out = zero_module(nn.Conv1d(num_channels, num_channels, 1))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         b, c, *spatial = x.shape
@@ -396,7 +409,7 @@ class Downsample(nn.Module):
 
     Args:
         spatial_dims: number of spatial dimensions.
-        channels: number of input channels.
+        num_channels: number of input channels.
         use_conv: if True uses Convolution instead of Pool average to perform downsampling.
         out_channels: number of output channels.
         padding: controls the amount of implicit zero-paddings on both sides for padding number of points
@@ -406,19 +419,19 @@ class Downsample(nn.Module):
     def __init__(
         self,
         spatial_dims: int,
-        channels: int,
+        num_channels: int,
         use_conv: bool,
         out_channels: Optional[int] = None,
         padding: int = 1,
     ) -> None:
         super().__init__()
-        self.channels = channels
-        self.out_channels = out_channels or channels
+        self.num_channels = num_channels
+        self.out_channels = out_channels or num_channels
         self.use_conv = use_conv
         if use_conv:
             self.op = Convolution(
                 spatial_dims=spatial_dims,
-                in_channels=self.channels,
+                in_channels=self.num_channels,
                 out_channels=self.out_channels,
                 strides=2,
                 kernel_size=3,
@@ -426,11 +439,11 @@ class Downsample(nn.Module):
                 conv_only=True,
             )
         else:
-            assert self.channels == self.out_channels
+            assert self.num_channels == self.out_channels
             self.op = Pool[Pool.AVG, spatial_dims](kernel_size=2, stride=2)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        assert x.shape[1] == self.channels
+        assert x.shape[1] == self.num_channels
         return self.op(x)
 
 
@@ -440,7 +453,7 @@ class Upsample(nn.Module):
 
     Args:
         spatial_dims: number of spatial dimensions.
-        channels: number of input channels
+        num_channels: number of input channels
         use_conv: if True uses Convolution instead of Pool average to perform downsampling.
         out_channels: number of output channels.
         padding: controls the amount of implicit zero-paddings on both sides for padding number of points for each
@@ -450,19 +463,19 @@ class Upsample(nn.Module):
     def __init__(
         self,
         spatial_dims: int,
-        channels: int,
+        num_channels: int,
         use_conv: bool,
         out_channels: Optional[int] = None,
         padding: int = 1,
     ) -> None:
         super().__init__()
-        self.channels = channels
-        self.out_channels = out_channels or channels
+        self.num_channels = num_channels
+        self.out_channels = out_channels or num_channels
         self.use_conv = use_conv
         if use_conv:
             self.conv = Convolution(
                 spatial_dims=spatial_dims,
-                in_channels=self.channels,
+                in_channels=self.num_channels,
                 out_channels=self.out_channels,
                 strides=1,
                 kernel_size=3,
@@ -471,7 +484,7 @@ class Upsample(nn.Module):
             )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        assert x.shape[1] == self.channels
+        assert x.shape[1] == self.num_channels
         x = F.interpolate(x, scale_factor=2.0, mode="nearest")
         if self.use_conv:
             x = self.conv(x)
@@ -592,27 +605,27 @@ class ResnetBlock(nn.Module):
 
 
 def get_attention_parameters(
-    ch: int, num_head_channels: int, num_heads: int, legacy: bool, with_conditioning: bool
+    num_channels: int, attention_head_dim: int, num_attention_heads: int, legacy: bool, with_conditioning: bool
 ) -> Tuple[int, int]:
     """
     Get the number of attention heads and their dimensions depending on the model parameters.
 
     Args:
-        ch: number of channels.
-        num_head_channels: number of channels in each head.
-        num_heads: number of attention heads.
+        num_channels: number of channels.
+        attention_head_dim: number of channels in each head.
+        num_attention_heads: number of attention heads.
         legacy: if True, use legacy way to compute dim_head for attention blocks.
         with_conditioning: if true together with legacy, use ch // num_heads as head dimension.
 
     """
-    if num_head_channels == -1:
-        dim_head = ch // num_heads
+    if attention_head_dim == -1:
+        dim_head = num_channels // num_attention_heads
     else:
-        num_heads = ch // num_head_channels
-        dim_head = num_head_channels
+        num_attention_heads = num_channels // attention_head_dim
+        dim_head = attention_head_dim
     if legacy:
-        dim_head = ch // num_heads if with_conditioning else num_head_channels
-    return dim_head, num_heads
+        dim_head = num_channels // num_attention_heads if with_conditioning else attention_head_dim
+    return dim_head, num_attention_heads
 
 
 class DownBlock(nn.Module):
@@ -649,7 +662,7 @@ class DownBlock(nn.Module):
         if add_downsample:
             self.downsampler = Downsample(
                 spatial_dims=spatial_dims,
-                channels=out_channels,
+                num_channels=out_channels,
                 use_conv=True,
                 out_channels=out_channels,
                 padding=downsample_padding,
@@ -659,7 +672,7 @@ class DownBlock(nn.Module):
 
     def forward(
         self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, ...]]:
+    ) -> Tuple[torch.Tensor, Any]:
         output_states = ()
 
         for resnet in self.resnets:
@@ -685,8 +698,8 @@ class AttnDownBlock(nn.Module):
         norm_eps: float = 1e-6,
         add_downsample: bool = True,
         downsample_padding: int = 1,
-        num_heads: int = 1,
-        num_head_channels: int = 1,
+        num_attention_heads: int = 1,
+        attention_head_dim: int = 1,
     ) -> None:
         super().__init__()
         resnets = []
@@ -706,9 +719,9 @@ class AttnDownBlock(nn.Module):
             )
             attentions.append(
                 AttentionBlock(
-                    channels=out_channels,
-                    num_heads=num_heads,
-                    num_head_channels=num_head_channels,
+                    num_channels=out_channels,
+                    num_attention_heads=num_attention_heads,
+                    attention_head_dim=attention_head_dim,
                     norm_num_groups=norm_num_groups,
                     norm_eps=norm_eps,
                 )
@@ -720,7 +733,7 @@ class AttnDownBlock(nn.Module):
         if add_downsample:
             self.downsampler = Downsample(
                 spatial_dims=spatial_dims,
-                channels=out_channels,
+                num_channels=out_channels,
                 use_conv=True,
                 out_channels=out_channels,
                 padding=downsample_padding,
@@ -730,7 +743,7 @@ class AttnDownBlock(nn.Module):
 
     def forward(
         self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, ...]]:
+    ) -> Tuple[torch.Tensor, Any]:
         output_states = ()
 
         for resnet, attn in zip(self.resnets, self.attentions):
@@ -757,8 +770,8 @@ class CrossAttnDownBlock(nn.Module):
         norm_eps: float = 1e-6,
         add_downsample: bool = True,
         downsample_padding: int = 1,
-        num_heads: int = 1,
-        num_head_channels: int = 1,
+        num_attention_heads: int = 1,
+        attention_head_dim: int = 1,
         transformer_num_layers: int = 1,
         cross_attention_dim: Optional[int] = None,
     ) -> None:
@@ -783,12 +796,12 @@ class CrossAttnDownBlock(nn.Module):
                 SpatialTransformer(
                     spatial_dims=spatial_dims,
                     in_channels=out_channels,
-                    n_heads=num_heads,
-                    d_head=num_head_channels,
-                    depth=transformer_num_layers,
+                    num_attention_heads=num_attention_heads,
+                    attention_head_dim=attention_head_dim,
+                    num_layers=transformer_num_layers,
                     norm_num_groups=norm_num_groups,
                     norm_eps=norm_eps,
-                    context_dim=cross_attention_dim,
+                    cross_attention_dim=cross_attention_dim,
                 )
             )
 
@@ -798,7 +811,7 @@ class CrossAttnDownBlock(nn.Module):
         if add_downsample:
             self.downsampler = Downsample(
                 spatial_dims=spatial_dims,
-                channels=out_channels,
+                num_channels=out_channels,
                 use_conv=True,
                 out_channels=out_channels,
                 padding=downsample_padding,
@@ -808,7 +821,7 @@ class CrossAttnDownBlock(nn.Module):
 
     def forward(
         self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, ...]]:
+    ) -> Tuple[torch.Tensor, Any]:
         output_states = ()
 
         for resnet, attn in zip(self.resnets, self.attentions):
@@ -831,8 +844,8 @@ class AttnMidBlock(nn.Module):
         temb_channels: int,
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
-        num_heads: int = 1,
-        num_head_channels: int = 1,
+        num_attention_heads: int = 1,
+        attention_head_dim: int = 1,
     ) -> None:
         super().__init__()
         self.attention = None
@@ -846,9 +859,9 @@ class AttnMidBlock(nn.Module):
             norm_eps=norm_eps,
         )
         self.attention = AttentionBlock(
-            channels=in_channels,
-            num_heads=num_heads,
-            num_head_channels=num_head_channels,
+            num_channels=in_channels,
+            num_attention_heads=num_attention_heads,
+            attention_head_dim=attention_head_dim,
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
         )
@@ -880,8 +893,8 @@ class CrossAttnMidBlock(nn.Module):
         temb_channels: int,
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
-        num_heads: int = 1,
-        num_head_channels: int = 1,
+        num_attention_heads: int = 1,
+        attention_head_dim: int = 1,
         transformer_num_layers: int = 1,
         cross_attention_dim: Optional[int] = None,
     ) -> None:
@@ -899,12 +912,12 @@ class CrossAttnMidBlock(nn.Module):
         self.attention = SpatialTransformer(
             spatial_dims=spatial_dims,
             in_channels=in_channels,
-            n_heads=num_heads,
-            d_head=num_head_channels,
-            depth=transformer_num_layers,
+            num_attention_heads=num_attention_heads,
+            attention_head_dim=attention_head_dim,
+            num_layers=transformer_num_layers,
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
-            context_dim=cross_attention_dim,
+            cross_attention_dim=cross_attention_dim,
         )
         self.resnet_2 = ResnetBlock(
             spatial_dims=spatial_dims,
@@ -960,7 +973,7 @@ class UpBlock(nn.Module):
 
         if add_upsample:
             self.upsampler = Upsample(
-                spatial_dims=spatial_dims, channels=out_channels, use_conv=True, out_channels=out_channels
+                spatial_dims=spatial_dims, num_channels=out_channels, use_conv=True, out_channels=out_channels
             )
         else:
             self.upsampler = None
@@ -998,8 +1011,8 @@ class AttnUpBlock(nn.Module):
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
         add_upsample: bool = True,
-        num_heads: int = 1,
-        num_head_channels: int = 1,
+        num_attention_heads: int = 1,
+        attention_head_dim: int = 1,
     ) -> None:
         super().__init__()
         resnets = []
@@ -1021,9 +1034,9 @@ class AttnUpBlock(nn.Module):
             )
             attentions.append(
                 AttentionBlock(
-                    channels=out_channels,
-                    num_heads=num_heads,
-                    num_head_channels=num_head_channels,
+                    num_channels=out_channels,
+                    num_attention_heads=num_attention_heads,
+                    attention_head_dim=attention_head_dim,
                     norm_num_groups=norm_num_groups,
                     norm_eps=norm_eps,
                 )
@@ -1034,7 +1047,7 @@ class AttnUpBlock(nn.Module):
 
         if add_upsample:
             self.upsampler = Upsample(
-                spatial_dims=spatial_dims, channels=out_channels, use_conv=True, out_channels=out_channels
+                spatial_dims=spatial_dims, num_channels=out_channels, use_conv=True, out_channels=out_channels
             )
         else:
             self.upsampler = None
@@ -1073,8 +1086,8 @@ class CrossAttnUpBlock(nn.Module):
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
         add_upsample: bool = True,
-        num_heads: int = 1,
-        num_head_channels: int = 1,
+        num_attention_heads: int = 1,
+        attention_head_dim: int = 1,
         transformer_num_layers: int = 1,
         cross_attention_dim: Optional[int] = None,
     ) -> None:
@@ -1100,12 +1113,12 @@ class CrossAttnUpBlock(nn.Module):
                 SpatialTransformer(
                     spatial_dims=spatial_dims,
                     in_channels=out_channels,
-                    n_heads=num_heads,
-                    d_head=num_head_channels,
+                    num_attention_heads=num_attention_heads,
+                    attention_head_dim=attention_head_dim,
                     norm_num_groups=norm_num_groups,
                     norm_eps=norm_eps,
-                    depth=transformer_num_layers,
-                    context_dim=cross_attention_dim,
+                    num_layers=transformer_num_layers,
+                    cross_attention_dim=cross_attention_dim,
                 )
             )
 
@@ -1114,7 +1127,7 @@ class CrossAttnUpBlock(nn.Module):
 
         if add_upsample:
             self.upsampler = Upsample(
-                spatial_dims=spatial_dims, channels=out_channels, use_conv=True, out_channels=out_channels
+                spatial_dims=spatial_dims, num_channels=out_channels, use_conv=True, out_channels=out_channels
             )
         else:
             self.upsampler = None
@@ -1152,8 +1165,8 @@ def get_down_block(
     add_downsample: bool,
     with_attn: bool,
     with_cross_attn: bool,
-    num_heads: int,
-    num_head_channels: int,
+    num_attention_heads: int,
+    attention_head_dim: int,
     transformer_num_layers: int,
     cross_attention_dim: Optional[int],
 ) -> nn.Module:
@@ -1167,8 +1180,8 @@ def get_down_block(
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
             add_downsample=add_downsample,
-            num_heads=num_heads,
-            num_head_channels=num_head_channels,
+            num_attention_heads=num_attention_heads,
+            attention_head_dim=attention_head_dim,
         )
     elif with_cross_attn:
         return CrossAttnDownBlock(
@@ -1180,8 +1193,8 @@ def get_down_block(
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
             add_downsample=add_downsample,
-            num_heads=num_heads,
-            num_head_channels=num_head_channels,
+            num_attention_heads=num_attention_heads,
+            attention_head_dim=attention_head_dim,
             transformer_num_layers=transformer_num_layers,
             cross_attention_dim=cross_attention_dim,
         )
@@ -1205,8 +1218,8 @@ def get_mid_block(
     norm_num_groups: int,
     norm_eps: float,
     with_conditioning: bool,
-    num_heads: int,
-    num_head_channels: int,
+    num_attention_heads: int,
+    attention_head_dim: int,
     transformer_num_layers: int,
     cross_attention_dim: Optional[int],
 ) -> nn.Module:
@@ -1217,8 +1230,8 @@ def get_mid_block(
             temb_channels=temb_channels,
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
-            num_heads=num_heads,
-            num_head_channels=num_head_channels,
+            num_attention_heads=num_attention_heads,
+            attention_head_dim=attention_head_dim,
             transformer_num_layers=transformer_num_layers,
             cross_attention_dim=cross_attention_dim,
         )
@@ -1229,8 +1242,8 @@ def get_mid_block(
             temb_channels=temb_channels,
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
-            num_heads=num_heads,
-            num_head_channels=num_head_channels,
+            num_attention_heads=num_attention_heads,
+            attention_head_dim=attention_head_dim,
         )
 
 
@@ -1246,8 +1259,8 @@ def get_up_block(
     add_upsample: bool,
     with_attn: bool,
     with_cross_attn: bool,
-    num_heads: int,
-    num_head_channels: int,
+    num_attention_heads: int,
+    attention_head_dim: int,
     transformer_num_layers: int,
     cross_attention_dim: Optional[int],
 ) -> nn.Module:
@@ -1262,8 +1275,8 @@ def get_up_block(
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
             add_upsample=add_upsample,
-            num_heads=num_heads,
-            num_head_channels=num_head_channels,
+            num_attention_heads=num_attention_heads,
+            attention_head_dim=attention_head_dim,
         )
     elif with_cross_attn:
         return CrossAttnUpBlock(
@@ -1276,8 +1289,8 @@ def get_up_block(
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
             add_upsample=add_upsample,
-            num_heads=num_heads,
-            num_head_channels=num_head_channels,
+            num_attention_heads=num_attention_heads,
+            attention_head_dim=attention_head_dim,
             transformer_num_layers=transformer_num_layers,
             cross_attention_dim=cross_attention_dim,
         )
@@ -1315,7 +1328,7 @@ class DiffusionModelUNet(nn.Module):
         legacy: if True, use legacy way to compute dim_head for attention blocks.
         with_conditioning: if True add spatial transformers to perform conditioning.
         transformer_num_layers: number of layers of Transformer blocks to use.
-        context_dim: number of context dimensions to use.
+        cross_attention_dim: number of context dimensions to use.
     """
 
     def __init__(
@@ -1333,18 +1346,20 @@ class DiffusionModelUNet(nn.Module):
         legacy: bool = True,
         with_conditioning: bool = False,
         transformer_num_layers: int = 1,
-        context_dim: Optional[int] = None,
+        cross_attention_dim: Optional[int] = None,
     ) -> None:
         super().__init__()
-        if with_conditioning is True and context_dim is None:
+        if with_conditioning is True and cross_attention_dim is None:
             raise ValueError(
                 (
-                    "DiffusionModelUNet expects dimension of the cross-attention conditioning (context_dim) when using "
-                    "with_conditioning."
+                    "DiffusionModelUNet expects dimension of the cross-attention conditioning (cross_attention_dim) when"
+                    " using with_conditioning."
                 )
             )
-        if context_dim is not None and with_conditioning is False:
-            raise ValueError("DiffusionModelUNet expects use_spatial_transformer=True when specifying the context_dim.")
+        if cross_attention_dim is not None and with_conditioning is False:
+            raise ValueError(
+                "DiffusionModelUNet expects use_spatial_transformer=True when specifying the " "cross_attention_dim."
+            )
 
         if num_heads == -1 and num_head_channels == -1:
             raise ValueError("DiffusionModelUNet expects that either num_heads or num_head_channels has to be set.")
@@ -1403,10 +1418,10 @@ class DiffusionModelUNet(nn.Module):
                 add_downsample=not is_final_block,
                 with_attn=(attention_levels[i] and not with_conditioning),
                 with_cross_attn=(attention_levels[i] and with_conditioning),
-                num_heads=num_heads,
-                num_head_channels=dim_head,
+                num_attention_heads=num_heads,
+                attention_head_dim=dim_head,
                 transformer_num_layers=transformer_num_layers,
-                cross_attention_dim=context_dim,
+                cross_attention_dim=cross_attention_dim,
             )
 
             self.down_blocks.append(down_block)
@@ -1422,10 +1437,10 @@ class DiffusionModelUNet(nn.Module):
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
             with_conditioning=with_conditioning,
-            num_heads=num_heads,
-            num_head_channels=dim_head,
+            num_attention_heads=num_heads,
+            attention_head_dim=dim_head,
             transformer_num_layers=transformer_num_layers,
-            cross_attention_dim=context_dim,
+            cross_attention_dim=cross_attention_dim,
         )
 
         # up
@@ -1456,10 +1471,10 @@ class DiffusionModelUNet(nn.Module):
                 add_upsample=not is_final_block,
                 with_attn=(reversed_attention_levels[i] and not with_conditioning),
                 with_cross_attn=(reversed_attention_levels[i] and with_conditioning),
-                num_heads=num_heads,
-                num_head_channels=dim_head,
+                num_attention_heads=num_heads,
+                attention_head_dim=dim_head,
                 transformer_num_layers=transformer_num_layers,
-                cross_attention_dim=context_dim,
+                cross_attention_dim=cross_attention_dim,
             )
 
             self.up_blocks.append(up_block)
