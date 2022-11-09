@@ -165,10 +165,9 @@ model = DiffusionModelUNet(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
-    model_channels=64,
-    attention_resolutions=[2, 4],
+    block_out_channels=(64, 128, 128),
+    attention_levels=(False, False, True),
     num_res_blocks=1,
-    channel_mult=[1, 2, 2],
     num_heads=1,
 )
 model.to(device)
