@@ -178,30 +178,38 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
             )
             self.assertEqual(result.shape, (1, 1, 16, 32))
 
+    # TODO: Fix problem with torchscript
     # def test_script_unconditioned_models(self):
-    #     input_param = UNCOND_CASES_2D[0][0]
-    #     net = DiffusionModelUNet(**input_param)
+    #     net = DiffusionModelUNet(
+    #     spatial_dims= 2,
+    #     in_channels= 1,
+    #     out_channels= 1,
+    #     num_res_blocks= 1,
+    #     block_out_channels= (8, 8, 8),
+    #     attention_levels= (False, False, True),
+    #     num_heads= 1,
+    #     norm_num_groups= 8,
+    #     )
     #     test_script_save(net, {"x": torch.rand((1, 1, 16, 16)), "timesteps": torch.randint(0, 1000, (1,)).long()})
 
-    # TODO: Fix problem with torchscript
     # def test_script_conditioned_models(self):
     #     net = DiffusionModelUNet(
     #         spatial_dims=2,
     #         in_channels=1,
-    #         model_channels=32,
     #         out_channels=1,
     #         num_res_blocks=1,
-    #         attention_resolutions=[16, 8],
-    #         channel_mult=[1, 1, 1, 1],
+    #         block_out_channels=(8, 8, 8),
+    #         attention_levels=(False, False, True),
     #         num_heads=1,
-    #         use_spatial_transformer=True,
-    #         transformer_depth=1,
+    #         norm_num_groups=8,
+    #         with_conditioning=True,
+    #         transformer_num_layers=1,
     #         context_dim=3,
     #     )
     #     test_script_save(
     #         net,
     #         {
-    #             "x": torch.rand((1, 1, 32, 64)),
+    #             "x": torch.rand((1, 1, 16, 16)),
     #             "timesteps": torch.randint(0, 1000, (1,)).long(),
     #             "context": torch.rand((1, 1, 3)),
     #         },

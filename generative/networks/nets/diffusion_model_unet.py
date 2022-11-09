@@ -565,7 +565,7 @@ class ResnetBlock(nn.Module):
 
         if self.spatial_dims == 2:
             temb = self.time_emb_proj(self.nonlinearity(emb))[:, :, None, None]
-        if self.spatial_dims == 3:
+        else:
             temb = self.time_emb_proj(self.nonlinearity(emb))[:, :, None, None, None]
         h = h + temb
 
