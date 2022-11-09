@@ -165,7 +165,7 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
             num_heads=1,
             with_conditioning=True,
             transformer_num_layers=1,
-            context_dim=3,
+            cocross_attention_dimntext_dim=3,
             norm_num_groups=8,
         )
         with eval_mode(net):
@@ -176,18 +176,18 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
             )
             self.assertEqual(result.shape, (1, 1, 16, 32))
 
-    # def test_script_unconditioned_2d_models(self):
-    #     net = DiffusionModelUNet(
-    #     spatial_dims= 2,
-    #     in_channels= 1,
-    #     out_channels= 1,
-    #     num_res_blocks= 1,
-    #     block_out_channels= (8, 8, 8),
-    #     attention_levels= (False, False, True),
-    #     num_heads= 1,
-    #     norm_num_groups= 8,
-    #     )
-    #     test_script_save(net, {"x": torch.rand((1, 1, 16, 16)), "timesteps": torch.randint(0, 1000, (1,)).long()})
+    def test_script_unconditioned_2d_models(self):
+        net = DiffusionModelUNet(
+            spatial_dims=2,
+            in_channels=1,
+            out_channels=1,
+            num_res_blocks=1,
+            block_out_channels=(8, 8, 8),
+            attention_levels=(False, False, True),
+            num_heads=1,
+            norm_num_groups=8,
+        )
+        test_script_save(net, {"x": torch.rand((1, 1, 16, 16)), "timesteps": torch.randint(0, 1000, (1,)).long()})
 
     def test_script_conditioned_2d_models(self):
         net = DiffusionModelUNet(
@@ -201,7 +201,7 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
             norm_num_groups=8,
             with_conditioning=True,
             transformer_num_layers=1,
-            context_dim=3,
+            cross_attention_dim=3,
         )
         test_script_save(
             net,
@@ -250,7 +250,7 @@ class TestDiffusionModelUNet3D(unittest.TestCase):
             norm_num_groups=16,
             with_conditioning=True,
             transformer_num_layers=1,
-            context_dim=3,
+            cross_attention_dim=3,
         )
         with eval_mode(net):
             result = net.forward(
@@ -285,7 +285,7 @@ class TestDiffusionModelUNet3D(unittest.TestCase):
             norm_num_groups=8,
             with_conditioning=True,
             transformer_num_layers=1,
-            context_dim=3,
+            cross_attention_dim=3,
         )
         test_script_save(
             net,
