@@ -9,6 +9,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .autoencoderkl import AutoencoderKL
-from .diffusion_model_unet import DiffusionModelUNet
-from .vqvae import VQVAE
+from setuptools import find_packages, setup
+
+setup(
+    name="generative",
+    packages=find_packages(exclude=[]),
+    version="0.1.0",
+    description="Installer to help to use the prototypes from MONAI generative models in other projects.",
+    install_requires=[
+        "lpips==0.1.4",
+    ],
+)
