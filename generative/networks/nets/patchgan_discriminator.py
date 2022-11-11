@@ -15,22 +15,39 @@ import torch.nn as nn
 from monai.networks.blocks import Convolution
 
 
-class MultiScaleDiscriminator(nn.Sequential):
+class MultiScalePatchDiscriminator(nn.Sequential):
     """
     Multi-scale Patch-GAN discriminator based on Pix2PixHD:
     High-Resolution Image Synthesis and Semantic Manipulation with Conditional GANs
     Ting-Chun Wang1, Ming-Yu Liu1, Jun-Yan Zhu2, Andrew Tao1, Jan Kautz1, Bryan Catanzaro (1)
     (1) NVIDIA Corporation, 2UC Berkeley
     In CVPR 2018.
-
+    Multi-Scale discriminator made up of several Patch-GAN discriminators, that process the images
+    up to different spatial scales.
+    Args:
+        num_D: number of discriminators
+        num_layers_D: number of Convolution layers (Conv + activation + normalisation + [dropout]) in each
+        of the discriminators. In each layer, the number of channels are doubled and the spatial size is
+        divided by 2.
+        spatial_dims: number of spatial dimensions (1D, 2D etc.)
+        num_channels: number of filters in the first convolutional layer (double of the value is taken from then on)
+        in_channels: number of input channels
+        out_channels: number of output channels in each discriminator
+        kernel_size: kernel size of the convolution layers
+        activation: activation layer type
+        norm: normalisation type
+        bias: introduction of layer bias
+        dropout: proportion of dropout applied, defaults to 0.
+        minimum_size_im: minimum spatial size of the input image. Introduced to make sure the architecture
+        requested isn't going to downsample the input image beyond value of 1.
     """
 
     def __init__(
         self,
         num_D,
-        n_layers_D,
+        num_layers_D,
         spatial_dims: int,
-        n_channels: int,
+        num_channels: int,
         in_channels: int,
         out_channels: int,
         kernel_size: int,
@@ -40,37 +57,16 @@ class MultiScaleDiscriminator(nn.Sequential):
         dropout: Union[float, tuple] = 0.0,
         minimum_size_im: int = 256,
     ):
-        """
-        Multi-Scale discriminator made up of several Patch-GAN discriminators, that process the images
-        up to different spatial scales.
-        Args:
-            num_D: number of discriminators
-            n_layers_D: number of Convolution layers (Conv + activation + normalisation + [dropout]) in each
-            of the discriminators. In each layer, the number of channels are doubled and the spatial size is
-            divided by 2.
-            spatial_dims: number of spatial dimensions (1D, 2D etc.)
-            n_channels: number of filters in the first convolutional layer (double of the value is taken from then on)
-            in_channels: number of input channels
-            out_channels: number of output channels in each discriminator
-            kernel_size: kernel size of the convolution layers
-            activation: activation layer type
-            norm: normalisation type
-            bias: introduction of layer bias
-            dropout: proportion of dropout applied, defaults to 0.
-            minimum_size_im: minimum spatial size of the input image. Introduced to make sure the architecture
-            requested isn't going to downsample the input image beyond value of 1.
-        """
-
         super().__init__()
         self.num_D = num_D
-        self.n_layers_D = n_layers_D
-        self.n_channels = n_channels
+        self.num_layers_D = num_layers_D
+        self.num_channels = num_channels
         self.padding = tuple([int((kernel_size - 1) / 2)] * spatial_dims)
         for i in range(self.num_D):
-            subnetD = NLayerDiscriminator(
-                self.n_layers_D,
+            subnetD = PatchDiscriminator(
+                self.num_layers_D,
                 spatial_dims=spatial_dims,
-                n_channels=self.n_channels,
+                num_channels=self.num_channels,
                 in_channels=in_channels,
                 out_channels=out_channels,
                 kernel_size=kernel_size,
@@ -115,12 +111,38 @@ class MultiScaleDiscriminator(nn.Sequential):
             return out
 
 
-class NLayerDiscriminator(nn.Sequential):
+class PatchDiscriminator(nn.Sequential):
+
+    """
+    Patch-GAN discriminator based on Pix2PixHD:
+    High-Resolution Image Synthesis and Semantic Manipulation with Conditional GANs
+    Ting-Chun Wang1, Ming-Yu Liu1, Jun-Yan Zhu2, Andrew Tao1, Jan Kautz1, Bryan Catanzaro (1)
+    (1) NVIDIA Corporation, 2UC Berkeley
+    In CVPR 2018.
+    Args:
+        num_layers_D: number of Convolution layers (Conv + activation + normalisation + [dropout]) in each
+        of the discriminators. In each layer, the number of channels are doubled and the spatial size is
+        divided by 2.
+        spatial_dims: number of spatial dimensions (1D, 2D etc.)
+        num_channels: number of filters in the first convolutional layer (double of the value is taken from then on)
+        in_channels: number of input channels
+        out_channels: number of output channels in each discriminator
+        kernel_size: kernel size of the convolution layers
+        activation: activation layer type
+        norm: normalisation type
+        bias: introduction of layer bias
+        padding: padding to be applied to the convolutional layers
+        index_D: index of the discriminator in the multi-scale chain, defaults to 0
+        dropout: proportion of dropout applied, defaults to 0.
+        minimum_size_im: minimum spatial size of the input image. Introduced to make sure the architecture
+        requested isn't going to downsample the input image beyond value of 1.
+    """
+
     def __init__(
         self,
-        n_layers_D: int,
+        num_layers_D: int,
         spatial_dims: int,
-        n_channels: int,
+        num_channels: int,
         in_channels: int,
         out_channels: int,
         kernel_size: int,
@@ -132,39 +154,19 @@ class NLayerDiscriminator(nn.Sequential):
         dropout: Union[float, tuple] = 0.0,
         minimum_size_im: int = 256,
     ):
-        """
-        Args:
-            n_layers_D: number of Convolution layers (Conv + activation + normalisation + [dropout]) in each
-            of the discriminators. In each layer, the number of channels are doubled and the spatial size is
-            divided by 2.
-            spatial_dims: number of spatial dimensions (1D, 2D etc.)
-            n_channels: number of filters in the first convolutional layer (double of the value is taken from then on)
-            in_channels: number of input channels
-            out_channels: number of output channels in each discriminator
-            kernel_size: kernel size of the convolution layers
-            activation: activation layer type
-            norm: normalisation type
-            bias: introduction of layer bias
-            padding: padding to be applied to the convolutional layers
-            index_D: index of the discriminator in the multi-scale chain, defaults to 0
-            dropout: proportion of dropout applied, defaults to 0.
-            minimum_size_im: minimum spatial size of the input image. Introduced to make sure the architecture
-            requested isn't going to downsample the input image beyond value of 1.
-        """
-
         super().__init__()
-        self.n_layers_D = n_layers_D * (index_D + 1)
-        self.n_channels = n_channels
-        output_size = float(minimum_size_im) / (2 ** (n_layers_D * (index_D + 1)))
+        self.num_layers_D = num_layers_D * (index_D + 1)
+        self.num_channels = num_channels
+        output_size = float(minimum_size_im) / (2 ** (num_layers_D * (index_D + 1)))
         if output_size < 1:
             raise AssertionError(
-                "Your image size is too small to take in up to %d discriminators with n_layers = %d."
-                "Please reduce n_layers, reduce n_D or enter bigger images." % (index_D, self.n_layers_D)
+                "Your image size is too small to take in up to %d discriminators with num_layers = %d."
+                "Please reduce num_layers, reduce num_D or enter bigger images." % (index_D, self.num_layers_D)
             )
 
         input_channels = in_channels
-        output_channels = n_channels * 2
-        for l_ in range(self.n_layers_D):
+        output_channels = num_channels * 2
+        for l_ in range(self.num_layers_D):
             layer = Convolution(
                 spatial_dims=spatial_dims,
                 kernel_size=kernel_size,
