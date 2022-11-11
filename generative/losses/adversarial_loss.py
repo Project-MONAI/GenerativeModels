@@ -90,7 +90,7 @@ class PatchAdversarialLoss(_Loss):
         Returns:
         """
 
-        zero_label_tensor = torch.tensor(0).type(input.type())
+        zero_label_tensor = torch.tensor(0).type(input[0].type())
         zero_label_tensor.requires_grad_(False)
         return zero_label_tensor.expand_as(input)
 

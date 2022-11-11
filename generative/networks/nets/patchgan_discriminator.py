@@ -80,7 +80,7 @@ class MultiScalePatchDiscriminator(nn.Sequential):
             )
             self.add_module("discriminator_%d" % i, subnetD)
 
-    def forward(self, i, get_intermediate_features: bool = True):
+    def forward(self, i, get_intermediate_features: bool = False):
         """
 
         Args:
