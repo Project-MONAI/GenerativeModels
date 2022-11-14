@@ -133,9 +133,7 @@ class PNDMScheduler(nn.Module):
             # produce better results. When using PNDM with `self.skip_prk_steps` the implementation
             # is based on crowsonkb's PLMS sampler implementation: https://github.com/CompVis/latent-diffusion/pull/51
             self.prk_timesteps = np.array([])
-            self.plms_timesteps = np.concatenate([self._timesteps[:-1], self._timesteps[-2:-1], self._timesteps[-1:]])[
-                ::-1
-            ].copy()
+            self.plms_timesteps = self._timesteps
         else:
             prk_timesteps = np.array(self._timesteps[-self.pndm_order :]).repeat(2) + np.tile(
                 np.array([0, self.num_train_timesteps // num_inference_steps // 2]), self.pndm_order
@@ -168,6 +166,8 @@ class PNDMScheduler(nn.Module):
         Returns:
             pred_prev_sample: Predicted previous sample
         """
+
+        # return a tuple for consistency with samplers that return (previous pred, original sample pred)
         if self.counter < len(self.prk_timesteps) and not self.skip_prk_steps:
             return self.step_prk(model_output=model_output, timestep=timestep, sample=sample), None
         else:
