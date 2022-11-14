@@ -1,15 +1,3 @@
-# ---
-# jupyter:
-#   jupytext:
-#     cell_metadata_filter: -all
-#     formats: ipynb,py
-#     text_representation:
-#       extension: .py
-#       format_name: light
-#       format_version: '1.5'
-#       jupytext_version: 1.14.1
-# ---
-
 # # 2D Latent Diffusion Model
 
 # +
@@ -117,8 +105,8 @@ stage1_model = AutoencoderKL(
     in_channels=1,
     out_channels=1,
     num_channels=64,
-    latent_channels=8,
-    ch_mult=(1, 2, 3),
+    latent_channels=3,
+    ch_mult=(1, 2, 2),
     num_res_blocks=1,
     norm_num_groups=16,
     attention_levels=(False, False, True),
@@ -166,12 +154,13 @@ for epoch in range(n_epochs):
         # TODO: check how to deal with next commands with multi-GPU and for FL
         with torch.no_grad():
             clean_latent = model.first_stage(images)
+            ldm_inputs = model.first_stage.sampling(clean_latent[1], clean_latent[2])
 
         timesteps = torch.randint(
-            0, model.scheduler.timesteps, (clean_latent.shape[0],), device=clean_latent.device
+            0, model.scheduler.num_train_timesteps, (ldm_inputs.shape[0],), device=ldm_inputs.device
         ).long()
-        noise = torch.randn_like(clean_latent).to(device)
-        noisy_latent = model.scheduler.q_sample(x_start=clean_latent, t=timesteps, noise=noise)
+        noise = torch.randn_like(ldm_inputs).to(device)
+        noisy_latent = model.scheduler.add_noise(original_samples=ldm_inputs, noise=noise, timesteps=timesteps)
         noise_pred = model.unet_network(noisy_latent, timesteps)
 
         loss = F.l1_loss(noise_pred.float(), noise.float())
@@ -185,5 +174,3 @@ for epoch in range(n_epochs):
                 "loss": epoch_loss / (step + 1),
             }
         )
-
-# -
