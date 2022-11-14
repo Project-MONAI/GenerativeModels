@@ -109,9 +109,9 @@ class PNDMScheduler(nn.Module):
         # settable values
         self.num_inference_steps = None
         self._timesteps = np.arange(0, num_train_timesteps)[::-1].copy()
-        self.prk_timesteps = None
-        self.plms_timesteps = None
-        self.timesteps = None
+        self.prk_timesteps = torch.Tensor([])
+        self.plms_timesteps = torch.Tensor([])
+        self.timesteps = torch.Tensor([])
 
     def set_timesteps(self, num_inference_steps: int, device: Union[str, torch.device] = None) -> None:
         """
