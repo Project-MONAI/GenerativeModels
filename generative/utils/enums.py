@@ -9,13 +9,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import TYPE_CHECKING
+
+from monai.config import IgniteInfo
+from monai.utils import min_version, optional_import
+
+if TYPE_CHECKING:
+    from ignite.engine import EventEnum
+else:
+    EventEnum, _ = optional_import(
+        "ignite.engine", IgniteInfo.OPT_IMPORT_VERSION, min_version, "EventEnum", as_type="base"
+    )
+
 
 class AdversarialKeys:
-    """
-    A set of common keys for adversarial networks.
-    """
-
     REALS = "reals"
+    REAL_LOGITS = "real_logits"
     FAKES = "fakes"
-    GLOSS = "g_loss"
-    DLOSS = "d_loss"
+    FAKE_LOGITS = "fake_logits"
+    RECONSTRUCTION_LOSS = "reconstruction_loss"
+    GENERATOR_LOSS = "generator_loss"
+    DISCRIMINATOR_LOSS = "discriminator_loss"
+
+
+class AdversarialIterationEvents(EventEnum):
+    RECONSTRUCTION_LOSS_COMPLETED = "reconstruction_loss_completed"
+    GENERATOR_FORWARD_COMPLETED = "generator_forward_completed"
+    GENERATOR_DISCRIMINATOR_FORWARD_COMPLETED = "generator_discriminator_forward_completed"
+    GENERATOR_LOSS_COMPLETED = "generator_loss_completed"
+    GENERATOR_BACKWARD_COMPLETED = "generator_backward_completed"
+    GENERATOR_MODEL_COMPLETED = "generator_model_completed"
+    DISCRIMINATOR_REALS_FORWARD_COMPLETED = "discriminator_reals_forward_completed"
+    DISCRIMINATOR_FAKES_FORWARD_COMPLETED = "discriminator_fakes_forward_completed"
+    DISCRIMINATOR_LOSS_COMPLETED = "discriminator_loss_completed"
+    DISCRIMINATOR_BACKWARD_COMPLETED = "discriminator_backward_completed"
+    DISCRIMINATOR_MODEL_COMPLETED = "discriminator_model_completed"
