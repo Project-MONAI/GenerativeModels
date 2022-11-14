@@ -32,11 +32,13 @@ import tempfile
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.nn.functional as F
 from monai import transforms
 from monai.apps import MedNISTDataset
 from monai.config import print_config
 from monai.data import DataLoader, Dataset
 from monai.utils import first, set_determinism
+from tqdm import tqdm
 
 from generative.networks.nets import AutoencoderKL, DiffusionModelUNet, LatentDiffusionModel
 from generative.schedulers import DDPMScheduler
@@ -141,6 +143,47 @@ scheduler = DDPMScheduler(
     beta_end=0.0195,
 )
 
-model = LatentDiffusionModel(first_stage=stage1_model, unet=unet, scheduler=scheduler)
+model = LatentDiffusionModel(first_stage=stage1_model, unet_network=unet, scheduler=scheduler)
 
 model = model.to(device)
+
+# +
+optimizer = torch.optim.Adam(model.parameters(), 2.5e-5)
+# TODO: Add lr_scheduler with warm-up
+# TODO: Add EMA model
+
+n_epochs = 20
+val_interval = 2
+for epoch in range(n_epochs):
+    model.train()
+    epoch_loss = 0
+    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader))
+    progress_bar.set_description(f"Epoch {epoch}")
+    for step, batch in progress_bar:
+        images = batch["image"].to(device)
+        optimizer.zero_grad(set_to_none=True)
+
+        # TODO: check how to deal with next commands with multi-GPU and for FL
+        with torch.no_grad():
+            clean_latent = model.first_stage(images)
+
+        timesteps = torch.randint(
+            0, model.scheduler.timesteps, (clean_latent.shape[0],), device=clean_latent.device
+        ).long()
+        noise = torch.randn_like(clean_latent).to(device)
+        noisy_latent = model.scheduler.q_sample(x_start=clean_latent, t=timesteps, noise=noise)
+        noise_pred = model.unet_network(noisy_latent, timesteps)
+
+        loss = F.l1_loss(noise_pred.float(), noise.float())
+
+        loss.backward()
+        optimizer.step()
+        epoch_loss += loss.item()
+
+        progress_bar.set_postfix(
+            {
+                "loss": epoch_loss / (step + 1),
+            }
+        )
+
+# -
