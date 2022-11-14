@@ -317,7 +317,7 @@ for epoch in range(n_epochs):
 # ### Learning curves
 
 # %%
-plt.style.use("seaborn-v0_8")
+plt.style.use("seaborn")
 plt.title("Learning Curves", fontsize=20)
 plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, color="C0", linewidth=2.0, label="Train")
 plt.plot(
