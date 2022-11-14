@@ -145,7 +145,8 @@ class PNDMScheduler(nn.Module):
 
         timesteps = np.concatenate([self.prk_timesteps, self.plms_timesteps]).astype(np.int64)
         self.timesteps = torch.from_numpy(timesteps).to(device)
-
+        # update num_inference_steps - necessary if we use prk steps
+        self.num_inference_steps = len(self.timesteps)
         self.ets = []
         self.counter = 0
 

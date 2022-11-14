@@ -18,13 +18,11 @@ from generative.schedulers import PNDMScheduler
 
 TEST_2D_CASE = []
 for beta_schedule in ["linear", "scaled_linear"]:
-    TEST_2D_CASE.append([{"beta_schedule": beta_schedule, "skip_prk_steps": False}, (2, 6, 16, 16), (2, 6, 16, 16)])
+    TEST_2D_CASE.append([{"beta_schedule": beta_schedule}, (2, 6, 16, 16), (2, 6, 16, 16)])
 
 TEST_3D_CASE = []
 for beta_schedule in ["linear", "scaled_linear"]:
-    TEST_3D_CASE.append(
-        [{"beta_schedule": beta_schedule, "skip_prk_steps": False}, (2, 6, 16, 16, 16), (2, 6, 16, 16, 16)]
-    )
+    TEST_3D_CASE.append([{"beta_schedule": beta_schedule}, (2, 6, 16, 16, 16), (2, 6, 16, 16, 16)])
 
 TEST_CASES = TEST_2D_CASE + TEST_3D_CASE
 
@@ -62,6 +60,12 @@ class TestDDPMScheduler(unittest.TestCase):
         scheduler.set_timesteps(num_inference_steps=100)
         self.assertEqual(scheduler.num_inference_steps, 100)
         self.assertEqual(len(scheduler.timesteps), 100)
+
+    def test_set_timesteps_prk(self):
+        scheduler = PNDMScheduler(num_train_timesteps=1000, skip_prk_steps=False)
+        scheduler.set_timesteps(num_inference_steps=100)
+        self.assertEqual(scheduler.num_inference_steps, 109)
+        self.assertEqual(len(scheduler.timesteps), 109)
 
 
 if __name__ == "__main__":
