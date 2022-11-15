@@ -73,7 +73,7 @@ class MS_SSIM(CumulativeIterationMetric):
             )
 
 
-    def _compute_ms_ssim(self, X: torch.Tensor, y: torch.Tensor):
+    def _compute_metric(self, x: torch.Tensor, y: torch.Tensor):
         """
         Args:
             x: first sample (e.g., the reference image). Its shape is (B,C,W,H) for 2D data and (B,C,W,H,D) for 3D.
@@ -84,26 +84,26 @@ class MS_SSIM(CumulativeIterationMetric):
             ms_ssim_value
         """
 
-        if not X.shape == y.shape:
-            raise ValueError(f"Input images should have the same dimensions, but got {X.shape} and {y.shape}.")
+        if not x.shape == y.shape:
+            raise ValueError(f"Input images should have the same dimensions, but got {x.shape} and {y.shape}.")
 
         for d in range(len(X.shape) - 1, 1, -1):
-            X = X.squeeze(dim=d)
+            x = x.squeeze(dim=d)
             y = y.squeeze(dim=d)
 
-        if not X.type() == y.type():
-            raise ValueError(f"Input images should have the same dtype, but got {X.type()} and {y.type()}.")
+        if not x.type() == y.type():
+            raise ValueError(f"Input images should have the same dtype, but got {x.type()} and {y.type()}.")
 
-        if len(X.shape) == 4:
+        if len(x.shape) == 4:
             avg_pool = F.avg_pool2d
-        elif len(X.shape) == 5:
+        elif len(x.shape) == 5:
             avg_pool = F.avg_pool3d
         else:
-            raise ValueError(f"Input images should be 4-d or 5-d tensors, but got {X.shape}")
+            raise ValueError(f"Input images should be 4-d or 5-d tensors, but got {x.shape}")
 
         divisible_by = 2 ** (len(self.weigths) - 1)
         bigger_than = (self.win_size + 2) * 2 ** (len(self.weights) - 1)
-        for idx, shape_size in enumerate(X.shape[2:]):
+        for idx, shape_size in enumerate(x.shape[2:]):
             if shape_size % divisible_by == 0:
                 raise ValueError(f"Image size needs to be divisible by {divisible_by} but dimension {idx + 2} has size {shape_size}")
 
@@ -119,16 +119,16 @@ class MS_SSIM(CumulativeIterationMetric):
         levels = self.weights.shape[0]
         mcs_list: List[torch.Tensor] = []
         for i in range(levels):
-            ssim, cs = self.SSIM(X, y)
+            ssim, cs = self.SSIM._compute_metric(x, y, full=True)
 
             if i < levels - 1:
                 mcs_list.append(torch.relu(cs))
-                padding = [s % 2 for s in X.shape[2:]]
-                X = avg_pool(X, kernel_size=2, padding=padding)
+                padding = [s % 2 for s in x.shape[2:]]
+                x = avg_pool(x, kernel_size=2, padding=padding)
                 y = avg_pool(y, kernel_size=2, padding=padding)
 
-        ssim = torch.relu(ssim)  # (batch, channel)
-        mcs_and_ssim = torch.stack(mcs_list + [ssim], dim=0)  # (level, batch, channel)
+        ssim = torch.relu(ssim)  # (batch, 1)
+        mcs_and_ssim = torch.stack(mcs_list + [ssim], dim=0)  # (level, batch, 1)
         ms_ssim = torch.prod(mcs_and_ssim ** self.weights.view(-1, 1, 1), dim=0)
 
         if self.reduction == MetricReduction.MEAN.value:
