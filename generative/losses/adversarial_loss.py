@@ -9,6 +9,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import warnings
 from enum import Enum
 from typing import Union
 
@@ -28,6 +29,8 @@ class AdversarialCriterions(Enum):
 class PatchAdversarialLoss(_Loss):
     """
     Calculates an adversarial loss on a Patch Discriminator or a Multi-scale Patch Discriminator.
+    Warning: due to the possibility of using different criterions, the output of the discrimination
+    mustn't be passed to a final activation layer. That is taken care of internally within the loss.
     Args:
         reduction: which reduction you want the loss to use
         criterion: which criterion (hinge, least_squares or bce) you want to use on the discriminators outputs.
@@ -68,19 +71,15 @@ class PatchAdversarialLoss(_Loss):
         """
         Gets the ground truth tensor for the discriminator depending on whether the input is real or fake.
         Args:
-            input:
+            input: input tensor from the discriminator (output of discriminator, or output of one of the multi-scale
+            discriminator). This is used to match the shape.
             target_is_real: whether the input is real or wannabe-real (1s) or fake (0s).
         Returns:
         """
-
-        if target_is_real:
-            real_label_tensor = torch.tensor(1).fill_(self.real_label).type(input.type())
-            real_label_tensor.requires_grad_(False)
-            return real_label_tensor.expand_as(input)
-        else:
-            fake_label_tensor = torch.tensor(1).fill_(self.fake_label).type(input.type())
-            fake_label_tensor.requires_grad_(False)
-            return fake_label_tensor.expand_as(input)
+        filling_label = self.real_label if target_is_real else self.fake_label
+        label_tensor = torch.tensor(1).fill_(filling_label).type(input.type())
+        label_tensor.requires_grad_(False)
+        return label_tensor.expand_as(input)
 
     def get_zero_tensor(self, input: torch.FloatTensor):
         """
@@ -94,11 +93,12 @@ class PatchAdversarialLoss(_Loss):
         zero_label_tensor.requires_grad_(False)
         return zero_label_tensor.expand_as(input)
 
-    def forward(self, input: torch.FloatTensor, target_is_real: bool, for_discriminator: bool):
+    def forward(self, input: Union[torch.FloatTensor, list], target_is_real: bool, for_discriminator: bool):
 
         """
         Args:
-            input:
+            input: output of Multi-Scale Patch Discriminator or Patch Discriminator; being a list of
+            tensors or a tensor; they shouldn't have gone through an activation layer.
             target_is_real: whereas the input corresponds to discriminator output for real or fake images
             for_discriminator: whereas this is being calculated for discriminator or generator loss. In the last
             case, target_is_real is set to True, as the generator wants the input to be dimmed as real.
@@ -111,9 +111,10 @@ class PatchAdversarialLoss(_Loss):
         loss = None
         if not for_discriminator:
             target_is_real = True  # With generator, we always want this to be true!
-
-        # Check Multi-scale
-        # Criterion shuffle
+            warnings.warn(
+                "Variable target_is_real has been set to False, but for_discriminator is set"
+                "to False. To optimise a generator, target_is_real must be set to True."
+            )
 
         if type(input) is not list:
             input = [input]

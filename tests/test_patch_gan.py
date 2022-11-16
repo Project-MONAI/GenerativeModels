@@ -14,10 +14,11 @@ import unittest
 import torch
 from monai.networks import eval_mode
 from parameterized import parameterized
+from tests.utils import test_script_save
 
 from generative.networks.nets.patchgan_discriminator import MultiScalePatchDiscriminator
 
-TEST_2D_WITHOUT_INTERMEDIATES = [
+TEST_2D = [
     {
         "num_D": 2,
         "num_layers_D": 3,
@@ -32,32 +33,11 @@ TEST_2D_WITHOUT_INTERMEDIATES = [
         "dropout": 0.1,
         "minimum_size_im": 256,
     },
-    False,
     torch.rand([1, 3, 256, 512]),
     [(1, 1, 32, 64), (1, 1, 4, 8)],
     [3, 6],
 ]
-TEST_2D_WITH_INTERMEDIATES = [
-    {
-        "num_D": 2,
-        "num_layers_D": 3,
-        "spatial_dims": 2,
-        "num_channels": 8,
-        "in_channels": 3,
-        "out_channels": 1,
-        "kernel_size": 3,
-        "activation": "LEAKYRELU",
-        "norm": "instance",
-        "bias": False,
-        "dropout": 0.1,
-        "minimum_size_im": 256,
-    },
-    True,
-    torch.rand([1, 3, 256, 512]),
-    [(1, 1, 32, 64), (1, 1, 4, 8)],
-    [3, 6],
-]
-TEST_3D_WITHOUT_INTERMEDIATES = [
+TEST_3D = [
     {
         "num_D": 2,
         "num_layers_D": 3,
@@ -72,27 +52,6 @@ TEST_3D_WITHOUT_INTERMEDIATES = [
         "dropout": 0.1,
         "minimum_size_im": 256,
     },
-    False,
-    torch.rand([1, 3, 256, 512, 256]),
-    [(1, 1, 32, 64, 32), (1, 1, 4, 8, 4)],
-    [3, 6],
-]
-TEST_3D_WITH_INTERMEDIATES = [
-    {
-        "num_D": 2,
-        "num_layers_D": 3,
-        "spatial_dims": 3,
-        "num_channels": 8,
-        "in_channels": 3,
-        "out_channels": 1,
-        "kernel_size": 3,
-        "activation": "LEAKYRELU",
-        "norm": "instance",
-        "bias": False,
-        "dropout": 0.1,
-        "minimum_size_im": 256,
-    },
-    True,
     torch.rand([1, 3, 256, 512, 256]),
     [(1, 1, 32, 64, 32), (1, 1, 4, 8, 4)],
     [3, 6],
@@ -114,12 +73,7 @@ TEST_TOO_SMALL_SIZE = [
     },
 ]
 
-CASES = [
-    TEST_2D_WITHOUT_INTERMEDIATES,
-    TEST_2D_WITH_INTERMEDIATES,
-    TEST_3D_WITH_INTERMEDIATES,
-    TEST_3D_WITHOUT_INTERMEDIATES,
-]
+CASES = [TEST_2D, TEST_3D]
 
 
 class TestPatchGAN(unittest.TestCase):
@@ -127,26 +81,40 @@ class TestPatchGAN(unittest.TestCase):
     def test_shape(
         self,
         input_param,
-        get_intermediate_features,
         input_data,
         expected_shape,
         features_lengths=None,
     ):
         net = MultiScalePatchDiscriminator(**input_param)
         with eval_mode(net):
-            if not get_intermediate_features:
-                result = net.forward(input_data, get_intermediate_features)
-            else:
-                result, features = net.forward(input_data, get_intermediate_features)
+            result, features = net.forward(input_data)
             for r_ind, r in enumerate(result):
                 self.assertEqual(tuple(r.shape), expected_shape[r_ind])
-            if get_intermediate_features:
-                for o_d_ind, o_d in enumerate(features):
-                    self.assertEqual(len(o_d), features_lengths[o_d_ind])
+            for o_d_ind, o_d in enumerate(features):
+                self.assertEqual(len(o_d), features_lengths[o_d_ind])
 
     def test_too_small_shape(self):
         with self.assertRaises(AssertionError):
             MultiScalePatchDiscriminator(**TEST_TOO_SMALL_SIZE[0])
+
+    def test_script(self):
+
+        net = MultiScalePatchDiscriminator(
+            num_D=2,
+            num_layers_D=3,
+            spatial_dims=2,
+            num_channels=8,
+            in_channels=3,
+            out_channels=1,
+            kernel_size=3,
+            activation="LEAKYRELU",
+            norm="instance",
+            bias=False,
+            dropout=0.1,
+            minimum_size_im=256,
+        )
+        i = torch.rand([1, 3, 256, 512])
+        test_script_save(net, i)
 
 
 if __name__ == "__main__":

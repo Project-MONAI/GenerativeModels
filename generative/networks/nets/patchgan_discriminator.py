@@ -9,8 +9,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Sequence, Union
+from typing import List, Sequence, Union
 
+import torch
 import torch.nn as nn
 from monai.networks.blocks import Convolution
 
@@ -80,39 +81,27 @@ class MultiScalePatchDiscriminator(nn.Sequential):
             )
             self.add_module("discriminator_%d" % i, subnetD)
 
-    def forward(self, i, get_intermediate_features: bool = False):
+    def forward(self, i):
         """
 
         Args:
             i: Input tensor
-            get_intermediate_features: Whether to get intermediate features of each of the discriminators to calculate
-            feature-matching loss (regulariser loss) on the discriminators as well (see Pix2Pix paper).
-
         Returns:
-            list of outputs, and - if get_intermediate_features, another list of lists with the intermediate features
+            list of outputs and another list of lists with the intermediate features
             of each discriminator.
-
         """
 
-        out = []
-        if get_intermediate_features:
-            intermediate_features = []
+        out: List[torch.Tensor] = []
+        intermediate_features: List[List[torch.Tensor]] = []
         for D in self.children():
-            out_D = D(i, get_intermediate_features=get_intermediate_features)
-            if get_intermediate_features:
-                intermediate_features.append(out_D[:-1])
-                out.append(out_D[-1])
-            else:
-                out.append(out_D)
+            out_D: List[torch.Tensor] = D(i)
+            out.append(out_D[-1])
+            intermediate_features.append(out_D[:-1])
 
-        if get_intermediate_features:
-            return out, intermediate_features
-        else:
-            return out
+        return out, intermediate_features
 
 
 class PatchDiscriminator(nn.Sequential):
-
     """
     Patch-GAN discriminator based on Pix2PixHD:
     High-Resolution Image Synthesis and Semantic Manipulation with Conditional GANs
@@ -198,23 +187,17 @@ class PatchDiscriminator(nn.Sequential):
             ),
         )
 
-    def forward(self, x, get_intermediate_features: bool = False):
+    def forward(self, x):
         """
         Args:
             x: input tensor
-            get_intermediate_features: Whether to get intermediate features of each of the discriminators to calculate
             feature-matching loss (regulariser loss) on the discriminators as well (see Pix2Pix paper).
-
         Returns:
-            output tensor or  - if get_intermediate_features active - list of intermediate features, with the last
-            element being the output.
-
+            list of intermediate features, with the last element being the output.
         """
         out = [x]
         for submodel in self.children():
             intermediate_output = submodel(out[-1])
             out.append(intermediate_output)
-        if get_intermediate_features:
-            return out[1:]
-        else:
-            return out[-1]
+
+        return out[1:]
