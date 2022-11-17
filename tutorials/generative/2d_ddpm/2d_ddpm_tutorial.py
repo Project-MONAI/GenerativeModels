@@ -8,7 +8,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.14.1
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: Python 3 (ipykernel)
 #     language: python
 #     name: python3
 # ---
@@ -59,6 +59,8 @@ from monai.config import print_config
 from monai.data import CacheDataset, DataLoader
 from monai.utils import first, set_determinism
 from tqdm import tqdm
+
+from generative.inferers import DiffusionSamplingInferer
 
 # TODO: Add right import reference after deployed
 from generative.networks.nets import DiffusionModelUNet
@@ -122,7 +124,7 @@ train_transforms = transforms.Compose(
     ]
 )
 train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
-train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=4)
+train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=0)
 
 # %%
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, progress=False, seed=0)
@@ -135,7 +137,7 @@ val_transforms = transforms.Compose(
     ]
 )
 val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
-val_loader = DataLoader(val_ds, batch_size=128, shuffle=False, num_workers=4)
+val_loader = DataLoader(val_ds, batch_size=128, shuffle=False, num_workers=0)
 
 # %% [markdown]
 # ### Visualisation of the training images
@@ -153,8 +155,8 @@ plt.tight_layout()
 plt.show()
 
 # %% [markdown]
-# ### Define network, scheduler and optimizer
-# At this step, we instantiate the MONAI components to create a DDPM, the UNET and the noise scheduler. We are using
+# ### Define network, scheduler, optimizer, and sampler
+# At this step, we instantiate the MONAI components to create a DDPM, the UNET, the noise scheduler, and the inferrer used for sampling. We are using
 # the original DDPM scheduler containing 1000 timesteps in its Markov chain, and a 2D UNET with attention mechanisms
 # in the 2nd and 3rd levels, each with 1 attention head.
 
@@ -179,6 +181,7 @@ scheduler = DDPMScheduler(
 
 optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
 
+sampler = DiffusionSamplingInferer()
 # %% [markdown]
 # ### Model training
 # Here, we are training our model for 50 epochs (training time: ~20 minutes).
@@ -221,6 +224,7 @@ for epoch in range(n_epochs):
                 "loss": epoch_loss / (step + 1),
             }
         )
+        break
     epoch_loss_list.append(epoch_loss / (step + 1))
 
     if (epoch + 1) % val_interval == 0:
@@ -244,15 +248,10 @@ for epoch in range(n_epochs):
         val_epoch_loss_list.append(val_epoch_loss / (step + 1))
 
         # Sampling image during training
-        image = torch.randn((1, 1, 64, 64))
-        image = image.to(device)
+        noise = torch.randn((1, 1, 64, 64))
+        noise = noise.to(device)
         scheduler.set_timesteps(num_inference_steps=1000)
-        for t in scheduler.timesteps:
-            # 1. predict noise model_output
-            with torch.no_grad():
-                model_output = model(image, torch.Tensor((t,)).to(device))
-            # 2. compute previous image: x_t -> x_t-1
-            image, _ = scheduler.step(model_output, t, image)
+        image = sampler(input_noise=noise, diffusion_model=model, scheduler=scheduler)
 
         plt.figure(figsize=(2, 2))
         plt.imshow(image[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
@@ -288,24 +287,15 @@ plt.show()
 
 # %%
 model.eval()
-image = torch.randn(
-    (1, 1, 64, 64),
-)
-image = image.to(device)
+noise = torch.randn((1, 1, 64, 64))
+noise = noise.to(device)
 scheduler.set_timesteps(num_inference_steps=1000)
+image, intermediates = sampler(
+    input_noise=noise, diffusion_model=model, scheduler=scheduler, save_intermediates=True, intermediate_steps=100
+)
 
-intermediary = []
-for t in tqdm(scheduler.timesteps, ncols=70):
-    # 1. predict noise model_output
-    with torch.no_grad():
-        model_output = model(image, torch.Tensor((t,)).to(device))
+chain = torch.cat(intermediates, dim=-1)
 
-    # 2. compute previous image: x_t -> x_t-1
-    image, _ = scheduler.step(model_output, t, image)
-    if t % 100 == 0:
-        intermediary.append(image)
-
-chain = torch.cat(intermediary, dim=-1)
 plt.style.use("default")
 plt.imshow(chain[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
 plt.tight_layout()
