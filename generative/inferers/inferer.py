@@ -34,7 +34,7 @@ class DiffusionSamplingInferer(Inferer):
         *args: Any,
         **kwargs: Any
     ):
-        """Unified callable function API of Inferers.
+        """
         Args:
             input_noise: random noise, of the same shape as the desired sample.
             diffusion_model: model to sample from.
