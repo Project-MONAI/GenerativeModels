@@ -65,7 +65,7 @@ class MultiScalePatchDiscriminator(nn.Sequential):
         self.num_channels = num_channels
         self.padding = tuple([int((kernel_size - 1) / 2)] * spatial_dims)
         for i in range(self.num_d):
-            subnetD = PatchDiscriminator(
+            subnet_d = PatchDiscriminator(
                 self.num_layers_d,
                 spatial_dims=spatial_dims,
                 num_channels=self.num_channels,
@@ -80,7 +80,7 @@ class MultiScalePatchDiscriminator(nn.Sequential):
                 dropout=dropout,
                 minimum_size_im=minimum_size_im,
             )
-            self.add_module("discriminator_%d" % i, subnetD)
+            self.add_module("discriminator_%d" % i, subnet_d)
 
     def forward(self, i: torch.Tensor) -> Tuple[List[torch.Tensor], List[List[torch.Tensor]]]:
         """

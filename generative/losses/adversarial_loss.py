@@ -10,7 +10,7 @@
 # limitations under the License.
 
 import warnings
-from typing import List, Union
+from typing import List, Optional, Union
 
 import torch
 from monai.networks.layers.utils import get_act_layer
@@ -152,7 +152,7 @@ class PatchAdversarialLoss(_Loss):
 
         return loss
 
-    def forward_single(self, input: torch.FloatTensor, target: torch.FloatTensor) -> torch.Tensor:
+    def forward_single(self, input: torch.FloatTensor, target: torch.FloatTensor) -> Optional[torch.Tensor]:
         if (
             self.criterion == AdversarialCriterions.BCE.value
             or self.criterion == AdversarialCriterions.LEAST_SQUARE.value
