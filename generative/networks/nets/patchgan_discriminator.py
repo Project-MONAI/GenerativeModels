@@ -25,9 +25,10 @@ class MultiScalePatchDiscriminator(nn.Sequential):
     In CVPR 2018.
     Multi-Scale discriminator made up of several Patch-GAN discriminators, that process the images
     up to different spatial scales.
+
     Args:
-        num_D: number of discriminators
-        num_layers_D: number of Convolution layers (Conv + activation + normalisation + [dropout]) in each
+        num_d: number of discriminators
+        num_layers_d: number of Convolution layers (Conv + activation + normalisation + [dropout]) in each
         of the discriminators. In each layer, the number of channels are doubled and the spatial size is
         divided by 2.
         spatial_dims: number of spatial dimensions (1D, 2D etc.)
@@ -45,8 +46,8 @@ class MultiScalePatchDiscriminator(nn.Sequential):
 
     def __init__(
         self,
-        num_D,
-        num_layers_D,
+        num_d: int,
+        num_layers_d: int,
         spatial_dims: int,
         num_channels: int,
         in_channels: int,
@@ -59,13 +60,13 @@ class MultiScalePatchDiscriminator(nn.Sequential):
         minimum_size_im: int = 256,
     ) -> None:
         super().__init__()
-        self.num_D = num_D
-        self.num_layers_D = num_layers_D
+        self.num_d = num_d
+        self.num_layers_d = num_layers_d
         self.num_channels = num_channels
         self.padding = tuple([int((kernel_size - 1) / 2)] * spatial_dims)
-        for i in range(self.num_D):
+        for i in range(self.num_d):
             subnetD = PatchDiscriminator(
-                self.num_layers_D,
+                self.num_layers_d,
                 spatial_dims=spatial_dims,
                 num_channels=self.num_channels,
                 in_channels=in_channels,
@@ -81,7 +82,7 @@ class MultiScalePatchDiscriminator(nn.Sequential):
             )
             self.add_module("discriminator_%d" % i, subnetD)
 
-    def forward(self, i) -> Tuple[List[torch.Tensor], List[List[torch.Tensor]]]:
+    def forward(self, i: torch.Tensor) -> Tuple[List[torch.Tensor], List[List[torch.Tensor]]]:
         """
 
         Args:
@@ -93,10 +94,10 @@ class MultiScalePatchDiscriminator(nn.Sequential):
 
         out: List[torch.Tensor] = []
         intermediate_features: List[List[torch.Tensor]] = []
-        for D in self.children():
-            out_D: List[torch.Tensor] = D(i)
-            out.append(out_D[-1])
-            intermediate_features.append(out_D[:-1])
+        for disc in self.children():
+            out_d: List[torch.Tensor] = disc(i)
+            out.append(out_d[-1])
+            intermediate_features.append(out_d[:-1])
 
         return out, intermediate_features
 
@@ -108,8 +109,9 @@ class PatchDiscriminator(nn.Sequential):
     Ting-Chun Wang1, Ming-Yu Liu1, Jun-Yan Zhu2, Andrew Tao1, Jan Kautz1, Bryan Catanzaro (1)
     (1) NVIDIA Corporation, 2UC Berkeley
     In CVPR 2018.
+
     Args:
-        num_layers_D: number of Convolution layers (Conv + activation + normalisation + [dropout]) in each
+        num_layers_d: number of Convolution layers (Conv + activation + normalisation + [dropout]) in each
         of the discriminators. In each layer, the number of channels are doubled and the spatial size is
         divided by 2.
         spatial_dims: number of spatial dimensions (1D, 2D etc.)
@@ -129,7 +131,7 @@ class PatchDiscriminator(nn.Sequential):
 
     def __init__(
         self,
-        num_layers_D: int,
+        num_layers_d: int,
         spatial_dims: int,
         num_channels: int,
         in_channels: int,
@@ -144,18 +146,18 @@ class PatchDiscriminator(nn.Sequential):
         minimum_size_im: int = 256,
     ) -> None:
         super().__init__()
-        self.num_layers_D = num_layers_D * (index_d + 1)
+        self.num_layers_d = num_layers_d * (index_d + 1)
         self.num_channels = num_channels
-        output_size = float(minimum_size_im) / (2 ** (num_layers_D * (index_d + 1)))
+        output_size = float(minimum_size_im) / (2 ** (num_layers_d * (index_d + 1)))
         if output_size < 1:
             raise AssertionError(
                 "Your image size is too small to take in up to %d discriminators with num_layers = %d."
-                "Please reduce num_layers, reduce num_D or enter bigger images." % (index_d, self.num_layers_D)
+                "Please reduce num_layers, reduce num_D or enter bigger images." % (index_d, self.num_layers_d)
             )
 
         input_channels = in_channels
         output_channels = num_channels * 2
-        for l_ in range(self.num_layers_D):
+        for l_ in range(self.num_layers_d):
             layer = Convolution(
                 spatial_dims=spatial_dims,
                 kernel_size=kernel_size,
@@ -187,8 +189,9 @@ class PatchDiscriminator(nn.Sequential):
             ),
         )
 
-    def forward(self, x) -> List[torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> List[torch.Tensor]:
         """
+
         Args:
             x: input tensor
             feature-matching loss (regulariser loss) on the discriminators as well (see Pix2Pix paper).

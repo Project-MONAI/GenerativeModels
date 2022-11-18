@@ -20,8 +20,8 @@ from generative.networks.nets.patchgan_discriminator import MultiScalePatchDiscr
 
 TEST_2D = [
     {
-        "num_D": 2,
-        "num_layers_D": 3,
+        "num_d": 2,
+        "num_layers_d": 3,
         "spatial_dims": 2,
         "num_channels": 8,
         "in_channels": 3,
@@ -39,8 +39,8 @@ TEST_2D = [
 ]
 TEST_3D = [
     {
-        "num_D": 2,
-        "num_layers_D": 3,
+        "num_d": 2,
+        "num_layers_d": 3,
         "spatial_dims": 3,
         "num_channels": 8,
         "in_channels": 3,
@@ -58,8 +58,8 @@ TEST_3D = [
 ]
 TEST_TOO_SMALL_SIZE = [
     {
-        "num_D": 2,
-        "num_layers_D": 6,
+        "num_d": 2,
+        "num_layers_d": 6,
         "spatial_dims": 2,
         "num_channels": 8,
         "in_channels": 3,
@@ -100,8 +100,8 @@ class TestPatchGAN(unittest.TestCase):
     def test_script(self):
 
         net = MultiScalePatchDiscriminator(
-            num_D=2,
-            num_layers_D=3,
+            num_d=2,
+            num_layers_d=3,
             spatial_dims=2,
             num_channels=8,
             in_channels=3,

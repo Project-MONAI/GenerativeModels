@@ -75,6 +75,7 @@ class PatchAdversarialLoss(_Loss):
     def get_target_tensor(self, input: torch.FloatTensor, target_is_real: bool) -> torch.Tensor:
         """
         Gets the ground truth tensor for the discriminator depending on whether the input is real or fake.
+
         Args:
             input: input tensor from the discriminator (output of discriminator, or output of one of the multi-scale
             discriminator). This is used to match the shape.
@@ -89,6 +90,7 @@ class PatchAdversarialLoss(_Loss):
     def get_zero_tensor(self, input: torch.FloatTensor) -> torch.Tensor:
         """
         Gets a zero tensor.
+
         Args:
             input: tensor which shape you want the zeros tensor to correspond to.
         Returns:
@@ -103,6 +105,7 @@ class PatchAdversarialLoss(_Loss):
     ) -> Union[torch.Tensor, List[torch.Tensor]]:
 
         """
+
         Args:
             input: output of Multi-Scale Patch Discriminator or Patch Discriminator; being a list of
             tensors or a tensor; they shouldn't have gone through an activation layer.
@@ -115,7 +118,6 @@ class PatchAdversarialLoss(_Loss):
 
         """
 
-        loss = None
         if not for_discriminator:
             target_is_real = True  # With generator, we always want this to be true!
             warnings.warn(
@@ -127,7 +129,7 @@ class PatchAdversarialLoss(_Loss):
             input = [input]
         target_ = []
         for disc_ind, disc_out in enumerate(input):
-            if self.criterion != "hinge":
+            if self.criterion != AdversarialCriterions.HINGE.value:
                 target_.append(self.get_target_tensor(disc_out, target_is_real))
             else:
                 target_.append(self.get_zero_tensor(disc_out))
@@ -136,24 +138,27 @@ class PatchAdversarialLoss(_Loss):
         loss = []
         for disc_ind, disc_out in enumerate(input):
             disc_out = self.activation(disc_out)
-            if self.criterion == "hinge" and not target_is_real:
+            if self.criterion == AdversarialCriterions.HINGE.value and not target_is_real:
                 loss_ = self.forward_single(-disc_out, target_[disc_ind])
             else:
                 loss_ = self.forward_single(disc_out, target_[disc_ind])
             loss.append(loss_)
 
         if loss is not None:
-            if self.reduction == "mean":
+            if self.reduction == LossReduction.MEAN.value:
                 loss = torch.mean(torch.stack(loss))
-            elif self.reduction == "sum":
+            elif self.reduction == LossReduction.SUM.value:
                 loss = torch.sum(torch.stack(loss))
 
         return loss
 
     def forward_single(self, input: torch.FloatTensor, target: torch.FloatTensor) -> torch.Tensor:
-        if self.criterion == "bce" or self.criterion == "least_squares":
+        if (
+            self.criterion == AdversarialCriterions.BCE.value
+            or self.criterion == AdversarialCriterions.LEAST_SQUARE.value
+        ):
             return self.loss_fct(input, target)
-        elif self.criterion == "hinge":
+        elif self.criterion == AdversarialCriterions.HINGE.value:
             minval = torch.min(input - 1, self.get_zero_tensor(input))
             return -torch.mean(minval)
         else:
