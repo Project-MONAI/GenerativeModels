@@ -41,11 +41,6 @@ class TestPatchAdversarialLoss(unittest.TestCase):
         """
         Get tensor for the tests. The tensor is around (-1) or (+1), depending on
         is_positive.
-        Args:
-            shape:
-            is_positive:
-        Returns:
-
         """
         if is_positive:
             offset = 1
@@ -56,7 +51,6 @@ class TestPatchAdversarialLoss(unittest.TestCase):
     def test_criterion(self):
         """
         Make sure that unknown criterion fail.
-        Returns:
         """
         with self.assertRaises(ValueError):
             PatchAdversarialLoss(**TEST_CASE_CREATION_FAIL[0])
@@ -68,11 +62,6 @@ class TestPatchAdversarialLoss(unittest.TestCase):
         If the discriminator takes in a tensor that looks positive, yet the label is fake,
         the loss should be bigger than that obtained with a tensor that looks negative.
         Same for the real label, and for the generator.
-        Args:
-            input_param:
-            shape_input:
-        Returns:
-
         """
         loss = PatchAdversarialLoss(**input_param)
         fakes = self.get_input(shape_input, is_positive=False)
@@ -91,7 +80,7 @@ class TestPatchAdversarialLoss(unittest.TestCase):
         assert loss_gen_f > loss_gen_r
 
     @parameterized.expand(TEST_CASES_LOSS_LOGIC_LIST)
-    def test_multiD(self, input_param: dict, shape_input):
+    def test_multiple_discs(self, input_param: dict, shape_input):
         shapes = [shape_input] + [shape_input[0:2] + [int(i / j) for i in shape_input[2:]] for j in range(1, 3)]
         inputs = [self.get_input(shapes[i], is_positive=True) for i in range(len(shapes))]
         loss = PatchAdversarialLoss(**input_param)

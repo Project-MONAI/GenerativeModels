@@ -10,16 +10,16 @@
 # limitations under the License.
 
 import warnings
-from enum import Enum
-from typing import Union
+from typing import List, Union
 
 import torch
 from monai.networks.layers.utils import get_act_layer
 from monai.utils import LossReduction
+from monai.utils.enums import StrEnum
 from torch.nn.modules.loss import _Loss
 
 
-class AdversarialCriterions(Enum):
+class AdversarialCriterions(StrEnum):
 
     BCE = "bce"
     HINGE = "hinge"
@@ -31,8 +31,13 @@ class PatchAdversarialLoss(_Loss):
     Calculates an adversarial loss on a Patch Discriminator or a Multi-scale Patch Discriminator.
     Warning: due to the possibility of using different criterions, the output of the discrimination
     mustn't be passed to a final activation layer. That is taken care of internally within the loss.
+
     Args:
-        reduction: which reduction you want the loss to use
+        reduction: {``"none"``, ``"mean"``, ``"sum"``} Specifies the reduction to apply to the output.
+        Defaults to ``"mean"``.
+        - ``"none"``: no reduction will be applied.
+        - ``"mean"``: the sum of the output will be divided by the number of elements in the output.
+        - ``"sum"``: the output will be summed.
         criterion: which criterion (hinge, least_squares or bce) you want to use on the discriminators outputs.
         Depending on the criterion, a different activation layer will be used. Make sure you don't run the outputs
         through an activation layer prior to calling the loss.
@@ -42,7 +47,7 @@ class PatchAdversarialLoss(_Loss):
         self,
         reduction: Union[LossReduction, str] = LossReduction.MEAN,
         criterion: str = AdversarialCriterions.LEAST_SQUARE.value,
-    ):
+    ) -> None:
         super().__init__(reduction=LossReduction(reduction).value)
 
         if criterion.lower() not in [m.value for m in AdversarialCriterions]:
@@ -54,20 +59,20 @@ class PatchAdversarialLoss(_Loss):
         # Depending on the criterion, a different activation layer is used.
         self.real_label = 1.0
         self.fake_label = 0.0
-        if criterion == "bce":
+        if criterion == AdversarialCriterions.BCE.value:
             self.activation = get_act_layer("SIGMOID")
             self.loss_fct = torch.nn.BCELoss(reduction=reduction)
-        elif criterion == "hinge":
+        elif criterion == AdversarialCriterions.HINGE.value:
             self.activation = get_act_layer("TANH")
             self.fake_label = -1.0
-        elif criterion == "least_squares":
+        elif criterion == AdversarialCriterions.LEAST_SQUARE.value:
             self.activation = get_act_layer(name=("LEAKYRELU", {"negative_slope": 0.05}))
             self.loss_fct = torch.nn.MSELoss(reduction=reduction)
 
         self.criterion = criterion
         self.reduction = reduction
 
-    def get_target_tensor(self, input: torch.FloatTensor, target_is_real: bool):
+    def get_target_tensor(self, input: torch.FloatTensor, target_is_real: bool) -> torch.Tensor:
         """
         Gets the ground truth tensor for the discriminator depending on whether the input is real or fake.
         Args:
@@ -81,7 +86,7 @@ class PatchAdversarialLoss(_Loss):
         label_tensor.requires_grad_(False)
         return label_tensor.expand_as(input)
 
-    def get_zero_tensor(self, input: torch.FloatTensor):
+    def get_zero_tensor(self, input: torch.FloatTensor) -> torch.Tensor:
         """
         Gets a zero tensor.
         Args:
@@ -93,7 +98,9 @@ class PatchAdversarialLoss(_Loss):
         zero_label_tensor.requires_grad_(False)
         return zero_label_tensor.expand_as(input)
 
-    def forward(self, input: Union[torch.FloatTensor, list], target_is_real: bool, for_discriminator: bool):
+    def forward(
+        self, input: Union[torch.FloatTensor, list], target_is_real: bool, for_discriminator: bool
+    ) -> Union[torch.Tensor, List[torch.Tensor]]:
 
         """
         Args:
@@ -143,7 +150,7 @@ class PatchAdversarialLoss(_Loss):
 
         return loss
 
-    def forward_single(self, input: torch.FloatTensor, target: torch.FloatTensor):
+    def forward_single(self, input: torch.FloatTensor, target: torch.FloatTensor) -> torch.Tensor:
         if self.criterion == "bce" or self.criterion == "least_squares":
             return self.loss_fct(input, target)
         elif self.criterion == "hinge":

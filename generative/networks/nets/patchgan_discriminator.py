@@ -9,7 +9,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Sequence, Union
+from typing import List, Sequence, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -57,7 +57,7 @@ class MultiScalePatchDiscriminator(nn.Sequential):
         bias: bool,
         dropout: Union[float, tuple] = 0.0,
         minimum_size_im: int = 256,
-    ):
+    ) -> None:
         super().__init__()
         self.num_D = num_D
         self.num_layers_D = num_layers_D
@@ -75,13 +75,13 @@ class MultiScalePatchDiscriminator(nn.Sequential):
                 norm=norm,
                 bias=bias,
                 padding=self.padding,
-                index_D=i,
+                index_d=i,
                 dropout=dropout,
                 minimum_size_im=minimum_size_im,
             )
             self.add_module("discriminator_%d" % i, subnetD)
 
-    def forward(self, i):
+    def forward(self, i) -> Tuple[List[torch.Tensor], List[List[torch.Tensor]]]:
         """
 
         Args:
@@ -121,7 +121,7 @@ class PatchDiscriminator(nn.Sequential):
         norm: normalisation type
         bias: introduction of layer bias
         padding: padding to be applied to the convolutional layers
-        index_D: index of the discriminator in the multi-scale chain, defaults to 0
+        index_d: index of the discriminator in the multi-scale chain, defaults to 0
         dropout: proportion of dropout applied, defaults to 0.
         minimum_size_im: minimum spatial size of the input image. Introduced to make sure the architecture
         requested isn't going to downsample the input image beyond value of 1.
@@ -139,18 +139,18 @@ class PatchDiscriminator(nn.Sequential):
         norm: Union[str, tuple],
         bias: bool,
         padding: Sequence[int],
-        index_D: int = 0,
+        index_d: int = 0,
         dropout: Union[float, tuple] = 0.0,
         minimum_size_im: int = 256,
-    ):
+    ) -> None:
         super().__init__()
-        self.num_layers_D = num_layers_D * (index_D + 1)
+        self.num_layers_D = num_layers_D * (index_d + 1)
         self.num_channels = num_channels
-        output_size = float(minimum_size_im) / (2 ** (num_layers_D * (index_D + 1)))
+        output_size = float(minimum_size_im) / (2 ** (num_layers_D * (index_d + 1)))
         if output_size < 1:
             raise AssertionError(
                 "Your image size is too small to take in up to %d discriminators with num_layers = %d."
-                "Please reduce num_layers, reduce num_D or enter bigger images." % (index_D, self.num_layers_D)
+                "Please reduce num_layers, reduce num_D or enter bigger images." % (index_d, self.num_layers_D)
             )
 
         input_channels = in_channels
@@ -187,7 +187,7 @@ class PatchDiscriminator(nn.Sequential):
             ),
         )
 
-    def forward(self, x):
+    def forward(self, x) -> List[torch.Tensor]:
         """
         Args:
             x: input tensor
