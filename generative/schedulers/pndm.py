@@ -29,7 +29,7 @@
 # limitations under the License.
 # =========================================================================
 
-from typing import Any, Tuple, Union
+from typing import Any, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -113,7 +113,7 @@ class PNDMScheduler(nn.Module):
         self.plms_timesteps = torch.Tensor([])
         self.timesteps = torch.Tensor([])
 
-    def set_timesteps(self, num_inference_steps: int, device: Union[str, torch.device] = None) -> None:
+    def set_timesteps(self, num_inference_steps: int, device: Optional[Union[str, torch.device]] = None) -> None:
         """
         Sets the discrete timesteps used for the diffusion chain. Supporting function to be run before inference.
 
@@ -162,6 +162,7 @@ class PNDMScheduler(nn.Module):
         Predict the sample at the previous timestep by reversing the SDE. Core function to propagate the diffusion
         process from the learned model outputs (most often the predicted noise).
         This function calls `step_prk()` or `step_plms()` depending on the internal variable `counter`.
+
         Args:
             model_output: direct output from learned diffusion model.
             timestep: current discrete timestep in the diffusion chain.
@@ -185,10 +186,12 @@ class PNDMScheduler(nn.Module):
         """
         Step function propagating the sample with the Runge-Kutta method. RK takes 4 forward passes to approximate the
         solution to the differential equation.
+
         Args:
             model_output: direct output from learned diffusion model.
             timestep: current discrete timestep in the diffusion chain.
             sample: current instance of sample being created by diffusion process.
+
         Returns:
             pred_prev_sample: Predicted previous sample
         """
@@ -225,10 +228,12 @@ class PNDMScheduler(nn.Module):
         """
         Step function propagating the sample with the linear multi-step method. This has one forward pass with multiple
         times to approximate the solution.
+
         Args:
             model_output: direct output from learned diffusion model.
             timestep: current discrete timestep in the diffusion chain.
             sample: current instance of sample being created by diffusion process.
+
         Returns:
             pred_prev_sample: Predicted previous sample
         """
@@ -271,7 +276,7 @@ class PNDMScheduler(nn.Module):
 
         return prev_sample
 
-    def _get_prev_sample(self, sample, timestep, prev_timestep, model_output):
+    def _get_prev_sample(self, sample: torch.Tensor, timestep: int, prev_timestep: int, model_output: torch.Tensor):
         # See formula (9) of PNDM paper https://arxiv.org/pdf/2202.09778.pdf
         # this function computes x_(t−δ) using the formula of (9)
         # Note that x_t needs to be added to both sides of the equation

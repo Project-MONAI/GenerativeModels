@@ -214,7 +214,7 @@ def sample(model, scheduler, noise):
 
 # %% [markdown]
 # ### Model training
-# Here, we are training our model for 50 epochs (training time: ~40 minutes). It is necessary to train for a bit longer than other tutorials because the DDIM and PNDM schedules seem to require a model trained longer before they start producing good samples, when compared to DDPM.
+# Here, we are training our model for 100 epochs (training time: ~40 minutes). It is necessary to train for a bit longer than other tutorials because the DDIM and PNDM schedules seem to require a model trained longer before they start producing good samples, when compared to DDPM.
 
 # %%
 n_epochs = 100
