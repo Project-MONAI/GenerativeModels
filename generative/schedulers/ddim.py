@@ -99,7 +99,7 @@ class DDIMScheduler(nn.Module):
         self.clip_sample = clip_sample
         self.steps_offset = steps_offset
 
-    def set_timesteps(self, num_inference_steps: int, device: Union[str, torch.device] = None) -> None:
+    def set_timesteps(self, num_inference_steps: int, device: Optional[Union[str, torch.device]] = None) -> None:
         """
         Sets the discrete timesteps used for the diffusion chain. Supporting function to be run before inference.
 

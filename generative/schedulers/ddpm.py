@@ -86,7 +86,7 @@ class DDPMScheduler(nn.Module):
         self.num_inference_steps = None
         self.timesteps = torch.from_numpy(np.arange(0, num_train_timesteps)[::-1].copy())
 
-    def set_timesteps(self, num_inference_steps: int, device: Union[str, torch.device] = None) -> None:
+    def set_timesteps(self, num_inference_steps: int, device: Optional[Union[str, torch.device]] = None) -> None:
         """
         Sets the discrete timesteps used for the diffusion chain. Supporting function to be run before inference.
 
