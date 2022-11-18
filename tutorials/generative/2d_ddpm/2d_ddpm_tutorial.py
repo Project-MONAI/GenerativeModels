@@ -143,7 +143,7 @@ val_loader = DataLoader(val_ds, batch_size=128, shuffle=False, num_workers=4)
 # %%
 check_data = first(train_loader)
 print(f"batch shape: {check_data['image'].shape}")
-image_visualisation = torch.concat(
+image_visualisation = torch.cat(
     [check_data["image"][0, 0], check_data["image"][1, 0], check_data["image"][2, 0], check_data["image"][3, 0]], dim=1
 )
 plt.figure("training images", (12, 6))
@@ -250,7 +250,7 @@ for epoch in range(n_epochs):
         for t in scheduler.timesteps:
             # 1. predict noise model_output
             with torch.no_grad():
-                model_output = model(image, torch.asarray((t,)).to(device))
+                model_output = model(image, torch.Tensor((t,)).to(device))
             # 2. compute previous image: x_t -> x_t-1
             image, _ = scheduler.step(model_output, t, image)
 
@@ -298,14 +298,14 @@ intermediary = []
 for t in tqdm(scheduler.timesteps, ncols=70):
     # 1. predict noise model_output
     with torch.no_grad():
-        model_output = model(image, torch.asarray((t,)).to(device))
+        model_output = model(image, torch.Tensor((t,)).to(device))
 
     # 2. compute previous image: x_t -> x_t-1
     image, _ = scheduler.step(model_output, t, image)
     if t % 100 == 0:
         intermediary.append(image)
 
-chain = torch.concat(intermediary, dim=-1)
+chain = torch.cat(intermediary, dim=-1)
 plt.style.use("default")
 plt.imshow(chain[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
 plt.tight_layout()
