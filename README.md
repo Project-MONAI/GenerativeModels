@@ -19,10 +19,3 @@ Prototyping repo for generative models to be integrated into MONAI
 * Inpainting
 * Anomaly detection
 * MRI recon both in image and k space
-
-## Contributing
-To keep the quality of the code, please, install pre-commit using ``pip install pre-commit`` and then configure to use it in this repo with the following command:
-```shell
-pre-commit install
-```
-It is necessary to do it just once. After that, every time you git commit, git runs black and flake8 to organise the code to a standardised format (more information at https://python.plainenglish.io/how-to-set-up-pre-commit-hooks-in-python-ac95fc7d0989).

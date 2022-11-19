@@ -33,13 +33,14 @@ To collaborate efficiently, please read through this section and follow them.
 
 #### Checking the coding style
 >In progress.  Please wait for more instructions to follow
-Before submitting Pull Request make sure basic CI checks are passed.
 
-Install `pre-commit` if you have not already.
+To keep the quality of the code, please, install pre-commit using ``pip install pre-commit`` and then configure to use it in this repo with the following command:
+```shell
+pre-commit install
 ```
-python -m pip install pre-commit
-```
-Run `pre-commit` check from MONAI Generative Models working directory.
+It is necessary to do it just once. After that, every time you git commit, git runs black and flake8 to organise the code to a standardised format (more information at https://python.plainenglish.io/how-to-set-up-pre-commit-hooks-in-python-ac95fc7d0989).
+
+To check any all files of the project with pre-commit, use:
 ```
 cd GenerativeModels
 python -m pre_commit run --all-files
