@@ -81,12 +81,12 @@ class JukeboxLoss(_Loss):
             fourier transformation amplitude
         """
         img_fft = fftn(
-            input=images,
+            images,
             s=self.fft_signal_size,
             dim=self.fft_dim,
             norm=self.fft_norm,
         )
 
-        amplitude = torch.sqrt(img_fft.real**2 + img_fft.imag**2)
+        amplitude = torch.sqrt(torch.real(img_fft) ** 2 + torch.imag(img_fft) ** 2)
 
         return amplitude
