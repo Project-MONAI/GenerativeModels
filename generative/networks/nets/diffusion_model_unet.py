@@ -673,15 +673,15 @@ class DownBlock(nn.Module):
     def forward(
         self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, Any]:
-        output_states = ()
+        output_states = []
 
         for resnet in self.resnets:
             hidden_states = resnet(hidden_states, temb)
-            output_states += (hidden_states,)
+            output_states.append(hidden_states)
 
         if self.downsampler is not None:
             hidden_states = self.downsampler(hidden_states)
-            output_states += (hidden_states,)
+            output_states.append(hidden_states)
 
         return hidden_states, output_states
 
@@ -744,16 +744,16 @@ class AttnDownBlock(nn.Module):
     def forward(
         self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, Any]:
-        output_states = ()
+        output_states = []
 
         for resnet, attn in zip(self.resnets, self.attentions):
             hidden_states = resnet(hidden_states, temb)
             hidden_states = attn(hidden_states)
-            output_states += (hidden_states,)
+            output_states.append(hidden_states)
 
         if self.downsampler is not None:
             hidden_states = self.downsampler(hidden_states)
-            output_states += (hidden_states,)
+            output_states.append(hidden_states)
 
         return hidden_states, output_states
 
@@ -822,16 +822,16 @@ class CrossAttnDownBlock(nn.Module):
     def forward(
         self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, Any]:
-        output_states = ()
+        output_states = []
 
         for resnet, attn in zip(self.resnets, self.attentions):
             hidden_states = resnet(hidden_states, temb)
             hidden_states = attn(hidden_states, context=context)
-            output_states += (hidden_states,)
+            output_states.append(hidden_states)
 
         if self.downsampler is not None:
             hidden_states = self.downsampler(hidden_states)
-            output_states += (hidden_states,)
+            output_states.append(hidden_states)
 
         return hidden_states, output_states
 
