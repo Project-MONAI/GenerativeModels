@@ -16,10 +16,14 @@
 # %% [markdown]
 # # Denoising Diffusion Probabilistic Models with MedNIST Dataset
 #
-# This tutorial illustrates how to use MONAI for training a denoising diffusion probabilistic model (DDPM)[1] to create
-# synthetic 2D images.
+# This tutorial compares the different schedulers available for sampling from a trained model with a reduced number of timesteps. The schedulers we will compare are:
 #
-# [1] - Ho et al. "Denoising Diffusion Probabilistic Models" https://arxiv.org/abs/2006.11239
+# [1] - DDPM - Ho et al. "Denoising Diffusion Probabilistic Models" https://arxiv.org/abs/2006.11239
+#
+# [2] - DDIM - Song et al. "Denoising Diffusion Implicit Models" https://arxiv.org/abs/2010.02502
+#
+# [3] - PNDM - Liu et al. "Pseudo Numerical Methods for Diffusion Models on Manifolds" https://arxiv.org/abs/2202.09778
+#
 #
 # TODO: Add Open in Colab
 #
@@ -47,7 +51,6 @@
 import os
 import shutil
 import tempfile
-import time
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -62,7 +65,7 @@ from tqdm import tqdm
 
 # TODO: Add right import reference after deployed
 from generative.networks.nets import DiffusionModelUNet
-from generative.schedulers import DDPMScheduler
+from generative.schedulers import DDIMScheduler, DDPMScheduler, PNDMScheduler
 
 print_config()
 
@@ -93,7 +96,7 @@ set_determinism(0)
 # one of the available classes ("Hand"), resulting in a training set with 7999 2D images.
 
 # %%
-train_data = MedNISTDataset(root_dir=root_dir, section="training", download=True, progress=False, seed=0)
+train_data = MedNISTDataset(root_dir=root_dir, section="training", download=True, seed=0)
 train_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "Hand"]
 
 # %% [markdown]
@@ -125,7 +128,7 @@ train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
 train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=4)
 
 # %%
-val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, progress=False, seed=0)
+val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, seed=0)
 val_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "Hand"]
 val_transforms = transforms.Compose(
     [
@@ -143,7 +146,7 @@ val_loader = DataLoader(val_ds, batch_size=128, shuffle=False, num_workers=4)
 # %%
 check_data = first(train_loader)
 print(f"batch shape: {check_data['image'].shape}")
-image_visualisation = torch.cat(
+image_visualisation = torch.concat(
     [check_data["image"][0, 0], check_data["image"][1, 0], check_data["image"][2, 0], check_data["image"][3, 0]], dim=1
 )
 plt.figure("training images", (12, 6))
@@ -153,10 +156,9 @@ plt.tight_layout()
 plt.show()
 
 # %% [markdown]
-# ### Define network, scheduler and optimizer
-# At this step, we instantiate the MONAI components to create a DDPM, the UNET and the noise scheduler. We are using
-# the original DDPM scheduler containing 1000 timesteps in its Markov chain, and a 2D UNET with attention mechanisms
-# in the 2nd and 3rd levels, each with 1 attention head.
+# ### Define network and optimizer
+# At this step, we instantiate the MONAI components to create a DDPM, a 2D unet with attention mechanisms
+# in the 2nd and 4th levels, each with 1 attention head.
 
 # %%
 device = torch.device("cuda")
@@ -165,51 +167,81 @@ model = DiffusionModelUNet(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
-    block_out_channels=(64, 128, 128),
-    attention_levels=(False, False, True),
+    model_channels=64,
+    attention_resolutions=[2, 4],
     num_res_blocks=1,
+    channel_mult=[1, 2, 2],
     num_heads=1,
 )
 model.to(device)
 
-scheduler = DDPMScheduler(
+optimizer = torch.optim.Adam(model.parameters(), 2.5e-5)
+
+# %% [markdown]
+# ### Define schedulers
+#
+# We use a DDPM scheduler with 1000 steps for training. For sampling, we will compare the DDPM, DDIM, and PNDM.
+
+# %%
+ddpm_scheduler = DDPMScheduler(
     num_train_timesteps=1000,
 )
+ddim_scheduler = DDIMScheduler(
+    num_train_timesteps=1000,
+)
+pndm_scheduler = PNDMScheduler(num_train_timesteps=1000, skip_prk_steps=True)
 
-optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
+# the range of sampling steps we want to use when testing the DDIM and PNDM schedulers
+sampling_steps = [1000, 500, 200, 50]
+
+
+# %% [markdown]
+# ### Define helper function for sampling
+
+# %%
+def sample(model, scheduler, noise):
+    image = noise.clone()
+    progress_bar = tqdm(scheduler.timesteps)
+    progress_bar.set_description(f"Epoch {epoch} - Sampling from {scheduler.__class__.__name__}...")
+    for t in progress_bar:
+        # 1. predict noise model_output
+        with torch.no_grad():
+            model_output = model(image, torch.Tensor((t,)).to(device))
+        # 2. compute previous image: x_t -> x_t-1
+        image, _ = scheduler.step(model_output, t, image)
+    return image
+
 
 # %% [markdown]
 # ### Model training
-# Here, we are training our model for 50 epochs (training time: ~20 minutes).
+# Here, we are training our model for 100 epochs (training time: ~40 minutes). It is necessary to train for a bit longer than other tutorials because the DDIM and PNDM schedules seem to require a model trained longer before they start producing good samples, when compared to DDPM.
 
 # %%
-n_epochs = 50
-val_interval = 5
+n_epochs = 100
+val_interval = 10
 epoch_loss_list = []
 val_epoch_loss_list = []
-
-total_start = time.time()
 for epoch in range(n_epochs):
     model.train()
     epoch_loss = 0
-    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=70)
+    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader))
     progress_bar.set_description(f"Epoch {epoch}")
     for step, batch in progress_bar:
         images = batch["image"].to(device)
         optimizer.zero_grad(set_to_none=True)
 
         # Randomly select the timesteps to be used for the minibacth
-        timesteps = torch.randint(0, scheduler.num_train_timesteps, (images.shape[0],), device=device).long()
+        timesteps = torch.randint(0, ddpm_scheduler.num_train_timesteps, (images.shape[0],), device=device).long()
 
         # Add noise to the minibatch images with intensity defined by the scheduler and timesteps
         noise = torch.randn_like(images).to(device)
-        noisy_image = scheduler.add_noise(original_samples=images, noise=noise, timesteps=timesteps)
+        noisy_image = ddpm_scheduler.add_noise(original_samples=images, noise=noise, timesteps=timesteps)
 
         # In this example, we are parametrising our DDPM to learn the added noise (epsilon).
-        # For this reason, we are using our network to predict the added noise and then using L2 loss to predict
+        # For this reason, we are using our network to predict the added noise and then using L1 loss to predict
         # its performance.
         noise_pred = model(x=noisy_image, timesteps=timesteps)
-        loss = F.mse_loss(noise_pred.float(), noise.float())
+        loss = F.l1_loss(noise_pred.float(), noise.float())
 
         loss.backward()
         optimizer.step()
@@ -225,12 +257,14 @@ for epoch in range(n_epochs):
     if (epoch + 1) % val_interval == 0:
         model.eval()
         val_epoch_loss = 0
-        for step, batch in enumerate(val_loader):
+        progress_bar = tqdm(enumerate(val_loader), total=len(train_loader))
+        progress_bar.set_description(f"Epoch {epoch} - Validation set")
+        for step, batch in progress_bar:
             images = batch["image"].to(device)
-            timesteps = torch.randint(0, scheduler.num_train_timesteps, (images.shape[0],), device=device).long()
+            timesteps = torch.randint(0, ddpm_scheduler.num_train_timesteps, (images.shape[0],), device=device).long()
             noise = torch.randn_like(images).to(device)
             with torch.no_grad():
-                noisy_image = scheduler.add_noise(original_samples=images, noise=noise, timesteps=timesteps)
+                noisy_image = ddpm_scheduler.add_noise(original_samples=images, noise=noise, timesteps=timesteps)
                 noise_pred = model(x=noisy_image, timesteps=timesteps)
                 val_loss = F.l1_loss(noise_pred.float(), noise.float())
 
@@ -243,29 +277,47 @@ for epoch in range(n_epochs):
         val_epoch_loss_list.append(val_epoch_loss / (step + 1))
 
         # Sampling image during training
-        image = torch.randn((1, 1, 64, 64))
-        image = image.to(device)
-        scheduler.set_timesteps(num_inference_steps=1000)
-        for t in scheduler.timesteps:
-            # 1. predict noise model_output
-            with torch.no_grad():
-                model_output = model(image, torch.Tensor((t,)).to(device))
-            # 2. compute previous image: x_t -> x_t-1
-            image, _ = scheduler.step(model_output, t, image)
-
-        plt.figure(figsize=(2, 2))
+        noise = torch.randn((1, 1, 64, 64))
+        noise = noise.to(device)
+        ddpm_scheduler.set_timesteps(1000)
+        image = sample(model, ddpm_scheduler, noise)
+        plt.figure(figsize=(8, 4))
+        plt.subplot(3, len(sampling_steps), 1)
         plt.imshow(image[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
-        plt.tight_layout()
-        plt.axis("off")
+        plt.tick_params(top=False, bottom=False, left=False, right=False, labelleft=False, labelbottom=False)
+        plt.ylabel("DDPM")
+        plt.title("1000 steps")
+        # DDIM
+        for idx, reduced_sampling_steps in enumerate(sampling_steps):
+            ddim_scheduler.set_timesteps(reduced_sampling_steps)
+            image = sample(model, ddim_scheduler, noise)
+            plt.subplot(3, len(sampling_steps), len(sampling_steps) + idx + 1)
+            plt.imshow(image[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
+            plt.ylabel("DDIM")
+            if idx == 0:
+                plt.tick_params(top=False, bottom=False, left=False, right=False, labelleft=False, labelbottom=False)
+            else:
+                plt.axis("off")
+            plt.title(f"{reduced_sampling_steps} steps")
+        # PNDM
+        for idx, reduced_sampling_steps in enumerate(sampling_steps):
+            pndm_scheduler.set_timesteps(reduced_sampling_steps)
+            image = sample(model, pndm_scheduler, noise)
+            plt.subplot(3, len(sampling_steps), len(sampling_steps) * 2 + idx + 1)
+            plt.imshow(image[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
+            plt.ylabel("PNDM")
+            if idx == 0:
+                plt.tick_params(top=False, bottom=False, left=False, right=False, labelleft=False, labelbottom=False)
+            else:
+                plt.axis("off")
+            plt.title(f"{reduced_sampling_steps} steps")
+        plt.suptitle(f"Epoch {epoch+1}")
         plt.show()
-
-total_time = time.time() - total_start
-print(f"train completed, total time: {total_time}.")
 # %% [markdown]
 # ### Learning curves
 
 # %%
-plt.style.use("seaborn-v0_8")
+plt.style.use("seaborn")
 plt.title("Learning Curves", fontsize=20)
 plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, color="C0", linewidth=2.0, label="Train")
 plt.plot(
@@ -282,40 +334,13 @@ plt.ylabel("Loss", fontsize=16)
 plt.legend(prop={"size": 14})
 plt.show()
 
-# %% [markdown]
-# ### Plotting sampling process along DDPM's Markov chain
-
-# %%
-model.eval()
-image = torch.randn(
-    (1, 1, 64, 64),
-)
-image = image.to(device)
-scheduler.set_timesteps(num_inference_steps=1000)
-
-intermediary = []
-for t in tqdm(scheduler.timesteps, ncols=70):
-    # 1. predict noise model_output
-    with torch.no_grad():
-        model_output = model(image, torch.Tensor((t,)).to(device))
-
-    # 2. compute previous image: x_t -> x_t-1
-    image, _ = scheduler.step(model_output, t, image)
-    if t % 100 == 0:
-        intermediary.append(image)
-
-chain = torch.cat(intermediary, dim=-1)
-plt.style.use("default")
-plt.imshow(chain[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
-plt.tight_layout()
-plt.axis("off")
-plt.show()
 
 # %% [markdown]
 # ### Cleanup data directory
-#
-# Remove directory if a temporary was used.
+# Remove directory if a temporary was used
 
 # %%
 if directory is None:
     shutil.rmtree(root_dir)
+
+# %%
