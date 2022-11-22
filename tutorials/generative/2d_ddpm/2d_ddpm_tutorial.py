@@ -124,7 +124,7 @@ train_transforms = transforms.Compose(
     ]
 )
 train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
-train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=0)
+train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=4)
 
 # %% jupyter={"outputs_hidden": false}
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, progress=False, seed=0)
@@ -137,7 +137,7 @@ val_transforms = transforms.Compose(
     ]
 )
 val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
-val_loader = DataLoader(val_ds, batch_size=128, shuffle=False, num_workers=0)
+val_loader = DataLoader(val_ds, batch_size=128, shuffle=False, num_workers=4)
 
 # %% [markdown]
 # ### Visualisation of the training images
