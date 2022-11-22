@@ -11,7 +11,6 @@
 
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import torch
@@ -141,22 +140,47 @@ class AdversarialTrainer(Trainer):
 
         self.register_events(*AdversarialIterationEvents)
 
-        self.g_network = g_network
-        self.g_optimizer = g_optimizer
-        self.g_loss_function = g_loss_function
-        self.recon_loss_function = recon_loss_function
+        self.state.g_network = g_network
+        self.state.g_optimizer = g_optimizer
+        self.state.g_loss_function = g_loss_function
+        self.state.recon_loss_function = recon_loss_function
 
-        self.d_network = d_network
-        self.d_optimizer = d_optimizer
-        self.d_loss_function = d_loss_function
+        self.state.d_network = d_network
+        self.state.d_optimizer = d_optimizer
+        self.state.d_loss_function = d_loss_function
 
         self.g_inferer = SimpleInferer() if g_inferer is None else g_inferer
         self.d_inferer = SimpleInferer() if d_inferer is None else d_inferer
 
-        self.g_scaler = torch.cuda.amp.GradScaler() if self.amp else None
-        self.d_scaler = torch.cuda.amp.GradScaler() if self.amp else None
+        self.state.g_scaler = torch.cuda.amp.GradScaler() if self.amp else None
+        self.state.d_scaler = torch.cuda.amp.GradScaler() if self.amp else None
 
         self.optim_set_to_none = optim_set_to_none
+        self._complete_state_dict_user_keys()
+
+    def _complete_state_dict_user_keys(self) -> None:
+        """
+        This method appends to the _state_dict_user_keys AdversarialTrainer's elements that are required for
+        checkpoint saving.
+
+        Follows the example found at:
+            https://pytorch.org/ignite/generated/ignite.engine.engine.Engine.html#ignite.engine.engine.Engine.state_dict
+        """
+        self._state_dict_user_keys.extend(
+            ["g_network", "g_optimizer", "d_network", "d_optimizer", "g_scaler", "d_scaler"]
+        )
+
+        g_loss_state_dict = getattr(self.state.g_loss_function, "state_dict", None)
+        if callable(g_loss_state_dict):
+            self._state_dict_user_keys.append("g_loss_function")
+
+        d_loss_state_dict = getattr(self.state.d_loss_function, "state_dict", None)
+        if callable(d_loss_state_dict):
+            self._state_dict_user_keys.append("d_loss_function")
+
+        recon_loss_state_dict = getattr(self.state.recon_loss_function, "state_dict", None)
+        if callable(recon_loss_state_dict):
+            self._state_dict_user_keys.append("recon_loss_function")
 
     def _iteration(
         self, engine: AdversarialTrainer, batchdata: Dict[str, torch.Tensor]
@@ -205,28 +229,30 @@ class AdversarialTrainer(Trainer):
         def _compute_generator_loss() -> None:
             # TODO: Have a callable functions that process the input to the networks/losses such that peculiar outputs
             #  are handled properly
-            engine.state.output[AdversarialKeys.FAKES] = engine.g_inferer(inputs, engine.g_network, *args, **kwargs)
+            engine.state.output[AdversarialKeys.FAKES] = engine.g_inferer(
+                inputs, engine.state.g_network, *args, **kwargs
+            )
             engine.state.output[Keys.PRED] = engine.state.output[AdversarialKeys.FAKES]
             engine.fire_event(AdversarialIterationEvents.GENERATOR_FORWARD_COMPLETED)
 
             engine.state.output[AdversarialKeys.FAKE_LOGITS] = engine.d_inferer(
-                engine.state.output[AdversarialKeys.FAKES].float().contiguous(), engine.d_network, *args, **kwargs
+                engine.state.output[AdversarialKeys.FAKES].float().contiguous(), engine.state.d_network, *args, **kwargs
             )
             engine.fire_event(AdversarialIterationEvents.GENERATOR_DISCRIMINATOR_FORWARD_COMPLETED)
 
-            engine.state.output[AdversarialKeys.RECONSTRUCTION_LOSS] = engine.recon_loss_function(
+            engine.state.output[AdversarialKeys.RECONSTRUCTION_LOSS] = engine.state.recon_loss_function(
                 engine.state.output[AdversarialKeys.FAKES], targets
             ).mean()
             engine.fire_event(AdversarialIterationEvents.RECONSTRUCTION_LOSS_COMPLETED)
 
-            engine.state.output[AdversarialKeys.GENERATOR_LOSS] = engine.g_loss_function(
+            engine.state.output[AdversarialKeys.GENERATOR_LOSS] = engine.state.g_loss_function(
                 engine.state.output[AdversarialKeys.FAKE_LOGITS]
             ).mean()
             engine.fire_event(AdversarialIterationEvents.GENERATOR_LOSS_COMPLETED)
 
         # Train Generator
-        engine.g_network.train()
-        engine.g_optimizer.zero_grad(set_to_none=engine.optim_set_to_none)
+        engine.state.g_network.train()
+        engine.state.g_optimizer.zero_grad(set_to_none=engine.optim_set_to_none)
 
         if engine.amp and engine.g_scaler is not None:
             with torch.cuda.amp.autocast(**engine.amp_kwargs):
@@ -236,10 +262,10 @@ class AdversarialTrainer(Trainer):
                 engine.state.output[AdversarialKeys.RECONSTRUCTION_LOSS]
                 + engine.state.output[AdversarialKeys.GENERATOR_LOSS]
             )
-            engine.g_scaler.scale(engine.state.output[Keys.LOSS]).backward()
+            engine.state.g_scaler.scale(engine.state.output[Keys.LOSS]).backward()
             engine.fire_event(AdversarialIterationEvents.GENERATOR_BACKWARD_COMPLETED)
-            engine.g_scaler.step(engine.g_optimizer)
-            engine.g_scaler.update()
+            engine.state.g_scaler.step(engine.state.g_optimizer)
+            engine.state.g_scaler.update()
         else:
             _compute_generator_loss()
             (
@@ -247,141 +273,46 @@ class AdversarialTrainer(Trainer):
                 + engine.state.output[AdversarialKeys.GENERATOR_LOSS]
             ).backward()
             engine.fire_event(AdversarialIterationEvents.GENERATOR_BACKWARD_COMPLETED)
-            engine.g_optimizer.step()
+            engine.state.g_optimizer.step()
         engine.fire_event(AdversarialIterationEvents.GENERATOR_MODEL_COMPLETED)
 
         def _compute_discriminator_loss() -> None:
             engine.state.output[AdversarialKeys.REAL_LOGITS] = engine.d_inferer(
-                engine.state.output[AdversarialKeys.REALS].contiguous().detach(), engine.d_network, *args, **kwargs
+                engine.state.output[AdversarialKeys.REALS].contiguous().detach(),
+                engine.state.d_network,
+                *args,
+                **kwargs,
             )
             engine.fire_event(AdversarialIterationEvents.DISCRIMINATOR_REALS_FORWARD_COMPLETED)
 
             engine.state.output[AdversarialKeys.FAKE_LOGITS] = engine.d_inferer(
-                engine.state.output[AdversarialKeys.FAKES].contiguous().detach(), engine.d_network, *args, **kwargs
+                engine.state.output[AdversarialKeys.FAKES].contiguous().detach(),
+                engine.state.d_network,
+                *args,
+                **kwargs,
             )
             engine.fire_event(AdversarialIterationEvents.DISCRIMINATOR_FAKES_FORWARD_COMPLETED)
 
-            engine.state.output[AdversarialKeys.DISCRIMINATOR_LOSS] = engine.d_loss_function(
+            engine.state.output[AdversarialKeys.DISCRIMINATOR_LOSS] = engine.state.d_loss_function(
                 engine.state.output[AdversarialKeys.REAL_LOGITS], engine.state.output[AdversarialKeys.FAKE_LOGITS]
             ).mean()
             engine.fire_event(AdversarialIterationEvents.DISCRIMINATOR_LOSS_COMPLETED)
 
         # Train Discriminator
-        engine.d_network.train()
-        engine.d_network.zero_grad(set_to_none=engine.optim_set_to_none)
+        engine.state.d_network.train()
+        engine.state.d_network.zero_grad(set_to_none=engine.optim_set_to_none)
 
         if engine.amp and engine.d_scaler is not None:
             with torch.cuda.amp.autocast(**engine.amp_kwargs):
                 _compute_discriminator_loss()
 
-            engine.d_scaler.scale(engine.state.output[AdversarialKeys.DISCRIMINATOR_LOSS]).backward()
+            engine.state.d_scaler.scale(engine.state.output[AdversarialKeys.DISCRIMINATOR_LOSS]).backward()
             engine.fire_event(AdversarialIterationEvents.DISCRIMINATOR_BACKWARD_COMPLETED)
-            engine.d_scaler.step(engine.d_optimizer)
-            engine.d_scaler.update()
+            engine.state.d_scaler.step(engine.state.d_optimizer)
+            engine.state.d_scaler.update()
         else:
             _compute_discriminator_loss()
             engine.state.output[AdversarialKeys.DISCRIMINATOR_LOSS].backward()
-            engine.d_optimizer.step()
+            engine.state.d_optimizer.step()
 
         return engine.state.output
-
-    def get_state(
-        self,
-        include_engine: bool = True,
-        include_generator: bool = True,
-        include_generator_optimiser: bool = True,
-        include_generator_scaler: bool = False,
-        include_generator_loss: bool = True,
-        include_discriminator: bool = True,
-        include_discriminator_optimiser: bool = True,
-        include_discriminator_scaler: bool = False,
-        include_discriminator_loss: bool = True,
-        additional_states: Optional[Dict[str, Dict]] = None,
-    ):
-        state_dict = {}
-
-        if include_engine:
-            state_dict["engine"] = self.state_dict()
-        else:
-            warnings.warn("Engine state not included in checkpoint. This might cause issues when resuming training.")
-
-        if include_generator:
-            state_dict["generator"] = self.g_network.state_dict()
-        else:
-            warnings.warn("Generator state not included in checkpoint. This might cause issues when resuming training.")
-
-        if include_generator_optimiser:
-            state_dict["generator_optimizer"] = self.g_optimizer.state_dict()
-        else:
-            warnings.warn(
-                "Generator optimizer state not included in checkpoint. This might cause issues when resuming training."
-            )
-
-        if include_generator_scaler:
-            if self.g_scaler is not None:
-                state_dict["generator_scaler"] = self.g_scaler.state_dict()
-            else:
-                warnings.warn(
-                    "Generator AMP scaler was required in checkpoint but not found due to AMP being disabled."
-                )
-        else:
-            warnings.warn(
-                "Generator AMP scaler state not included in checkpoint. This might cause issues when resuming training."
-            )
-
-        if include_generator_loss:
-            g_loss_state_dict = getattr(self.g_loss_function, "state_dict", None)
-            if callable(g_loss_state_dict):
-                state_dict["generator_loss"] = self.g_loss_function.state_dict()
-            else:
-                warnings.warn(
-                    "Generator loss does not have a state_dict method. Make sure this is the intended behaviour."
-                )
-        else:
-            warnings.warn(
-                "Generator loss function state not included in checkpoint. This might cause issues when resuming training."
-            )
-
-        if include_discriminator:
-            state_dict["discriminator"] = self.d_network.state_dict()
-        else:
-            warnings.warn(
-                "Discriminator state not included in checkpoint. This might cause issues when resuming training."
-            )
-
-        if include_discriminator_optimiser:
-            state_dict["discriminator_optimizer"] = self.d_optimizer.state_dict()
-        else:
-            warnings.warn(
-                "Discriminator optimizer state not included in checkpoint. This might cause issues when resuming training."
-            )
-
-        if include_discriminator_scaler:
-            if self.d_scaler is not None:
-                state_dict["discriminator_scaler"] = self.d_scaler.state_dict()
-            else:
-                warnings.warn(
-                    "Discriminator AMP scaler was required in checkpoint but not found due to AMP being disabled."
-                )
-        else:
-            warnings.warn(
-                "Discriminator AMP scaler state not included in checkpoint. This might cause issues when resuming training."
-            )
-
-        if include_discriminator_loss:
-            d_loss_state_dict = getattr(self.d_loss_function, "state_dict", None)
-            if callable(d_loss_state_dict):
-                state_dict["discriminator_loss"] = self.d_loss_function.state_dict()
-            else:
-                warnings.warn(
-                    "Discriminator loss does not have a state_dict method. Make sure this is the intended behaviour."
-                )
-        else:
-            warnings.warn(
-                "Discriminator loss function state not included in checkpoint. This might cause issues when resuming training."
-            )
-
-        if additional_states is not None:
-            state_dict.update(additional_states)
-
-        return state_dict
