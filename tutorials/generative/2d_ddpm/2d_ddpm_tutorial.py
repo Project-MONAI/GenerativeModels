@@ -128,7 +128,7 @@ train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=4)
 
 # %% jupyter={"outputs_hidden": false}
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, progress=False, seed=0)
-val_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "Hand"]
+val_datalist = [{"image": item["image"]} for item in val_data.data if item["class_name"] == "Hand"]
 val_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),
