@@ -20,17 +20,21 @@ import nibabel as nib
 import numpy as np
 import torch
 from monai.data import create_test_image_2d
-from monai.engines import GanTrainer
 from monai.handlers import CheckpointSaver, StatsHandler, TensorBoardStatsHandler
-from monai.networks import normal_init
-from monai.networks.nets import Discriminator, Generator
+from monai.networks.nets import AutoEncoder, Discriminator
 from monai.transforms import AsChannelFirstd, Compose, LoadImaged, RandFlipd, ScaleIntensityd
-from monai.utils import GanKeys as Keys
 from monai.utils import set_determinism
 from tests.utils import DistTestCase, TimedCall, skip_if_quick
 
+from generative.engines import AdversarialTrainer
+from generative.utils import AdversarialKeys as Keys
+
 
 def run_training_test(root_dir, device="cuda:0"):
+    learning_rate = 2e-4
+    real_label = 1
+    fake_label = 0
+
     real_images = sorted(glob(os.path.join(root_dir, "img*.nii.gz")))
     train_files = [{"reals": img} for img in zip(real_images)]
 
@@ -46,76 +50,86 @@ def run_training_test(root_dir, device="cuda:0"):
     train_ds = monai.data.CacheDataset(data=train_files, transform=train_transforms, cache_rate=0.5)
     train_loader = monai.data.DataLoader(train_ds, batch_size=2, shuffle=True, num_workers=4)
 
-    learning_rate = 2e-4
-    betas = (0.5, 0.999)
-    real_label = 1
-    fake_label = 0
-
-    # create discriminator
-    disc_net = Discriminator(
+    # Create Discriminator
+    discriminator_net = Discriminator(
         in_shape=(1, 64, 64), channels=(8, 16, 32, 64, 1), strides=(2, 2, 2, 2, 1), num_res_units=1, kernel_size=5
     ).to(device)
-    disc_net.apply(normal_init)
-    disc_opt = torch.optim.Adam(disc_net.parameters(), learning_rate, betas=betas)
-    disc_loss_criterion = torch.nn.BCELoss()
+    discriminator_opt = torch.optim.Adam(discriminator_net.parameters(), learning_rate)
+    discriminator_loss_criterion = torch.nn.BCELoss()
 
-    def discriminator_loss(gen_images, real_images):
-        real = real_images.new_full((real_images.shape[0], 1), real_label)
-        gen = gen_images.new_full((gen_images.shape[0], 1), fake_label)
-        realloss = disc_loss_criterion(disc_net(real_images), real)
-        genloss = disc_loss_criterion(disc_net(gen_images.detach()), gen)
-        return torch.div(torch.add(realloss, genloss), 2)
+    def discriminator_loss(real_logits, fake_logits):
+        real_target = real_logits.new_full((real_logits.shape[0], 1), real_label)
+        fake_target = fake_logits.new_full((fake_logits.shape[0], 1), fake_label)
+        real_loss = discriminator_loss_criterion(real_logits, real_target)
+        fake_loss = discriminator_loss_criterion(fake_logits.detach(), fake_target)
+        return torch.div(torch.add(real_loss, fake_loss), 2)
 
-    # create generator
-    latent_size = 64
-    gen_net = Generator(
-        latent_shape=latent_size, start_shape=(latent_size, 8, 8), channels=[32, 16, 8, 1], strides=[2, 2, 2, 1]
+    # Create Generator
+    generator_network = AutoEncoder(
+        spatial_dims=2,
+        in_channels=1,
+        out_channels=1,
+        channels=(8, 16, 32, 64),
+        strides=(2, 2, 2, 2),
+        num_res_units=1,
+        num_inter_units=1,
     )
-    gen_net.apply(normal_init)
-    gen_net.conv.add_module("activation", torch.nn.Sigmoid())
-    gen_net = gen_net.to(device)
-    gen_opt = torch.optim.Adam(gen_net.parameters(), learning_rate, betas=betas)
-    gen_loss_criterion = torch.nn.BCELoss()
+    generator_network = generator_network.to(device)
+    generator_optimiser = torch.optim.Adam(generator_network.parameters(), learning_rate)
+    generator_loss_criterion = torch.nn.MSELoss()
 
-    def generator_loss(gen_images):
-        output = disc_net(gen_images)
-        cats = output.new_full(output.shape, real_label)
-        return gen_loss_criterion(output, cats)
+    def reconstruction_loss(recon_images, real_images):
+        return generator_loss_criterion(recon_images, real_images)
+
+    def generator_loss(fake_logits):
+        fake_target = fake_logits.new_full((fake_logits.shape[0], 1), real_label)
+        recon_loss = discriminator_loss_criterion(fake_logits.detach(), fake_target)
+        return recon_loss
 
     key_train_metric = None
 
     train_handlers = [
         StatsHandler(
-            name="training_loss", output_transform=lambda x: {Keys.GLOSS: x[Keys.GLOSS], Keys.DLOSS: x[Keys.DLOSS]}
+            name="training_loss",
+            output_transform=lambda x: {
+                Keys.RECONSTRUCTION_LOSS: x[Keys.RECONSTRUCTION_LOSS],
+                Keys.DISCRIMINATOR_LOSS: x[Keys.DISCRIMINATOR_LOSS],
+                Keys.GENERATOR_LOSS: x[Keys.GENERATOR_LOSS],
+            },
         ),
         TensorBoardStatsHandler(
             log_dir=root_dir,
             tag_name="training_loss",
-            output_transform=lambda x: {Keys.GLOSS: x[Keys.GLOSS], Keys.DLOSS: x[Keys.DLOSS]},
+            output_transform=lambda x: {
+                Keys.RECONSTRUCTION_LOSS: x[Keys.RECONSTRUCTION_LOSS],
+                Keys.DISCRIMINATOR_LOSS: x[Keys.DISCRIMINATOR_LOSS],
+                Keys.GENERATOR_LOSS: x[Keys.GENERATOR_LOSS],
+            },
         ),
         CheckpointSaver(
-            save_dir=root_dir, save_dict={"g_net": gen_net, "d_net": disc_net}, save_interval=2, epoch_level=True
+            save_dir=root_dir,
+            save_dict={"g_net": generator_network, "d_net": discriminator_net},
+            save_interval=2,
+            epoch_level=True,
         ),
     ]
 
-    disc_train_steps = 2
     num_epochs = 5
 
-    trainer = GanTrainer(
-        device,
-        num_epochs,
-        train_loader,
-        gen_net,
-        gen_opt,
-        generator_loss,
-        disc_net,
-        disc_opt,
-        discriminator_loss,
-        d_train_steps=disc_train_steps,
-        latent_shape=latent_size,
+    trainer = AdversarialTrainer(
+        device=device,
+        max_epochs=num_epochs,
+        train_data_loader=train_loader,
+        g_network=generator_network,
+        g_optimizer=generator_optimiser,
+        g_loss_function=generator_loss,
+        recon_loss_function=reconstruction_loss,
+        d_network=discriminator_net,
+        d_optimizer=discriminator_opt,
+        d_loss_function=discriminator_loss,
+        non_blocking=True,
         key_train_metric=key_train_metric,
         train_handlers=train_handlers,
-        to_kwargs={"memory_format": torch.preserve_format, "dtype": torch.float32},
     )
     trainer.run()
 
@@ -146,7 +160,7 @@ class IntegrationWorkflowsGAN(DistTestCase):
 
         finish_state = run_training_test(self.data_dir, device=self.device)
 
-        # assert GAN training finished
+        # Assert AdversarialTrainer training finished
         self.assertEqual(finish_state.iteration, 100)
         self.assertEqual(finish_state.epoch, 5)
 

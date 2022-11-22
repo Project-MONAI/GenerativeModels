@@ -11,7 +11,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Sequence, Tuple, Union
+import warnings
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import torch
 from monai.config import IgniteInfo
@@ -24,7 +25,7 @@ from monai.utils import min_version, optional_import
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 
-from generative.utils.enums import AdversarialIterationEvents, AdversarialKeys
+from generative.utils import AdversarialIterationEvents, AdversarialKeys
 
 if TYPE_CHECKING:
     from ignite.engine import EventEnum
@@ -88,9 +89,9 @@ class AdversarialTrainer(Trainer):
 
     def __init__(
         self,
-        device: torch.device,
-        max_epochs: int,
-        train_data_loader: DataLoader,
+        device: Union[torch.device, str],
+        max_epochs: Union[int, None],
+        train_data_loader: Union[Iterable, DataLoader],
         g_network: torch.nn.Module,
         g_optimizer: Optimizer,
         g_loss_function: Callable,
@@ -100,7 +101,7 @@ class AdversarialTrainer(Trainer):
         d_loss_function: Callable,
         epoch_length: Optional[int] = None,
         non_blocking: bool = False,
-        prepare_batch: Callable = default_prepare_batch,
+        prepare_batch: Union[Callable[[Engine, Any], Any], None] = default_prepare_batch,
         iteration_update: Optional[Callable] = None,
         g_inferer: Optional[Inferer] = None,
         d_inferer: Optional[Inferer] = None,
@@ -137,6 +138,9 @@ class AdversarialTrainer(Trainer):
             to_kwargs=to_kwargs,
             amp_kwargs=amp_kwargs,
         )
+
+        self.register_events(*AdversarialIterationEvents)
+
         self.g_network = g_network
         self.g_optimizer = g_optimizer
         self.g_loss_function = g_loss_function
@@ -175,6 +179,7 @@ class AdversarialTrainer(Trainer):
             - AdversarialKeys.DISCRIMINATOR_LOSS: loss value computed by the discriminator loss function. It is the
                 discriminator loss for the real images and the fake images. That is backpropagated through the
                 discriminator only.
+
         Args:
             engine: `AdversarialTrainer` to execute operation for an iteration.
             batchdata: input data for this iteration, usually can be dictionary or tuple of Tensor data.
@@ -197,7 +202,7 @@ class AdversarialTrainer(Trainer):
 
         engine.state.output = {Keys.IMAGE: inputs, Keys.LABEL: targets, AdversarialKeys.REALS: inputs}
 
-        def _compute_generator_loss():
+        def _compute_generator_loss() -> None:
             # TODO: Have a callable functions that process the input to the networks/losses such that peculiar outputs
             #  are handled properly
             engine.state.output[AdversarialKeys.FAKES] = engine.g_inferer(inputs, engine.g_network, *args, **kwargs)
@@ -219,6 +224,7 @@ class AdversarialTrainer(Trainer):
             ).mean()
             engine.fire_event(AdversarialIterationEvents.GENERATOR_LOSS_COMPLETED)
 
+        # Train Generator
         engine.g_network.train()
         engine.g_optimizer.zero_grad(set_to_none=engine.optim_set_to_none)
 
@@ -244,7 +250,7 @@ class AdversarialTrainer(Trainer):
             engine.g_optimizer.step()
         engine.fire_event(AdversarialIterationEvents.GENERATOR_MODEL_COMPLETED)
 
-        def _compute_discriminator_loss():
+        def _compute_discriminator_loss() -> None:
             engine.state.output[AdversarialKeys.REAL_LOGITS] = engine.d_inferer(
                 engine.state.output[AdversarialKeys.REALS].contiguous().detach(), engine.d_network, *args, **kwargs
             )
@@ -255,8 +261,6 @@ class AdversarialTrainer(Trainer):
             )
             engine.fire_event(AdversarialIterationEvents.DISCRIMINATOR_FAKES_FORWARD_COMPLETED)
 
-            # TODO: Decide if we want to split the loss function based on real and fake logits such that we can log them
-            #   separately
             engine.state.output[AdversarialKeys.DISCRIMINATOR_LOSS] = engine.d_loss_function(
                 engine.state.output[AdversarialKeys.REAL_LOGITS], engine.state.output[AdversarialKeys.FAKE_LOGITS]
             ).mean()
@@ -280,3 +284,104 @@ class AdversarialTrainer(Trainer):
             engine.d_optimizer.step()
 
         return engine.state.output
+
+    def get_state(
+        self,
+        include_engine: bool = True,
+        include_generator: bool = True,
+        include_generator_optimiser: bool = True,
+        include_generator_scaler: bool = False,
+        include_generator_loss: bool = True,
+        include_discriminator: bool = True,
+        include_discriminator_optimiser: bool = True,
+        include_discriminator_scaler: bool = False,
+        include_discriminator_loss: bool = True,
+        additional_states: Optional[Dict[str, Dict]] = None,
+    ):
+        state_dict = {}
+
+        if include_engine:
+            state_dict["engine"] = self.state_dict()
+        else:
+            warnings.warn("Engine state not included in checkpoint. This might cause issues when resuming training.")
+
+        if include_generator:
+            state_dict["generator"] = self.g_network.state_dict()
+        else:
+            warnings.warn("Generator state not included in checkpoint. This might cause issues when resuming training.")
+
+        if include_generator_optimiser:
+            state_dict["generator_optimizer"] = self.g_optimizer.state_dict()
+        else:
+            warnings.warn(
+                "Generator optimizer state not included in checkpoint. This might cause issues when resuming training."
+            )
+
+        if include_generator_scaler:
+            if self.g_scaler is not None:
+                state_dict["generator_scaler"] = self.g_scaler.state_dict()
+            else:
+                warnings.warn(
+                    "Generator AMP scaler was required in checkpoint but not found due to AMP being disabled."
+                )
+        else:
+            warnings.warn(
+                "Generator AMP scaler state not included in checkpoint. This might cause issues when resuming training."
+            )
+
+        if include_generator_loss:
+            g_loss_state_dict = getattr(self.g_loss_function, "state_dict", None)
+            if callable(g_loss_state_dict):
+                state_dict["generator_loss"] = self.g_loss_function.state_dict()
+            else:
+                warnings.warn(
+                    "Generator loss does not have a state_dict method. Make sure this is the intended behaviour."
+                )
+        else:
+            warnings.warn(
+                "Generator loss function state not included in checkpoint. This might cause issues when resuming training."
+            )
+
+        if include_discriminator:
+            state_dict["discriminator"] = self.d_network.state_dict()
+        else:
+            warnings.warn(
+                "Discriminator state not included in checkpoint. This might cause issues when resuming training."
+            )
+
+        if include_discriminator_optimiser:
+            state_dict["discriminator_optimizer"] = self.d_optimizer.state_dict()
+        else:
+            warnings.warn(
+                "Discriminator optimizer state not included in checkpoint. This might cause issues when resuming training."
+            )
+
+        if include_discriminator_scaler:
+            if self.d_scaler is not None:
+                state_dict["discriminator_scaler"] = self.d_scaler.state_dict()
+            else:
+                warnings.warn(
+                    "Discriminator AMP scaler was required in checkpoint but not found due to AMP being disabled."
+                )
+        else:
+            warnings.warn(
+                "Discriminator AMP scaler state not included in checkpoint. This might cause issues when resuming training."
+            )
+
+        if include_discriminator_loss:
+            d_loss_state_dict = getattr(self.d_loss_function, "state_dict", None)
+            if callable(d_loss_state_dict):
+                state_dict["discriminator_loss"] = self.d_loss_function.state_dict()
+            else:
+                warnings.warn(
+                    "Discriminator loss does not have a state_dict method. Make sure this is the intended behaviour."
+                )
+        else:
+            warnings.warn(
+                "Discriminator loss function state not included in checkpoint. This might cause issues when resuming training."
+            )
+
+        if additional_states is not None:
+            state_dict.update(additional_states)
+
+        return state_dict
