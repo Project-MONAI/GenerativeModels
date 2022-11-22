@@ -9,6 +9,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 from typing import Callable, Optional
 
 import torch
@@ -17,6 +18,7 @@ from tqdm import tqdm
 
 
 class DiffusionInferer(Inferer):
+
     """
     DiffusionSamplingInferer takes a trained diffusion model and a scheduler and produces a sample.
     """
@@ -67,6 +69,7 @@ class DiffusionInferer(Inferer):
             intermediate_steps: if save_intermediates is True, saves every n steps
             conditioning: Conditioning for network input.
 
+
         """
         image = input_noise.clone()
         progress_bar = tqdm(scheduler.timesteps)
@@ -77,6 +80,7 @@ class DiffusionInferer(Inferer):
                 model_output = diffusion_model(
                     image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning
                 )
+
             # 2. compute previous image: x_t -> x_t-1
             image, _ = scheduler.step(model_output, t, image)
             if save_intermediates and t % intermediate_steps == 0:
