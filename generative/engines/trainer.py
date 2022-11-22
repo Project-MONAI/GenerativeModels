@@ -89,7 +89,7 @@ class AdversarialTrainer(Trainer):
     def __init__(
         self,
         device: Union[torch.device, str],
-        max_epochs: Union[int, None],
+        max_epochs: int,
         train_data_loader: Union[Iterable, DataLoader],
         g_network: torch.nn.Module,
         g_optimizer: Optimizer,

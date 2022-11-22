@@ -23,7 +23,7 @@ from monai.data import create_test_image_2d
 from monai.handlers import CheckpointSaver, StatsHandler, TensorBoardStatsHandler
 from monai.networks.nets import AutoEncoder, Discriminator
 from monai.transforms import AsChannelFirstd, Compose, LoadImaged, RandFlipd, ScaleIntensityd
-from monai.utils import set_determinism
+from monai.utils import CommonKeys, set_determinism
 from tests.utils import DistTestCase, TimedCall, skip_if_quick
 
 from generative.engines import AdversarialTrainer
@@ -36,15 +36,15 @@ def run_training_test(root_dir, device="cuda:0"):
     fake_label = 0
 
     real_images = sorted(glob(os.path.join(root_dir, "img*.nii.gz")))
-    train_files = [{"reals": img} for img in zip(real_images)]
+    train_files = [{CommonKeys.IMAGE: img, CommonKeys.LABEL: img} for img in zip(real_images)]
 
     # prepare real data
     train_transforms = Compose(
         [
-            LoadImaged(keys=["reals"]),
-            AsChannelFirstd(keys=["reals"]),
-            ScaleIntensityd(keys=["reals"]),
-            RandFlipd(keys=["reals"], prob=0.5),
+            LoadImaged(keys=[CommonKeys.IMAGE, CommonKeys.LABEL]),
+            AsChannelFirstd(keys=[CommonKeys.IMAGE, CommonKeys.LABEL]),
+            ScaleIntensityd(keys=[CommonKeys.IMAGE]),
+            RandFlipd(keys=[CommonKeys.IMAGE, CommonKeys.LABEL], prob=0.5),
         ]
     )
     train_ds = monai.data.CacheDataset(data=train_files, transform=train_transforms, cache_rate=0.5)
@@ -137,7 +137,7 @@ def run_training_test(root_dir, device="cuda:0"):
 
 
 @skip_if_quick
-class IntegrationWorkflowsGAN(DistTestCase):
+class IntegrationWorkflowsAdversarialTrainer(DistTestCase):
     def setUp(self):
         set_determinism(seed=0)
 
