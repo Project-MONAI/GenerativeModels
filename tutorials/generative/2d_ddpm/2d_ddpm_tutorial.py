@@ -33,7 +33,7 @@
 # %% [markdown]
 # ## Setup imports
 
-# %%
+# %% jupyter={"outputs_hidden": false}
 # Copyright 2020 MONAI Consortium
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -60,7 +60,7 @@ from monai.data import CacheDataset, DataLoader
 from monai.utils import first, set_determinism
 from tqdm import tqdm
 
-from generative.inferers import DiffusionSamplingInferer
+from generative.inferers import DiffusionInferer
 
 # TODO: Add right import reference after deployed
 from generative.networks.nets import DiffusionModelUNet
@@ -77,7 +77,7 @@ print_config()
 #
 # If not specified a temporary directory will be used.
 
-# %%
+# %% jupyter={"outputs_hidden": false}
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
 root_dir = tempfile.mkdtemp() if directory is None else directory
 print(root_dir)
@@ -85,7 +85,7 @@ print(root_dir)
 # %% [markdown]
 # ## Set deterministic training for reproducibility
 
-# %%
+# %% jupyter={"outputs_hidden": false}
 set_determinism(0)
 
 # %% [markdown]
@@ -94,7 +94,7 @@ set_determinism(0)
 # (https://docs.monai.io/en/stable/apps.html#monai.apps.MedNISTDataset). In order to train faster, we will select just
 # one of the available classes ("Hand"), resulting in a training set with 7999 2D images.
 
-# %%
+# %% jupyter={"outputs_hidden": false}
 train_data = MedNISTDataset(root_dir=root_dir, section="training", download=True, progress=False, seed=0)
 train_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "Hand"]
 
@@ -106,7 +106,7 @@ train_datalist = [{"image": item["image"]} for item in train_data.data if item["
 # 1. `ScaleIntensityRanged` extracts intensity range [0, 255] and scales to [0, 1].
 # 1. `RandAffined` efficiently performs rotate, scale, shear, translate, etc. together based on PyTorch affine transform.
 
-# %%
+# %% jupyter={"outputs_hidden": false}
 train_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),
@@ -126,7 +126,7 @@ train_transforms = transforms.Compose(
 train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
 train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=0)
 
-# %%
+# %% jupyter={"outputs_hidden": false}
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, progress=False, seed=0)
 val_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "Hand"]
 val_transforms = transforms.Compose(
@@ -142,7 +142,7 @@ val_loader = DataLoader(val_ds, batch_size=128, shuffle=False, num_workers=0)
 # %% [markdown]
 # ### Visualisation of the training images
 
-# %%
+# %% jupyter={"outputs_hidden": false}
 check_data = first(train_loader)
 print(f"batch shape: {check_data['image'].shape}")
 image_visualisation = torch.cat(
@@ -155,12 +155,12 @@ plt.tight_layout()
 plt.show()
 
 # %% [markdown]
-# ### Define network, scheduler, optimizer, and sampler
-# At this step, we instantiate the MONAI components to create a DDPM, the UNET, the noise scheduler, and the inferrer used for sampling. We are using
+# ### Define network, scheduler, optimizer, and inferer
+# At this step, we instantiate the MONAI components to create a DDPM, the UNET, the noise scheduler, and the inferer used for training and sampling. We are using
 # the original DDPM scheduler containing 1000 timesteps in its Markov chain, and a 2D UNET with attention mechanisms
 # in the 2nd and 3rd levels, each with 1 attention head.
 
-# %%
+# %% jupyter={"outputs_hidden": false}
 device = torch.device("cuda")
 
 model = DiffusionModelUNet(
@@ -181,12 +181,12 @@ scheduler = DDPMScheduler(
 
 optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
 
-sampler = DiffusionSamplingInferer()
+inferer = DiffusionInferer()
 # %% [markdown]
 # ### Model training
 # Here, we are training our model for 50 epochs (training time: ~20 minutes).
 
-# %%
+# %% jupyter={"outputs_hidden": false}
 n_epochs = 50
 val_interval = 5
 epoch_loss_list = []
@@ -202,17 +202,12 @@ for epoch in range(n_epochs):
         images = batch["image"].to(device)
         optimizer.zero_grad(set_to_none=True)
 
-        # Randomly select the timesteps to be used for the minibacth
-        timesteps = torch.randint(0, scheduler.num_train_timesteps, (images.shape[0],), device=device).long()
-
-        # Add noise to the minibatch images with intensity defined by the scheduler and timesteps
+        # Generate random noise
         noise = torch.randn_like(images).to(device)
-        noisy_image = scheduler.add_noise(original_samples=images, noise=noise, timesteps=timesteps)
 
-        # In this example, we are parametrising our DDPM to learn the added noise (epsilon).
-        # For this reason, we are using our network to predict the added noise and then using L2 loss to predict
-        # its performance.
-        noise_pred = model(x=noisy_image, timesteps=timesteps)
+        # Get model prediction
+        noise_pred = inferer(inputs=images, diffusion_model=model, scheduler=scheduler, noise=noise)
+
         loss = F.mse_loss(noise_pred.float(), noise.float())
 
         loss.backward()
@@ -224,7 +219,6 @@ for epoch in range(n_epochs):
                 "loss": epoch_loss / (step + 1),
             }
         )
-        break
     epoch_loss_list.append(epoch_loss / (step + 1))
 
     if (epoch + 1) % val_interval == 0:
@@ -235,8 +229,8 @@ for epoch in range(n_epochs):
             timesteps = torch.randint(0, scheduler.num_train_timesteps, (images.shape[0],), device=device).long()
             noise = torch.randn_like(images).to(device)
             with torch.no_grad():
-                noisy_image = scheduler.add_noise(original_samples=images, noise=noise, timesteps=timesteps)
-                noise_pred = model(x=noisy_image, timesteps=timesteps)
+                # Get model prediction
+                noise_pred = inferer(inputs=images, diffusion_model=model, scheduler=scheduler, noise=noise)
                 val_loss = F.l1_loss(noise_pred.float(), noise.float())
 
             val_epoch_loss += val_loss.item()
@@ -251,7 +245,7 @@ for epoch in range(n_epochs):
         noise = torch.randn((1, 1, 64, 64))
         noise = noise.to(device)
         scheduler.set_timesteps(num_inference_steps=1000)
-        image = sampler(input_noise=noise, diffusion_model=model, scheduler=scheduler)
+        image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=scheduler)
 
         plt.figure(figsize=(2, 2))
         plt.imshow(image[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
@@ -264,7 +258,7 @@ print(f"train completed, total time: {total_time}.")
 # %% [markdown]
 # ### Learning curves
 
-# %%
+# %% jupyter={"outputs_hidden": false}
 plt.style.use("seaborn-v0_8")
 plt.title("Learning Curves", fontsize=20)
 plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, color="C0", linewidth=2.0, label="Train")
@@ -285,12 +279,12 @@ plt.show()
 # %% [markdown]
 # ### Plotting sampling process along DDPM's Markov chain
 
-# %%
+# %% jupyter={"outputs_hidden": false}
 model.eval()
 noise = torch.randn((1, 1, 64, 64))
 noise = noise.to(device)
 scheduler.set_timesteps(num_inference_steps=1000)
-image, intermediates = sampler(
+image, intermediates = inferer.sample(
     input_noise=noise, diffusion_model=model, scheduler=scheduler, save_intermediates=True, intermediate_steps=100
 )
 
@@ -310,3 +304,5 @@ plt.show()
 # %%
 if directory is None:
     shutil.rmtree(root_dir)
+
+# %%
