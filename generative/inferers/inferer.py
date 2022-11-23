@@ -14,23 +14,26 @@ from typing import Callable, Optional
 
 import torch
 from monai.inferers import Inferer
-from tqdm import tqdm
+from monai.utils import optional_import
+
+tqdm, has_tqdm = optional_import("tqdm", name="tqdm")
 
 
 class DiffusionInferer(Inferer):
 
     """
-    DiffusionSamplingInferer takes a trained diffusion model and a scheduler and produces a sample.
+    DiffusionInferer takes a trained diffusion model and a scheduler and can be used to perform a signal forward pass
+    for a training iteration, and sample from the model.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, scheduler) -> None:
         Inferer.__init__(self)
+        self.scheduler = scheduler
 
     def __call__(
         self,
         inputs: torch.Tensor,
         diffusion_model: Callable[..., torch.Tensor],
-        scheduler: Callable[..., torch.Tensor],
         noise: torch.Tensor,
         condition: Optional[torch.Tensor] = None,
     ):
@@ -44,35 +47,39 @@ class DiffusionInferer(Inferer):
             input_noise: random noise, of the same shape as the input.
             condition: Conditioning for network input.
         """
-        num_timesteps = scheduler.num_train_timesteps
+        num_timesteps = self.scheduler.num_train_timesteps
         timesteps = torch.randint(0, num_timesteps, (inputs.shape[0],), device=inputs.device).long()
-        noisy_image = scheduler.add_noise(original_samples=inputs, noise=noise, timesteps=timesteps)
-        noise_pred = diffusion_model(x=noisy_image, timesteps=timesteps, context=condition)
+        noisy_image = self.scheduler.add_noise(original_samples=inputs, noise=noise, timesteps=timesteps)
+        prediction = diffusion_model(x=noisy_image, timesteps=timesteps, context=condition)
 
-        return noise_pred
+        return prediction
 
     def sample(
         self,
         input_noise: torch.Tensor,
         diffusion_model: Callable[..., torch.Tensor],
-        scheduler: Callable[..., torch.Tensor],
-        save_intermediates: bool = False,
-        intermediate_steps: int = 100,
+        scheduler: Optional[Callable[..., torch.Tensor]] = None,
+        save_intermediates: Optional[bool] = False,
+        intermediate_steps: Optional[int] = 100,
         conditioning: Optional[torch.Tensor] = None,
+        verbose: Optional[bool] = True,
     ):
         """
         Args:
             input_noise: random noise, of the same shape as the desired sample.
             diffusion_model: model to sample from.
-            scheduler: diffusion scheduler.
+            scheduler: diffusion scheduler. If none provided will use the class attribute scheduler
             save_intermediates: whether to return intermediates along the sampling change
             intermediate_steps: if save_intermediates is True, saves every n steps
             conditioning: Conditioning for network input.
-
-
         """
-        image = input_noise.clone()
-        progress_bar = tqdm(scheduler.timesteps)
+        if not scheduler:
+            scheduler = self.scheduler
+        image = input_noise
+        if verbose and has_tqdm:
+            progress_bar = tqdm(scheduler.timesteps)
+        else:
+            progress_bar = iter(scheduler.timesteps)
         intermediates = []
         for t in progress_bar:
             # 1. predict noise model_output

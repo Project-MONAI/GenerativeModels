@@ -63,9 +63,9 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         scheduler = DDPMScheduler(
             num_train_timesteps=10,
         )
-        inferer = DiffusionInferer()
+        inferer = DiffusionInferer(scheduler=scheduler)
         scheduler.set_timesteps(num_inference_steps=10)
-        sample = inferer(inputs=input, noise=noise, diffusion_model=model, scheduler=scheduler)
+        sample = inferer(inputs=input, noise=noise, diffusion_model=model)
         self.assertEqual(sample.shape, input_shape)
 
     @parameterized.expand(TEST_CASES)
@@ -78,7 +78,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         scheduler = DDPMScheduler(
             num_train_timesteps=10,
         )
-        inferer = DiffusionInferer()
+        inferer = DiffusionInferer(scheduler=scheduler)
         scheduler.set_timesteps(num_inference_steps=10)
         sample, intermediates = inferer.sample(
             input_noise=noise, diffusion_model=model, scheduler=scheduler, save_intermediates=True, intermediate_steps=1
@@ -95,7 +95,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         scheduler = DDPMScheduler(
             num_train_timesteps=1000,
         )
-        inferer = DiffusionInferer()
+        inferer = DiffusionInferer(scheduler=scheduler)
         scheduler.set_timesteps(num_inference_steps=10)
         sample, intermediates = inferer.sample(
             input_noise=noise, diffusion_model=model, scheduler=scheduler, save_intermediates=True, intermediate_steps=1
@@ -112,7 +112,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         scheduler = DDIMScheduler(
             num_train_timesteps=1000,
         )
-        inferer = DiffusionInferer()
+        inferer = DiffusionInferer(scheduler=scheduler)
         scheduler.set_timesteps(num_inference_steps=10)
         sample, intermediates = inferer.sample(
             input_noise=noise, diffusion_model=model, scheduler=scheduler, save_intermediates=True, intermediate_steps=1
@@ -129,7 +129,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         scheduler = DDIMScheduler(
             num_train_timesteps=1000,
         )
-        inferer = DiffusionInferer()
+        inferer = DiffusionInferer(scheduler=scheduler)
         scheduler.set_timesteps(num_inference_steps=10)
         conditioning = torch.randn([input_shape[0], 1, 3])
         sample, intermediates = inferer.sample(
