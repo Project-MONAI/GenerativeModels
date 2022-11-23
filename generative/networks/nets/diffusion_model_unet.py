@@ -1352,8 +1352,8 @@ class DiffusionModelUNet(nn.Module):
         if with_conditioning is True and cross_attention_dim is None:
             raise ValueError(
                 (
-                    "DiffusionModelUNet expects dimension of the cross-attention conditioning (cross_attention_dim) when"
-                    " using with_conditioning."
+                    "DiffusionModelUNet expects dimension of the cross-attention conditioning (cross_attention_dim) "
+                    "when using with_conditioning."
                 )
             )
         if cross_attention_dim is not None and with_conditioning is False:
@@ -1517,10 +1517,10 @@ class DiffusionModelUNet(nn.Module):
         h = self.conv_in(x)
 
         # 3. down
-        down_block_res_samples = (h,)
+        down_block_res_samples = [h]
         for downsample_block in self.down_blocks:
             h, res_samples = downsample_block(hidden_states=h, temb=emb, context=context)
-            down_block_res_samples += res_samples
+            down_block_res_samples.extend(res_samples)
 
         # 4. mid
         h = self.middle_block(hidden_states=h, temb=emb, context=context)
