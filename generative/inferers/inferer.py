@@ -36,7 +36,7 @@ class DiffusionInferer(Inferer):
         diffusion_model: Callable[..., torch.Tensor],
         noise: torch.Tensor,
         condition: Optional[torch.Tensor] = None,
-    ):
+    ) -> torch.Tensor:
         """
         Implements the forward pass for a supervised training iteration.
 
@@ -63,7 +63,7 @@ class DiffusionInferer(Inferer):
         intermediate_steps: Optional[int] = 100,
         conditioning: Optional[torch.Tensor] = None,
         verbose: Optional[bool] = True,
-    ):
+    ) -> torch.Tensor:
         """
         Args:
             input_noise: random noise, of the same shape as the desired sample.
