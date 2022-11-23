@@ -11,6 +11,8 @@
 
 from torch import nn
 
+__all__ = ["LatentDiffusionModel"]
+
 
 # TODO: Discuss other methods that should be included
 class LatentDiffusionModel(nn.Module):
