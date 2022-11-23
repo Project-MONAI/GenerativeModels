@@ -105,7 +105,7 @@ stage1_model = AutoencoderKL(
     in_channels=1,
     out_channels=1,
     num_channels=64,
-    latent_channels=3,
+    latent_channels=1,
     ch_mult=(1, 2, 2),
     num_res_blocks=1,
     norm_num_groups=16,
@@ -114,8 +114,8 @@ stage1_model = AutoencoderKL(
 
 unet = DiffusionModelUNet(
     spatial_dims=2,
-    in_channels=3,
-    out_channels=3,
+    in_channels=1,
+    out_channels=1,
     num_res_blocks=1,
     attention_resolutions=[4, 2],
     channel_mult=[1, 2, 2],
@@ -136,12 +136,14 @@ model = LatentDiffusionModel(first_stage=stage1_model, unet_network=unet, schedu
 model = model.to(device)
 
 # +
-optimizer = torch.optim.Adam(model.parameters(), 2.5e-5)
+optimizer = torch.optim.Adam(model.parameters(), lr=2.5e-5)
 # TODO: Add lr_scheduler with warm-up
 # TODO: Add EMA model
 
-n_epochs = 20
+n_epochs = 10
 val_interval = 2
+epoch_loss_list = []
+val_epoch_loss_list = []
 for epoch in range(n_epochs):
     model.train()
     epoch_loss = 0
@@ -174,3 +176,64 @@ for epoch in range(n_epochs):
                 "loss": epoch_loss / (step + 1),
             }
         )
+    epoch_loss_list.append(epoch_loss / (step + 1))
+
+    if (epoch + 1) % val_interval == 0:
+        model.eval()
+        val_loss = 0
+        with torch.no_grad():
+            for val_step, batch in enumerate(val_loader, start=1):
+                images = batch["image"].to(device)
+                optimizer.zero_grad(set_to_none=True)
+                clean_latent = model.first_stage(images)
+                ldm_inputs = model.first_stage.sampling(clean_latent[1], clean_latent[2])
+
+                timesteps = torch.randint(
+                    0, model.scheduler.num_train_timesteps, (ldm_inputs.shape[0],), device=ldm_inputs.device
+                ).long()
+                noise = torch.randn_like(ldm_inputs).to(device)
+                noisy_latent = model.scheduler.add_noise(original_samples=ldm_inputs, noise=noise, timesteps=timesteps)
+                noise_pred = model.unet_network(noisy_latent, timesteps)
+
+                loss = F.l1_loss(noise_pred.float(), noise.float())
+                val_loss += loss.item()
+        val_loss /= val_step
+        val_epoch_loss_list.append(val_loss)
+        print(f"epoch {epoch + 1} val loss: {val_loss:.4f}")
+progress_bar.close()
+
+
+# ## Plotting sampling example
+model.eval()
+image = torch.randn(
+    (1, 1, 64, 64),
+)
+image = image.to(device)
+intermediary = []
+for t in tqdm(model.scheduler.timesteps, ncols=70):
+    # 1. predict noise model_output
+    with torch.no_grad():
+        reconstruction, z_mu, z_sigma = model.first_stage(image)
+        model_output = model.unet_network(reconstruction, torch.Tensor((t,)).to(device))
+
+    # 2. compute previous image: x_t -> x_t-1
+    image, _ = model.scheduler.step(model_output, t, image)
+    if t % 100 == 0:
+        intermediary.append(image)
+
+# ## Plot learning curves
+plt.figure()
+plt.title("Learning Curves", fontsize=20)
+plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, linewidth=2.0, label="Train")
+plt.plot(
+    np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
+    val_epoch_loss_list,
+    linewidth=2.0,
+    label="Validation",
+)
+plt.yticks(fontsize=12)
+plt.xticks(fontsize=12)
+plt.xlabel("Epochs", fontsize=16)
+plt.ylabel("Loss", fontsize=16)
+plt.legend(prop={"size": 14})
+plt.show()
