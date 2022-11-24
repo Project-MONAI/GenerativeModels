@@ -138,7 +138,7 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
             attention_levels=(False, False, True),
             norm_num_groups=8,
         )
-        test_script_save(net, {"x": torch.rand((1, 1, 16, 16)), "timesteps": torch.randint(0, 1000, (1,)).long()})
+        test_script_save(net, torch.rand((1, 1, 16, 16)), torch.randint(0, 1000, (1,)).long())
 
     def test_script_conditioned_2d_models(self):
         net = DiffusionModelUNet(
@@ -153,14 +153,7 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
             transformer_num_layers=1,
             cross_attention_dim=3,
         )
-        test_script_save(
-            net,
-            {
-                "x": torch.rand((1, 1, 16, 16)),
-                "timesteps": torch.randint(0, 1000, (1,)).long(),
-                "context": torch.rand((1, 1, 3)),
-            },
-        )
+        test_script_save(net, torch.rand((1, 1, 16, 16)), torch.randint(0, 1000, (1,)).long(), torch.rand((1, 1, 3)))
 
 
 class TestDiffusionModelUNet3D(unittest.TestCase):
@@ -218,7 +211,7 @@ class TestDiffusionModelUNet3D(unittest.TestCase):
             attention_levels=(False, False, True),
             norm_num_groups=8,
         )
-        test_script_save(net, {"x": torch.rand((1, 1, 16, 16, 16)), "timesteps": torch.randint(0, 1000, (1,)).long()})
+        test_script_save(net, torch.rand((1, 1, 16, 16, 16)), torch.randint(0, 1000, (1,)).long())
 
     def test_script_conditioned_3d_models(self):
         net = DiffusionModelUNet(
@@ -235,11 +228,9 @@ class TestDiffusionModelUNet3D(unittest.TestCase):
         )
         test_script_save(
             net,
-            {
-                "x": torch.rand((1, 1, 16, 16, 16)),
-                "timesteps": torch.randint(0, 1000, (1,)).long(),
-                "context": torch.rand((1, 1, 3)),
-            },
+            torch.rand((1, 1, 16, 16, 16)),
+            torch.randint(0, 1000, (1,)).long(),
+            torch.rand((1, 1, 3)),
         )
 
 

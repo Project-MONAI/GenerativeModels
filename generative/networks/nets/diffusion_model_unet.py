@@ -30,7 +30,7 @@
 # =========================================================================
 
 import math
-from typing import Any, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -693,7 +693,7 @@ class DownBlock(nn.Module):
 
     def forward(
         self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, Any]:
+    ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
         output_states = []
 
         for resnet in self.resnets:
@@ -763,7 +763,7 @@ class AttnDownBlock(nn.Module):
 
     def forward(
         self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, Any]:
+    ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
         output_states = []
 
         for resnet, attn in zip(self.resnets, self.attentions):
@@ -840,7 +840,7 @@ class CrossAttnDownBlock(nn.Module):
 
     def forward(
         self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, Any]:
+    ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
         output_states = []
 
         for resnet, attn in zip(self.resnets, self.attentions):
@@ -998,14 +998,14 @@ class UpBlock(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        res_hidden_states_tuple: torch.Tensor,
+        res_hidden_states_list: List[torch.Tensor],
         temb: torch.Tensor,
         context: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         for i, resnet in enumerate(self.resnets):
             # pop res hidden states
-            res_hidden_states = res_hidden_states_tuple[-1]
-            res_hidden_states_tuple = res_hidden_states_tuple[:-1]
+            res_hidden_states = res_hidden_states_list[-1]
+            res_hidden_states_list = res_hidden_states_list[:-1]
             hidden_states = torch.cat([hidden_states, res_hidden_states], dim=1)
 
             hidden_states = resnet(hidden_states, temb)
@@ -1071,14 +1071,14 @@ class AttnUpBlock(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        res_hidden_states_tuple: torch.Tensor,
+        res_hidden_states_list: List[torch.Tensor],
         temb: torch.Tensor,
         context: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         for resnet, attn in zip(self.resnets, self.attentions):
             # pop res hidden states
-            res_hidden_states = res_hidden_states_tuple[-1]
-            res_hidden_states_tuple = res_hidden_states_tuple[:-1]
+            res_hidden_states = res_hidden_states_list[-1]
+            res_hidden_states_list = res_hidden_states_list[:-1]
             hidden_states = torch.cat([hidden_states, res_hidden_states], dim=1)
 
             hidden_states = resnet(hidden_states, temb)
@@ -1150,14 +1150,14 @@ class CrossAttnUpBlock(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        res_hidden_states_tuple: torch.Tensor,
+        res_hidden_states_list: List[torch.Tensor],
         temb: torch.Tensor,
         context: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         for resnet, attn in zip(self.resnets, self.attentions):
             # pop res hidden states
-            res_hidden_states = res_hidden_states_tuple[-1]
-            res_hidden_states_tuple = res_hidden_states_tuple[:-1]
+            res_hidden_states = res_hidden_states_list[-1]
+            res_hidden_states_list = res_hidden_states_list[:-1]
             hidden_states = torch.cat([hidden_states, res_hidden_states], dim=1)
 
             hidden_states = resnet(hidden_states, temb)
@@ -1499,10 +1499,11 @@ class DiffusionModelUNet(nn.Module):
         h = self.conv_in(x)
 
         # 3. down
-        down_block_res_samples = [h]
+        down_block_res_samples: List[torch.Tensor] = [h]
         for downsample_block in self.down_blocks:
             h, res_samples = downsample_block(hidden_states=h, temb=emb, context=context)
-            down_block_res_samples.extend(res_samples)
+            for residual in res_samples:
+                down_block_res_samples.append(residual)
 
         # 4. mid
         h = self.middle_block(hidden_states=h, temb=emb, context=context)
@@ -1511,8 +1512,7 @@ class DiffusionModelUNet(nn.Module):
         for upsample_block in self.up_blocks:
             res_samples = down_block_res_samples[-len(upsample_block.resnets) :]
             down_block_res_samples = down_block_res_samples[: -len(upsample_block.resnets)]
-
-            h = upsample_block(hidden_states=h, res_hidden_states_tuple=res_samples, temb=emb, context=context)
+            h = upsample_block(hidden_states=h, res_hidden_states_list=res_samples, temb=emb, context=context)
 
         # 6. output block
         h = self.out(h)
