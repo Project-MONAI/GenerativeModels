@@ -235,8 +235,6 @@ class DiffusionPrepareBatch(PrepareBatch):
 # Here, we are training our model for 50 epochs (training time: ~20 minutes).
 
 # %% jupyter={"outputs_hidden": false}
-
-
 n_epochs = 20
 val_interval = 5
 
