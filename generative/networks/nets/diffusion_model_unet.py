@@ -128,7 +128,7 @@ class CrossAttention(nn.Module):
         x = x.permute(0, 2, 1, 3).reshape(batch_size // head_size, seq_len, dim * head_size)
         return x
 
-    def _attention(self, query, key, value):
+    def _attention(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor) -> torch.Tensor:
         attention_scores = torch.baddbmm(
             torch.empty(query.shape[0], query.shape[1], key.shape[1], dtype=query.dtype, device=query.device),
             query,
@@ -329,7 +329,6 @@ class AttentionBlock(nn.Module):
         spatial_dims: int,
         num_channels: int,
         num_head_channels: Optional[int] = None,
-        rescale_output_factor: float = 1.0,
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
     ) -> None:
@@ -347,7 +346,6 @@ class AttentionBlock(nn.Module):
         self.key = nn.Linear(num_channels, num_channels)
         self.value = nn.Linear(num_channels, num_channels)
 
-        self.rescale_output_factor = rescale_output_factor
         self.proj_attn = nn.Linear(num_channels, num_channels, 1)
 
     def transpose_for_scores(self, projection: torch.Tensor) -> torch.Tensor:
