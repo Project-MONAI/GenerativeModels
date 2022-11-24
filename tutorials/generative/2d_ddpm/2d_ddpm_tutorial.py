@@ -8,7 +8,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.14.1
 #   kernelspec:
-#     display_name: Python 3 (ipykernel)
+#     display_name: Python 3
 #     language: python
 #     name: python3
 # ---
@@ -86,7 +86,7 @@ print(root_dir)
 # ## Set deterministic training for reproducibility
 
 # %% jupyter={"outputs_hidden": false}
-set_determinism(0)
+set_determinism(42)
 
 # %% [markdown]
 # ## Setup MedNIST Dataset and training and validation dataloaders
@@ -124,7 +124,7 @@ train_transforms = transforms.Compose(
     ]
 )
 train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
-train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=4)
+train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=4, persistent_workers=True)
 
 # %% jupyter={"outputs_hidden": false}
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, progress=False, seed=0)
@@ -137,7 +137,7 @@ val_transforms = transforms.Compose(
     ]
 )
 val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
-val_loader = DataLoader(val_ds, batch_size=128, shuffle=False, num_workers=4)
+val_loader = DataLoader(val_ds, batch_size=128, shuffle=False, num_workers=4, persistent_workers=True)
 
 # %% [markdown]
 # ### Visualisation of the training images
@@ -167,10 +167,10 @@ model = DiffusionModelUNet(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
-    block_out_channels=(64, 128, 128),
-    attention_levels=(False, False, True),
+    num_channels=(64, 128, 128),
+    attention_levels=(False, True, True),
     num_res_blocks=1,
-    num_heads=1,
+    num_head_channels=64,
 )
 model.to(device)
 
@@ -180,14 +180,14 @@ scheduler = DDPMScheduler(
 
 optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
 
-inferer = DiffusionInferer()
+inferer = DiffusionInferer(scheduler)
 # %% [markdown]
 # ### Model training
-# Here, we are training our model for 50 epochs (training time: ~20 minutes).
+# Here, we are training our model for 100 epochs (training time: ~40 minutes).
 
 # %% jupyter={"outputs_hidden": false}
-n_epochs = 50
-val_interval = 5
+n_epochs = 100
+val_interval = 10
 epoch_loss_list = []
 val_epoch_loss_list = []
 
@@ -205,7 +205,7 @@ for epoch in range(n_epochs):
         noise = torch.randn_like(images).to(device)
 
         # Get model prediction
-        noise_pred = inferer(inputs=images, diffusion_model=model, scheduler=scheduler, noise=noise)
+        noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise)
 
         loss = F.mse_loss(noise_pred.float(), noise.float())
 
@@ -229,7 +229,7 @@ for epoch in range(n_epochs):
             noise = torch.randn_like(images).to(device)
             with torch.no_grad():
                 # Get model prediction
-                noise_pred = inferer(inputs=images, diffusion_model=model, scheduler=scheduler, noise=noise)
+                noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise)
                 val_loss = F.l1_loss(noise_pred.float(), noise.float())
 
             val_epoch_loss += val_loss.item()
@@ -303,5 +303,3 @@ plt.show()
 # %%
 if directory is None:
     shutil.rmtree(root_dir)
-
-# %%
