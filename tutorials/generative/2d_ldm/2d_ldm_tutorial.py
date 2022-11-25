@@ -15,6 +15,7 @@
 
 # +
 import os
+import shutil
 import tempfile
 
 import matplotlib.pyplot as plt
@@ -77,8 +78,7 @@ fig, ax = plt.subplots(nrows=1, ncols=3)
 for image_n in range(3):
     ax[image_n].imshow(check_data["image"][image_n, 0, :, :], cmap="gray")
     ax[image_n].axis("off")
-# TODO: remove path
-plt.savefig("/project/tutorials/generative/2d_ldm/hand_examples.png")
+
 
 # ## Download the validation set
 
@@ -130,9 +130,11 @@ scheduler = DDPMScheduler(
     beta_start=0.0015,
     beta_end=0.0195,
 )
-
+# -
 
 # ## Train AutoencoderKL
+
+# +
 autoencoderkl = autoencoderkl.to(device)
 kl_weight = 1e-6
 kl_optimizer = torch.optim.Adam(autoencoderkl.parameters(), 1e-5)
@@ -187,7 +189,7 @@ for epoch in range(n_epochs):
                 if val_step == 1:
                     intermediary_images.append(reconstruction[:n_example_images, 0])
 
-                rec_loss = F.mse_loss(reconstruction.float(), images.float())
+                rec_loss = F.mse_loss(images.float(), reconstruction.float())
 
                 kl_loss = 0.5 * torch.sum(z_mu.pow(2) + z_sigma.pow(2) - torch.log(z_sigma.pow(2)) - 1, dim=[1, 2, 3])
                 kl_loss = torch.sum(kl_loss) / kl_loss.shape[0]
@@ -204,7 +206,10 @@ for epoch in range(n_epochs):
         print(f"epoch {epoch + 1} val loss: {val_loss:.4f}")
 progress_bar.close()
 
+# -
+
 # ### Visualise the results from the autoencoderKL
+
 val_samples = np.linspace(val_interval, n_epochs, int(n_epochs / val_interval))
 fig, ax = plt.subplots(nrows=len(val_samples), ncols=1, sharey=True)
 for image_n in range(len(val_samples)):
@@ -213,9 +218,10 @@ for image_n in range(len(val_samples)):
     ax[image_n].set_xticks([])
     ax[image_n].set_yticks([])
     ax[image_n].set_ylabel(f"Epoch {val_samples[image_n]:.0f}")
-plt.savefig("/project/tutorials/generative/2d_ldm/autoencoderkl.png")
 
 # ## Train Diffusion Model
+
+# +
 optimizer = torch.optim.Adam(unet.parameters(), lr=2.5e-5)
 # TODO: Add lr_scheduler with warm-up
 # TODO: Add EMA model
@@ -235,9 +241,9 @@ for epoch in range(n_epochs):
         optimizer.zero_grad(set_to_none=True)
 
         # TODO: check how to deal with next commands with multi-GPU and for FL
-        with torch.no_grad():
-            z_mu, z_sigma = autoencoderkl.encode(images)
-            z = autoencoderkl.sampling(z_mu, z_sigma)
+        # with torch.no_grad():
+        z_mu, z_sigma = autoencoderkl.encode(images)
+        z = autoencoderkl.sampling(z_mu, z_sigma)
 
         timesteps = torch.randint(0, scheduler.num_train_timesteps, (z.shape[0],), device=z.device).long()
 
@@ -245,7 +251,7 @@ for epoch in range(n_epochs):
         noisy_latent = scheduler.add_noise(original_samples=z, noise=noise, timesteps=timesteps)
         noise_pred = unet(noisy_latent, timesteps)
 
-        loss = F.mse_loss(noise_pred.float(), noise.float())
+        loss = F.mse_loss(noise.float(), noise_pred.float())
 
         loss.backward()
         optimizer.step()
@@ -266,9 +272,8 @@ for epoch in range(n_epochs):
                 images = batch["image"].to(device)
                 optimizer.zero_grad(set_to_none=True)
 
-                with torch.no_grad():
-                    z_mu, z_sigma = autoencoderkl.encode(images)
-                    z = autoencoderkl.sampling(z_mu, z_sigma)
+                z_mu, z_sigma = autoencoderkl.encode(images)
+                z = autoencoderkl.sampling(z_mu, z_sigma)
 
                 timesteps = torch.randint(0, scheduler.num_train_timesteps, (z.shape[0],), device=z.device).long()
 
@@ -276,16 +281,44 @@ for epoch in range(n_epochs):
                 noisy_latent = scheduler.add_noise(original_samples=z, noise=noise, timesteps=timesteps)
                 noise_pred = unet(noisy_latent, timesteps)
 
-                loss = F.mse_loss(noise_pred.float(), noise.float())
+                loss = F.mse_loss(noise.float(), noise_pred.float())
 
                 val_loss += loss.item()
         val_loss /= val_step
         val_epoch_loss_list.append(val_loss)
         print(f"epoch {epoch + 1} val loss: {val_loss:.4f}")
+
+        # Sampling image during training
+        image = torch.randn((1, 1, 64, 64))
+        image = image.to(device)
+        scheduler.set_timesteps(num_inference_steps=1000)
+
+        for t in tqdm(scheduler.timesteps, ncols=70):
+            # 1. predict noise model_output
+            with torch.no_grad():
+                z_mu, z_sigma = autoencoderkl.encode(image)
+                z = autoencoderkl.sampling(z_mu, z_sigma)
+                model_output = unet(z, torch.Tensor((t,)).to(device))
+
+                # 2. compute previous image: x_t -> x_t-1
+                r_image, _ = scheduler.step(model_output, t, z)
+
+                # 3. Decode image
+                decoded = autoencoderkl.decode(r_image)
+
+        plt.figure(figsize=(2, 2))
+        plt.style.use("default")
+        plt.imshow(decoded[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
+        plt.tight_layout()
+        plt.axis("off")
+        plt.show()
 progress_bar.close()
 
+# -
 
-# ## Plotting sampling example
+# ### Plotting sampling example
+
+# +
 unet.eval()
 image = torch.randn(
     (1, 1, 64, 64),
@@ -301,23 +334,25 @@ for t in tqdm(scheduler.timesteps, ncols=70):
         z = autoencoderkl.sampling(z_mu, z_sigma)
         model_output = unet(z, torch.Tensor((t,)).to(device))
 
-    # 2. compute previous image: x_t -> x_t-1
-    r_image, _ = scheduler.step(model_output, t, z)
-    if t % 100 == 0:
-        intermediary.append(r_image)
+        # 2. compute previous image: x_t -> x_t-1
+        r_image, _ = scheduler.step(model_output, t, z)
+        if t % 100 == 0:
+            intermediary.append(r_image)
+
+# -
 
 # Invert the autoencoderKL model
 decoded_images = []
 for image in intermediary:
-    decoded = autoencoderkl.decode(image)
-    decoded_images.append(decoded)
+    with torch.no_grad():
+        decoded = autoencoderkl.decode(r_image)
+        decoded_images.append(decoded)
 plt.figure()
 chain = torch.cat(decoded_images, dim=-1)
 plt.style.use("default")
-plt.imshow(chain[0, 0].detach().cpu(), vmin=0, vmax=1, cmap="gray")
+plt.imshow(chain[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
 plt.tight_layout()
 plt.axis("off")
-plt.savefig("/project/tutorials/generative/2d_ldm/intermediary.png")
 
 
 # ## Plot learning curves
@@ -335,5 +370,11 @@ plt.xticks(fontsize=12)
 plt.xlabel("Epochs", fontsize=16)
 plt.ylabel("Loss", fontsize=16)
 plt.legend(prop={"size": 14})
-plt.savefig("/project/tutorials/generative/2d_ldm/learning_curve.png")
-# plt.show()
+
+
+# +
+### Clean-up data directory
+# -
+
+if directory is None:
+    shutil.rmtree(root_dir)
