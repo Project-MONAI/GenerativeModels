@@ -34,11 +34,23 @@ from typing import List, Optional, Sequence, Tuple
 
 import torch
 import torch.nn.functional as F
-from monai.networks.blocks import Convolution
+from monai.networks.blocks import Convolution, SABlock
 from monai.networks.layers.factories import Pool
+from monai.utils import optional_import
 from torch import nn
 
+Rearrange, _ = optional_import("einops.layers.torch", name="Rearrange")
+
 __all__ = ["DiffusionModelUNet"]
+
+
+def zero_module(module: nn.Module) -> nn.Module:
+    """
+    Zero out the parameters of a module and return it.
+    """
+    for p in module.parameters():
+        p.detach().zero_()
+    return module
 
 
 class GEGLU(nn.Module):
@@ -112,38 +124,11 @@ class CrossAttention(nn.Module):
         self.to_k = nn.Linear(cross_attention_dim, inner_dim, bias=False)
         self.to_v = nn.Linear(cross_attention_dim, inner_dim, bias=False)
 
-        self.to_out = nn.Sequential(nn.Linear(inner_dim, query_dim), nn.Dropout(dropout))
+        self.input_rearrange = Rearrange("b n (h d) -> (b h) n d", h=num_attention_heads)
+        self.out_rearrange = Rearrange("(b h) n d -> b n (h d)", h=num_attention_heads)
 
-    def reshape_heads_to_batch_dim(self, x: torch.Tensor) -> torch.Tensor:
-        batch_size, seq_len, dim = x.shape
-        head_size = self.heads
-        x = x.reshape(batch_size, seq_len, head_size, dim // head_size)
-        x = x.permute(0, 2, 1, 3).reshape(batch_size * head_size, seq_len, dim // head_size)
-        return x
-
-    def reshape_batch_dim_to_heads(self, x: torch.Tensor) -> torch.Tensor:
-        batch_size, seq_len, dim = x.shape
-        head_size = self.heads
-        x = x.reshape(batch_size // head_size, head_size, seq_len, dim)
-        x = x.permute(0, 2, 1, 3).reshape(batch_size // head_size, seq_len, dim * head_size)
-        return x
-
-    def _attention(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor) -> torch.Tensor:
-        attention_scores = torch.baddbmm(
-            torch.empty(query.shape[0], query.shape[1], key.shape[1], dtype=query.dtype, device=query.device),
-            query,
-            key.transpose(-1, -2),
-            beta=0,
-            alpha=self.scale,
-        )
-        attention_probs = attention_scores.softmax(dim=-1)
-
-        # compute attention output
-        hidden_states = torch.bmm(attention_probs, value)
-
-        # reshape hidden_states
-        hidden_states = self.reshape_batch_dim_to_heads(hidden_states)
-        return hidden_states
+        self.out_proj = nn.Linear(inner_dim, query_dim)
+        self.drop_output = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
         query = self.to_q(x)
@@ -151,13 +136,18 @@ class CrossAttention(nn.Module):
         key = self.to_k(context)
         value = self.to_v(context)
 
-        query = self.reshape_heads_to_batch_dim(query)
-        key = self.reshape_heads_to_batch_dim(key)
-        value = self.reshape_heads_to_batch_dim(value)
+        query = self.input_rearrange(query)
+        key = self.input_rearrange(key)
+        value = self.input_rearrange(value)
 
-        hidden_states = self._attention(query, key, value)
+        sim = torch.einsum("b i d, b j d -> b i j", query, key) * self.scale
+        attn = sim.softmax(dim=-1)
+        out = torch.einsum("b i j, b j d -> b i d", attn, value)
+        out = self.out_rearrange(out)
 
-        return self.to_out(hidden_states)
+        out = self.out_proj(out)
+        out = self.drop_output(out)
+        return out
 
 
 class BasicTransformerBlock(nn.Module):
@@ -270,14 +260,16 @@ class SpatialTransformer(nn.Module):
             ]
         )
 
-        self.proj_out = Convolution(
-            spatial_dims=spatial_dims,
-            in_channels=inner_dim,
-            out_channels=in_channels,
-            strides=1,
-            kernel_size=1,
-            padding=0,
-            conv_only=True,
+        self.proj_out = zero_module(
+            Convolution(
+                spatial_dims=spatial_dims,
+                in_channels=inner_dim,
+                out_channels=in_channels,
+                strides=1,
+                kernel_size=1,
+                padding=0,
+                conv_only=True,
+            )
         )
 
     def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
@@ -337,23 +329,9 @@ class AttentionBlock(nn.Module):
         self.num_channels = num_channels
 
         self.num_heads = num_channels // num_head_channels if num_head_channels is not None else 1
-        self.num_head_size = num_head_channels
-
         self.norm = nn.GroupNorm(num_groups=norm_num_groups, num_channels=num_channels, eps=norm_eps, affine=True)
 
-        # define q,k,v as linear layers
-        self.query = nn.Linear(num_channels, num_channels)
-        self.key = nn.Linear(num_channels, num_channels)
-        self.value = nn.Linear(num_channels, num_channels)
-
-        self.proj_attn = nn.Linear(num_channels, num_channels, 1)
-
-    def transpose_for_scores(self, projection: torch.Tensor) -> torch.Tensor:
-        new_projection_shape = projection.size()[:-1] + (self.num_heads, -1)
-        # move heads to 2nd position (B, T, H * D) -> (B, T, H, D) -> (B, H, T, D)
-        new_projection = projection.view(new_projection_shape).permute(0, 2, 1, 3)
-
-        return new_projection
+        self.attention = SABlock(hidden_size=num_channels, num_heads=self.num_heads, qkv_bias=True)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         residual = x
@@ -371,49 +349,7 @@ class AttentionBlock(nn.Module):
         if self.spatial_dims == 3:
             x = x.view(batch, channel, height * width * depth).transpose(1, 2)
 
-        # proj to q, k, v
-        query_proj = self.query(x)
-        key_proj = self.key(x)
-        value_proj = self.value(x)
-
-        scale = 1 / math.sqrt(self.num_channels / self.num_heads)
-
-        # get scores
-        if self.num_heads > 1:
-            query_states = self.transpose_for_scores(query_proj)
-            key_states = self.transpose_for_scores(key_proj)
-            value_states = self.transpose_for_scores(value_proj)
-            attention_scores = torch.matmul(query_states, key_states.transpose(-1, -2)) * scale
-        else:
-            query_states, key_states, value_states = query_proj, key_proj, value_proj
-
-            attention_scores = torch.baddbmm(
-                torch.empty(
-                    query_states.shape[0],
-                    query_states.shape[1],
-                    key_states.shape[1],
-                    dtype=query_states.dtype,
-                    device=query_states.device,
-                ),
-                query_states,
-                key_states.transpose(-1, -2),
-                beta=0,
-                alpha=scale,
-            )
-
-        attention_probs = torch.softmax(attention_scores.float(), dim=-1)
-
-        # compute attention output
-        if self.num_heads > 1:
-            x = torch.matmul(attention_probs, value_states)
-            x = x.permute(0, 2, 1, 3).contiguous()
-            new_x_shape = x.size()[:-2] + (self.num_channels,)
-            x = x.view(new_x_shape)
-        else:
-            x = torch.bmm(attention_probs, value_states)
-
-        # compute next hidden states
-        x = self.proj_attn(x)
+        x = self.attention(x)
 
         if self.spatial_dims == 2:
             x = x.transpose(-1, -2).reshape(batch, channel, height, width)
@@ -594,14 +530,16 @@ class ResnetBlock(nn.Module):
         )
 
         self.norm2 = nn.GroupNorm(num_groups=norm_num_groups, num_channels=self.out_channels, eps=norm_eps, affine=True)
-        self.conv2 = Convolution(
-            spatial_dims=spatial_dims,
-            in_channels=self.out_channels,
-            out_channels=self.out_channels,
-            strides=1,
-            kernel_size=3,
-            padding=1,
-            conv_only=True,
+        self.conv2 = zero_module(
+            Convolution(
+                spatial_dims=spatial_dims,
+                in_channels=self.out_channels,
+                out_channels=self.out_channels,
+                strides=1,
+                kernel_size=3,
+                padding=1,
+                conv_only=True,
+            )
         )
 
         if self.out_channels == in_channels:
@@ -1582,14 +1520,16 @@ class DiffusionModelUNet(nn.Module):
         self.out = nn.Sequential(
             nn.GroupNorm(num_groups=norm_num_groups, num_channels=num_channels[0], eps=norm_eps, affine=True),
             nn.SiLU(),
-            Convolution(
-                spatial_dims=spatial_dims,
-                in_channels=num_channels[0],
-                out_channels=out_channels,
-                strides=1,
-                kernel_size=3,
-                padding=1,
-                conv_only=True,
+            zero_module(
+                Convolution(
+                    spatial_dims=spatial_dims,
+                    in_channels=num_channels[0],
+                    out_channels=out_channels,
+                    strides=1,
+                    kernel_size=3,
+                    padding=1,
+                    conv_only=True,
+                )
             ),
         )
 
