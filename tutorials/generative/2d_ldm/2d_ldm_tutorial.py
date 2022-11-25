@@ -233,6 +233,7 @@ epoch_loss_list = []
 val_epoch_loss_list = []
 for epoch in range(n_epochs):
     unet.train()
+    autoencoderkl.eval()
     epoch_loss = 0
     progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=70)
     progress_bar.set_description(f"Epoch {epoch}")
@@ -286,26 +287,22 @@ for epoch in range(n_epochs):
                 val_loss += loss.item()
         val_loss /= val_step
         val_epoch_loss_list.append(val_loss)
-        print(f"epoch {epoch + 1} val loss: {val_loss:.4f}")
+        print(f"Epoch {epoch} val loss: {val_loss:.4f}")
 
         # Sampling image during training
-        image = torch.randn((1, 1, 64, 64))
-        image = image.to(device)
+        z = torch.randn((1, 1, 16, 16))
+        z = z.to(device)
         scheduler.set_timesteps(num_inference_steps=1000)
-
         for t in tqdm(scheduler.timesteps, ncols=70):
             # 1. predict noise model_output
             with torch.no_grad():
-                z_mu, z_sigma = autoencoderkl.encode(image)
-                z = autoencoderkl.sampling(z_mu, z_sigma)
                 model_output = unet(z, torch.Tensor((t,)).to(device))
 
                 # 2. compute previous image: x_t -> x_t-1
-                r_image, _ = scheduler.step(model_output, t, z)
+                z, _ = scheduler.step(model_output, t, z)
 
-                # 3. Decode image
-                decoded = autoencoderkl.decode(r_image)
-
+        with torch.no_grad():
+            decoded = autoencoderkl.decode(z)
         plt.figure(figsize=(2, 2))
         plt.style.use("default")
         plt.imshow(decoded[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
