@@ -86,7 +86,7 @@ print(root_dir)
 # ## Set deterministic training for reproducibility
 
 # %% jupyter={"outputs_hidden": false}
-set_determinism(0)
+set_determinism(42)
 
 # %% [markdown]
 # ## Setup MedNIST Dataset and training and validation dataloaders
@@ -163,16 +163,6 @@ plt.show()
 # %% jupyter={"outputs_hidden": false}
 device = torch.device("cuda")
 
-# model = DiffusionModelUNet(
-#     spatial_dims=2,
-#     in_channels=1,
-#     out_channels=1,
-#     model_channels=64,
-#     attention_resolutions=[2, 4],
-#     num_res_blocks=1,
-#     channel_mult=[1, 2, 2],
-#     num_heads=1,
-# )
 model = DiffusionModelUNet(
     spatial_dims=2,
     in_channels=1,
@@ -193,10 +183,10 @@ optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
 inferer = DiffusionInferer(scheduler)
 # %% [markdown]
 # ### Model training
-# Here, we are training our model for 100 epochs (training time: ~40 minutes).
+# Here, we are training our model for 75 epochs (training time: ~50 minutes).
 
 # %% jupyter={"outputs_hidden": false}
-n_epochs = 50
+n_epochs = 75
 val_interval = 5
 epoch_loss_list = []
 val_epoch_loss_list = []

@@ -349,7 +349,7 @@ class AttentionBlock(nn.Module):
         self.key = nn.Linear(num_channels, num_channels)
         self.value = nn.Linear(num_channels, num_channels)
 
-        self.proj_attn = nn.Linear(num_channels, num_channels, 1)
+        self.proj_attn = nn.Linear(num_channels, num_channels)
 
     def transpose_for_scores(self, projection: torch.Tensor) -> torch.Tensor:
         new_projection_shape = projection.size()[:-1] + (self.num_heads, -1)
