@@ -53,9 +53,9 @@ class MultiScalePatchDiscriminator(nn.Sequential):
         in_channels: int,
         out_channels: int,
         kernel_size: int,
-        activation: Union[str, tuple],
-        norm: Union[str, tuple],
-        bias: bool,
+        activation: Union[str, tuple] = "PRELU",
+        norm: Union[str, tuple] = "INSTANCE",
+        bias: bool = False,
         dropout: Union[float, tuple] = 0.0,
         minimum_size_im: int = 256,
     ) -> None:
@@ -65,8 +65,15 @@ class MultiScalePatchDiscriminator(nn.Sequential):
         self.num_channels = num_channels
         self.padding = tuple([int((kernel_size - 1) / 2)] * spatial_dims)
         for i in range(self.num_d):
+            num_layers_d_i = self.num_layers_d * (i + 1)
+            output_size = float(minimum_size_im) / (2**num_layers_d_i)
+            if output_size < 1:
+                raise AssertionError(
+                    "Your image size is too small to take in up to %d discriminators with num_layers = %d."
+                    "Please reduce num_layers, reduce num_D or enter bigger images." % (i, num_layers_d_i)
+                )
             subnet_d = PatchDiscriminator(
-                self.num_layers_d,
+                num_layers_d_i,
                 spatial_dims=spatial_dims,
                 num_channels=self.num_channels,
                 in_channels=in_channels,
@@ -76,7 +83,6 @@ class MultiScalePatchDiscriminator(nn.Sequential):
                 norm=norm,
                 bias=bias,
                 padding=self.padding,
-                index_d=i,
                 dropout=dropout,
                 minimum_size_im=minimum_size_im,
             )
@@ -137,24 +143,18 @@ class PatchDiscriminator(nn.Sequential):
         in_channels: int,
         out_channels: int,
         kernel_size: int,
-        activation: Union[str, tuple],
-        norm: Union[str, tuple],
-        bias: bool,
-        padding: Sequence[int],
+        activation: Union[str, tuple] = "PRELU",
+        norm: Union[str, tuple] = "INSTANCE",
+        bias: bool = False,
+        padding: Union[int, Sequence[int]] = 1,
         index_d: int = 0,
         dropout: Union[float, tuple] = 0.0,
         minimum_size_im: int = 256,
     ) -> None:
-        super().__init__()
-        self.num_layers_d = num_layers_d * (index_d + 1)
-        self.num_channels = num_channels
-        output_size = float(minimum_size_im) / (2 ** (num_layers_d * (index_d + 1)))
-        if output_size < 1:
-            raise AssertionError(
-                "Your image size is too small to take in up to %d discriminators with num_layers = %d."
-                "Please reduce num_layers, reduce num_D or enter bigger images." % (index_d, self.num_layers_d)
-            )
 
+        super().__init__()
+        self.num_layers_d = num_layers_d
+        self.num_channels = num_channels
         input_channels = in_channels
         output_channels = num_channels * 2
         for l_ in range(self.num_layers_d):
