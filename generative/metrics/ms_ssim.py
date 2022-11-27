@@ -17,9 +17,9 @@ from monai.metrics.regression import RegressionMetric
 from monai.utils import MetricReduction
 
 
-class MS_SSIM(RegressionMetric):
+class MSSSIM(RegressionMetric):
     """
-    Computes Multi-Scale Structual Similarity Index Measure.
+    Computes Multi-Scale Structural Similarity Index Measure.
 
     [1] Wang, Z., Simoncelli, E.P. and Bovik, A.C., 2003, November.
             Multiscale structural similarity for image quality assessment.
@@ -27,7 +27,7 @@ class MS_SSIM(RegressionMetric):
             & Computers, 2003 (Vol. 2, pp. 1398-1402). Ieee.
 
     Args:
-        data_range: synamic range of the data
+        data_range: dynamic range of the data
         win_size: gaussian weighting window size
         k1: stability constant used in the luminance denominator
         k2: stability constant used in the contrast denominator
@@ -83,8 +83,6 @@ class MS_SSIM(RegressionMetric):
             y: second sample (e.g., the reconstructed image). It has similar
                shape as x
 
-        Returns:
-            ms_ssim_value
         """
 
         if not x.shape == y.shape:
@@ -96,12 +94,6 @@ class MS_SSIM(RegressionMetric):
         for d in range(len(x.shape) - 1, 1, -1):
             x = x.squeeze(dim=d)
             y = y.squeeze(dim=d)
-
-        if not x.type() == y.type():
-            raise ValueError(
-                f"Input images should have the same dtype, but \
-                got {x.type()} and {y.type()}."
-            )
 
         if len(x.shape) == 4:
             avg_pool = F.avg_pool2d

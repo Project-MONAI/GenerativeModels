@@ -9,5 +9,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .ms_ssim import MS_SSIM
-
+from .ms_ssim import MSSSIM

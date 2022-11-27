@@ -16,7 +16,7 @@ import numpy as np
 import torch
 from parameterized import parameterized
 
-from generative.metrics import MS_SSIM
+from generative.metrics import MSSSIM
 
 TEST_CASES = [
     [
@@ -46,18 +46,28 @@ TEST_CASES = [
 class TestMSSSIMMetric(unittest.TestCase):
     @parameterized.expand(TEST_CASES)
     def test_results(self, input_param, input_data, expected_val):
-        results = MS_SSIM(**input_param)._compute_metric(**input_data)
+        results = MSSSIM(**input_param)._compute_metric(**input_data)
         np.testing.assert_allclose(results.detach().cpu().numpy(), expected_val, rtol=1e-4)
 
-    def test_2D_shape(self):
-        results = MS_SSIM(**TEST_CASES[0][0], spatial_dims=2, reduction="none")._compute_metric(**TEST_CASES[0][1])
-        self.assertEqual(results.shape, (TEST_CASES[0][1]["x"].shape[0], 1))
+    def test_win_size_not_odd(self):
+        with self.assertRaises(ValueError):
+            MSSSIM(data_range=1.0, win_size=8)
 
-    def test_3D_shape(self):
-        results = MS_SSIM(data_range=torch.tensor(1.0), spatial_dims=3, reduction="none")._compute_metric(
-            **TEST_CASES[1][1]
-        )
-        self.assertEqual(results.shape, (TEST_CASES[1][1]["x"].shape[0], 1))
+    def test_if_inputs_different_shapes(self):
+        with self.assertRaises(ValueError):
+            MSSSIM(data_range=1.0)(torch.ones([3, 3, 144, 144]), torch.ones([3, 3, 145, 145]))
+
+    def test_wrong_shape(self):
+        with self.assertRaises(ValueError):
+            MSSSIM(data_range=1.0)(torch.ones([3, 144, 144]), torch.ones([3, 144, 144]))
+
+    def test_input_too_small(self):
+        with self.assertRaises(ValueError):
+            MSSSIM(data_range=1.0)(torch.ones([3, 3, 8, 8]), torch.ones([3, 3, 8, 8]))
+
+    def test_input_non_divisible(self):
+        with self.assertRaises(ValueError):
+            MSSSIM(data_range=1.0)(torch.ones([3, 3, 149, 149]), torch.ones([3, 3, 149, 149]))
 
 
 if __name__ == "__main__":
