@@ -1,5 +1,5 @@
 lpips==0.1.4
-monai-weekly==1.1.dev2246
+monai-weekly==1.1.dev2248
 numpy>=1.17
 torch>=1.8
 tqdm
