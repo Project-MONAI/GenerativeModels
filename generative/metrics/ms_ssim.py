@@ -45,7 +45,7 @@ class MSSSIM(RegressionMetric):
 
     def __init__(
         self,
-        data_range: torch.Tensor,
+        data_range: Union[torch.Tensor, float],
         win_size: int = 7,
         k1: float = 0.01,
         k2: float = 0.03,
