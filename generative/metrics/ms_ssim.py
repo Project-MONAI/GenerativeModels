@@ -39,8 +39,7 @@ class MS_SSIM(RegressionMetric):
             Specifies the reduction to apply to the output.
             Defaults to ``"mean"``.
             - ``"none"``: no reduction will be applied.
-            - ``"mean"``: the sum of the output will be divided by the number
-             of elements in the output.
+            - ``"mean"``: the sum of the output will be divided by the number of elements in the output.
             - ``"sum"``: the output will be summed.
     """
 
@@ -74,11 +73,7 @@ class MS_SSIM(RegressionMetric):
             self.spatial_dims,
         )
 
-    def _compute_metric(
-                        self,
-                        x: torch.Tensor,
-                        y: torch.Tensor
-                        ) -> torch.Tensor:
+    def _compute_metric(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """
         Args:
             x: first sample (e.g., the reference image). Its shape is
@@ -93,24 +88,30 @@ class MS_SSIM(RegressionMetric):
         """
 
         if not x.shape == y.shape:
-            raise ValueError(f"Input images should have the same dimensions, \
-             but got {x.shape} and {y.shape}.")
+            raise ValueError(
+                f"Input images should have the same dimensions, \
+             but got {x.shape} and {y.shape}."
+            )
 
         for d in range(len(x.shape) - 1, 1, -1):
             x = x.squeeze(dim=d)
             y = y.squeeze(dim=d)
 
         if not x.type() == y.type():
-            raise ValueError(f"Input images should have the same dtype, but \
-                got {x.type()} and {y.type()}.")
+            raise ValueError(
+                f"Input images should have the same dtype, but \
+                got {x.type()} and {y.type()}."
+            )
 
         if len(x.shape) == 4:
             avg_pool = F.avg_pool2d
         elif len(x.shape) == 5:
             avg_pool = F.avg_pool3d
         else:
-            raise ValueError(f"Input images should be 4-d or 5-d tensors, but \
-                got {x.shape}")
+            raise ValueError(
+                f"Input images should be 4-d or 5-d tensors, but \
+                got {x.shape}"
+            )
 
         if self.weights is None:
             # as per Ref 1 - Sec 3.2.
@@ -146,8 +147,7 @@ class MS_SSIM(RegressionMetric):
         ssim = torch.relu(ssim)  # (batch, 1)
         # (level, batch, 1)
         mcs_and_ssim = torch.stack(mcs_list + [ssim], dim=0)
-        ms_ssim = torch.prod(mcs_and_ssim ** self.weights.view(-1, 1, 1),
-                             dim=0)
+        ms_ssim = torch.prod(mcs_and_ssim ** self.weights.view(-1, 1, 1), dim=0)
 
         if self.reduction == MetricReduction.MEAN.value:
             ms_ssim = ms_ssim.mean()
