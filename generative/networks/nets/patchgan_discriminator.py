@@ -129,9 +129,7 @@ class PatchDiscriminator(nn.Sequential):
         norm: normalisation type
         bias: introduction of layer bias
         padding: padding to be applied to the convolutional layers
-        index_d: index of the discriminator in the multi-scale chain, defaults to 0
         dropout: proportion of dropout applied, defaults to 0.
-        minimum_size_im: minimum spatial size of the input image. Introduced to make sure the architecture
         requested isn't going to downsample the input image beyond value of 1.
     """
 
@@ -147,9 +145,7 @@ class PatchDiscriminator(nn.Sequential):
         norm: Union[str, tuple] = "INSTANCE",
         bias: bool = False,
         padding: Union[int, Sequence[int]] = 1,
-        index_d: int = 0,
         dropout: Union[float, tuple] = 0.0,
-        minimum_size_im: int = 256,
     ) -> None:
 
         super().__init__()
