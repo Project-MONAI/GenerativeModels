@@ -8,19 +8,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Tuple
 
 import torch
 import torch.nn.functional as F
 
 
-from monai.metrics import CumulativeIterationMetric
 from monai.metrics import SSIMMetric
 from monai.utils import MetricReduction
+from monai.metrics.regression import RegressionMetric
+from monai.utils.type_conversion import convert_to_dst_type
 
-
-
-class MS_SSIM(CumulativeIterationMetric):
+class MS_SSIM(RegressionMetric):
     """
     Computes Multi-Scale Structual Similarity Index Measure.
 
@@ -73,7 +72,7 @@ class MS_SSIM(CumulativeIterationMetric):
             )
 
 
-    def _compute_metric(self, x: torch.Tensor, y: torch.Tensor):
+    def _compute_metric(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """
         Args:
             x: first sample (e.g., the reference image). Its shape is (B,C,W,H) for 2D data and (B,C,W,H,D) for 3D.
@@ -87,7 +86,7 @@ class MS_SSIM(CumulativeIterationMetric):
         if not x.shape == y.shape:
             raise ValueError(f"Input images should have the same dimensions, but got {x.shape} and {y.shape}.")
 
-        for d in range(len(X.shape) - 1, 1, -1):
+        for d in range(len(x.shape) - 1, 1, -1):
             x = x.squeeze(dim=d)
             y = y.squeeze(dim=d)
 
@@ -101,25 +100,24 @@ class MS_SSIM(CumulativeIterationMetric):
         else:
             raise ValueError(f"Input images should be 4-d or 5-d tensors, but got {x.shape}")
 
-        divisible_by = 2 ** (len(self.weigths) - 1)
-        bigger_than = (self.win_size + 2) * 2 ** (len(self.weights) - 1)
-        for idx, shape_size in enumerate(x.shape[2:]):
-            if shape_size % divisible_by == 0:
-                raise ValueError(f"Image size needs to be divisible by {divisible_by} but dimension {idx + 2} has size {shape_size}")
-
-            if shape_size >= bigger_than:
-                raise ValueError(f"Image size should be larger than {bigger_than} due to the {len(self.weights) - 1} downsamplings in MS-SSIM.")
-
-
         if self.weights is None:
             # as per Ref 1 - Sec 3.2.
             self.weights = [0.0448, 0.2856, 0.3001, 0.2363, 0.1333]
         self.weights = torch.tensor(self.weights)
 
+        divisible_by = 2 ** (len(self.weights) - 1)
+        bigger_than = (self.win_size + 2) * 2 ** (len(self.weights) - 1)
+        for idx, shape_size in enumerate(x.shape[2:]):
+            if shape_size % divisible_by != 0:
+                raise ValueError(f"Image size needs to be divisible by {divisible_by} but dimension {idx + 2} has size {shape_size}")
+
+            if shape_size < bigger_than:
+                raise ValueError(f"Image size should be larger than {bigger_than} due to the {len(self.weights) - 1} downsamplings in MS-SSIM.")
+
         levels = self.weights.shape[0]
         mcs_list: List[torch.Tensor] = []
         for i in range(levels):
-            ssim, cs = self.SSIM._compute_metric(x, y, full=True)
+            ssim, cs = self.SSIM._compute_metric_and_contrast(x, y)
 
             if i < levels - 1:
                 mcs_list.append(torch.relu(cs))
