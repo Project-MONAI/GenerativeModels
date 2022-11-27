@@ -26,7 +26,7 @@ UNCOND_CASES_2D = [
             "out_channels": 1,
             "num_res_blocks": 1,
             "num_channels": (8, 8, 8),
-            "attention_levels": (False, False, True),
+            "attention_levels": (False, False, False),
             "norm_num_groups": 8,
         },
     ],
@@ -38,7 +38,19 @@ UNCOND_CASES_2D = [
             "num_res_blocks": 1,
             "num_channels": (8, 8, 8),
             "attention_levels": (False, False, True),
-            "num_head_channels": 1,
+            "num_head_channels": 8,
+            "norm_num_groups": 8,
+        },
+    ],
+    [
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_res_blocks": 1,
+            "num_channels": (8, 8, 8),
+            "attention_levels": (False, False, True),
+            "num_head_channels": 4,
             "norm_num_groups": 8,
         },
     ],
@@ -52,8 +64,8 @@ UNCOND_CASES_3D = [
             "out_channels": 1,
             "num_res_blocks": 1,
             "num_channels": (8, 8, 8),
-            "attention_levels": (False, False, True),
-            "norm_num_groups": 4,
+            "attention_levels": (False, False, False),
+            "norm_num_groups": 8,
         },
     ],
     [
@@ -64,8 +76,20 @@ UNCOND_CASES_3D = [
             "num_res_blocks": 1,
             "num_channels": (8, 8, 8),
             "attention_levels": (False, False, True),
-            "num_head_channels": 1,
-            "norm_num_groups": 4,
+            "num_head_channels": 8,
+            "norm_num_groups": 8,
+        },
+    ],
+    [
+        {
+            "spatial_dims": 3,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_res_blocks": 1,
+            "num_channels": (8, 8, 8),
+            "attention_levels": (False, False, True),
+            "num_head_channels": 4,
+            "norm_num_groups": 8,
         },
     ],
 ]
@@ -88,7 +112,7 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
             out_channels=out_channels,
             num_res_blocks=1,
             num_channels=(8, 8, 8),
-            attention_levels=(False, False, True),
+            attention_levels=(False, False, False),
             norm_num_groups=8,
         )
         with eval_mode(net):
@@ -99,12 +123,12 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
         with self.assertRaises(ValueError):
             DiffusionModelUNet(
                 spatial_dims=2,
-                in_channels=3,
-                out_channels=3,
+                in_channels=1,
+                out_channels=1,
                 num_res_blocks=1,
-                num_channels=(8, 8, 24),
-                attention_levels=(False, False, True),
-                norm_num_groups=16,
+                num_channels=(8, 8, 12),
+                attention_levels=(False, False, False),
+                norm_num_groups=8,
             )
 
     def test_shape_conditioned_models(self):
@@ -119,6 +143,7 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
             transformer_num_layers=1,
             cross_attention_dim=3,
             norm_num_groups=8,
+            num_head_channels=8,
         )
         with eval_mode(net):
             result = net.forward(
@@ -127,6 +152,21 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
                 context=torch.rand((1, 1, 3)),
             )
             self.assertEqual(result.shape, (1, 1, 16, 32))
+
+    def test_with_conditioning_cross_attention_dim_none(self):
+        with self.assertRaises(ValueError):
+            DiffusionModelUNet(
+                spatial_dims=2,
+                in_channels=1,
+                out_channels=1,
+                num_res_blocks=1,
+                num_channels=(8, 8, 8),
+                attention_levels=(False, False, True),
+                with_conditioning=True,
+                transformer_num_layers=1,
+                cross_attention_dim=None,
+                norm_num_groups=8,
+            )
 
     def test_script_unconditioned_2d_models(self):
         net = DiffusionModelUNet(
