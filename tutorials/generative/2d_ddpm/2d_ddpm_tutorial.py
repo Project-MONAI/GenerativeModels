@@ -58,6 +58,7 @@ from monai.apps import MedNISTDataset
 from monai.config import print_config
 from monai.data import CacheDataset, DataLoader
 from monai.utils import first, set_determinism
+from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
 from generative.inferers import DiffusionInferer
@@ -167,10 +168,10 @@ model = DiffusionModelUNet(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
-    num_channels=(64, 128, 128),
+    num_channels=(128, 256, 256),
     attention_levels=(False, True, True),
     num_res_blocks=1,
-    num_head_channels=128,
+    num_head_channels=256,
 )
 model.to(device)
 
@@ -191,6 +192,7 @@ val_interval = 5
 epoch_loss_list = []
 val_epoch_loss_list = []
 
+scaler = GradScaler()
 total_start = time.time()
 for epoch in range(n_epochs):
     model.train()
@@ -201,16 +203,19 @@ for epoch in range(n_epochs):
         images = batch["image"].to(device)
         optimizer.zero_grad(set_to_none=True)
 
-        # Generate random noise
-        noise = torch.randn_like(images).to(device)
+        with autocast(enabled=True):
+            # Generate random noise
+            noise = torch.randn_like(images).to(device)
 
-        # Get model prediction
-        noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise)
+            # Get model prediction
+            noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise)
 
-        loss = F.mse_loss(noise_pred.float(), noise.float())
+            loss = F.mse_loss(noise_pred.float(), noise.float())
 
-        loss.backward()
-        optimizer.step()
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+
         epoch_loss += loss.item()
 
         progress_bar.set_postfix(
@@ -225,12 +230,11 @@ for epoch in range(n_epochs):
         val_epoch_loss = 0
         for step, batch in enumerate(val_loader):
             images = batch["image"].to(device)
-            timesteps = torch.randint(0, scheduler.num_train_timesteps, (images.shape[0],), device=device).long()
-            noise = torch.randn_like(images).to(device)
             with torch.no_grad():
-                # Get model prediction
-                noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise)
-                val_loss = F.l1_loss(noise_pred.float(), noise.float())
+                with autocast(enabled=True):
+                    noise = torch.randn_like(images).to(device)
+                    noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise)
+                    val_loss = F.mse_loss(noise_pred.float(), noise.float())
 
             val_epoch_loss += val_loss.item()
             progress_bar.set_postfix(
@@ -244,7 +248,8 @@ for epoch in range(n_epochs):
         noise = torch.randn((1, 1, 64, 64))
         noise = noise.to(device)
         scheduler.set_timesteps(num_inference_steps=1000)
-        image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=scheduler)
+        with autocast(enabled=True):
+            image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=scheduler)
 
         plt.figure(figsize=(2, 2))
         plt.imshow(image[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
@@ -283,9 +288,10 @@ model.eval()
 noise = torch.randn((1, 1, 64, 64))
 noise = noise.to(device)
 scheduler.set_timesteps(num_inference_steps=1000)
-image, intermediates = inferer.sample(
-    input_noise=noise, diffusion_model=model, scheduler=scheduler, save_intermediates=True, intermediate_steps=100
-)
+with autocast(enabled=True):
+    image, intermediates = inferer.sample(
+        input_noise=noise, diffusion_model=model, scheduler=scheduler, save_intermediates=True, intermediate_steps=100
+    )
 
 chain = torch.cat(intermediates, dim=-1)
 
