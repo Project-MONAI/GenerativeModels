@@ -1460,12 +1460,12 @@ class DiffusionModelUNet(nn.Module):
             )
         if cross_attention_dim is not None and with_conditioning is False:
             raise ValueError(
-                "DiffusionModelUNet expects use_spatial_transformer=True when specifying the " "cross_attention_dim."
+                "DiffusionModelUNet expects with_conditioning=True when specifying the cross_attention_dim."
             )
 
-        # The number of channels should be multiple of num_groups
+        # All number of channels should be multiple of num_groups
         if any((out_channel % norm_num_groups) != 0 for out_channel in num_channels):
-            raise ValueError("DiffusionModelUNet expects all block_out_channels being multiple of norm_num_groups")
+            raise ValueError("DiffusionModelUNet expects all num_channels being multiple of norm_num_groups")
 
         self.in_channels = in_channels
         self.block_out_channels = num_channels
