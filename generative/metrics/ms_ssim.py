@@ -19,6 +19,7 @@ from monai.utils import MetricReduction
 from monai.metrics.regression import RegressionMetric
 from monai.utils.type_conversion import convert_to_dst_type
 
+
 class MS_SSIM(RegressionMetric):
     """
     Computes Multi-Scale Structual Similarity Index Measure.
@@ -48,7 +49,7 @@ class MS_SSIM(RegressionMetric):
         k1: float = 0.01,
         k2: float = 0.03,
         spatial_dims: int = 2,
-        weights:  Optional[List] = None,
+        weights: Optional[List] = None,
         reduction: Union[MetricReduction, str] = MetricReduction.MEAN,
     ) -> None:
         super().__init__()
@@ -69,8 +70,7 @@ class MS_SSIM(RegressionMetric):
             self.k1,
             self.k2,
             self.spatial_dims,
-            )
-
+        )
 
     def _compute_metric(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """
@@ -78,7 +78,7 @@ class MS_SSIM(RegressionMetric):
             x: first sample (e.g., the reference image). Its shape is (B,C,W,H) for 2D data and (B,C,W,H,D) for 3D.
                 A fastMRI sample should use the 2D format with C being the number of slices.
             y: second sample (e.g., the reconstructed image). It has similar shape as x
-        
+
         Returns:
             ms_ssim_value
         """
@@ -109,10 +109,14 @@ class MS_SSIM(RegressionMetric):
         bigger_than = (self.win_size + 2) * 2 ** (len(self.weights) - 1)
         for idx, shape_size in enumerate(x.shape[2:]):
             if shape_size % divisible_by != 0:
-                raise ValueError(f"Image size needs to be divisible by {divisible_by} but dimension {idx + 2} has size {shape_size}")
+                raise ValueError(
+                    f"Image size needs to be divisible by {divisible_by} but dimension {idx + 2} has size {shape_size}"
+                )
 
             if shape_size < bigger_than:
-                raise ValueError(f"Image size should be larger than {bigger_than} due to the {len(self.weights) - 1} downsamplings in MS-SSIM.")
+                raise ValueError(
+                    f"Image size should be larger than {bigger_than} due to the {len(self.weights) - 1} downsamplings in MS-SSIM."
+                )
 
         levels = self.weights.shape[0]
         mcs_list: List[torch.Tensor] = []
@@ -137,4 +141,3 @@ class MS_SSIM(RegressionMetric):
             pass
 
         return ms_ssim
-        

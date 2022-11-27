@@ -20,7 +20,9 @@ from generative.metrics import MS_SSIM
 
 TEST_CASES = [
     [
-        {"data_range": torch.tensor(1.0),},
+        {
+            "data_range": torch.tensor(1.0),
+        },
         {
             "x": torch.ones([3, 3, 144, 144]) / 2,
             "y": torch.ones([3, 3, 144, 144]) / 2,
@@ -44,19 +46,18 @@ TEST_CASES = [
 class TestMSSSIMMetric(unittest.TestCase):
     @parameterized.expand(TEST_CASES)
     def test_results(self, input_param, input_data, expected_val):
-        results = MS_SSIM(**input_param
-        )._compute_metric(**input_data)
+        results = MS_SSIM(**input_param)._compute_metric(**input_data)
         np.testing.assert_allclose(results.detach().cpu().numpy(), expected_val, rtol=1e-4)
 
     def test_2D_shape(self):
-        results = MS_SSIM(**TEST_CASES[0][0], spatial_dims=2, reduction="none"
-        )._compute_metric(**TEST_CASES[0][1])
-        self.assertEqual(results.shape, (TEST_CASES[0][1]['x'].shape[0], 1))
+        results = MS_SSIM(**TEST_CASES[0][0], spatial_dims=2, reduction="none")._compute_metric(**TEST_CASES[0][1])
+        self.assertEqual(results.shape, (TEST_CASES[0][1]["x"].shape[0], 1))
 
     def test_3D_shape(self):
-        results = MS_SSIM(data_range=torch.tensor(1.0), spatial_dims=3, reduction="none"
-        )._compute_metric(**TEST_CASES[1][1])
-        self.assertEqual(results.shape, (TEST_CASES[1][1]['x'].shape[0], 1))
+        results = MS_SSIM(data_range=torch.tensor(1.0), spatial_dims=3, reduction="none")._compute_metric(
+            **TEST_CASES[1][1]
+        )
+        self.assertEqual(results.shape, (TEST_CASES[1][1]["x"].shape[0], 1))
 
 
 if __name__ == "__main__":
