@@ -84,7 +84,6 @@ class MultiScalePatchDiscriminator(nn.Sequential):
                 bias=bias,
                 padding=self.padding,
                 dropout=dropout,
-                minimum_size_im=minimum_size_im,
             )
             self.add_module("discriminator_%d" % i, subnet_d)
 
