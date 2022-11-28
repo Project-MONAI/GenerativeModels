@@ -18,7 +18,7 @@
 #
 # This tutorial illustrates how to use MONAI for training a denoising diffusion probabilistic model (DDPM)[1] to create synthetic 3D images.
 #
-# [1] - Ho et al. "Denoising Diffusion Probabilistic Models" https://arxiv.org/abs/2006.11239
+# [1] - [Ho et al. "Denoising Diffusion Probabilistic Models"](https://arxiv.org/abs/2006.11239)
 #
 # TODO: Add Open in Colab
 #
@@ -137,12 +137,12 @@ val_loader = DataLoader(val_ds, batch_size=16, shuffle=False, num_workers=8)
 
 
 # %% [markdown]
-# ### Visualisation of the training images
+# ### Visualization of the training images
 
 # %%
-plt.subplots(3, 3, figsize=(8, 8))
-for i in range(9):
-    plt.subplot(3, 3, i + 1)
+plt.subplots(1, 4, figsize=(10, 6))
+for i in range(4):
+    plt.subplot(1, 4, i + 1)
     plt.imshow(train_ds[i * 20]["image"][0, :, :, 15].detach().cpu(), vmin=0, vmax=1, cmap="gray")
     plt.axis("off")
 plt.tight_layout()
@@ -274,7 +274,7 @@ plt.show()
 
 
 # %% [markdown]
-# ### Plotting syntetic sample
+# ### Plotting synthetic sample
 
 # %%
 model.eval()
