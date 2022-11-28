@@ -42,6 +42,7 @@ class MultiScalePatchDiscriminator(nn.Sequential):
         dropout: proportion of dropout applied, defaults to 0.
         minimum_size_im: minimum spatial size of the input image. Introduced to make sure the architecture
         requested isn't going to downsample the input image beyond value of 1.
+        last_conv_kernel_size: kernel size of the last convolutional layer.
     """
 
     def __init__(
@@ -58,6 +59,7 @@ class MultiScalePatchDiscriminator(nn.Sequential):
         bias: bool = False,
         dropout: Union[float, tuple] = 0.0,
         minimum_size_im: int = 256,
+        last_conv_kernel_size: int = 1,
     ) -> None:
         super().__init__()
         self.num_d = num_d
@@ -84,6 +86,7 @@ class MultiScalePatchDiscriminator(nn.Sequential):
                 bias=bias,
                 padding=self.padding,
                 dropout=dropout,
+                last_conv_kernel_size=last_conv_kernel_size,
             )
             self.add_module("discriminator_%d" % i, subnet_d)
 
@@ -129,7 +132,7 @@ class PatchDiscriminator(nn.Sequential):
         bias: introduction of layer bias
         padding: padding to be applied to the convolutional layers
         dropout: proportion of dropout applied, defaults to 0.
-        requested isn't going to downsample the input image beyond value of 1.
+        last_conv_kernel_size: kernel size of the last convolutional layer.
     """
 
     def __init__(
@@ -145,13 +148,14 @@ class PatchDiscriminator(nn.Sequential):
         bias: bool = False,
         padding: Union[int, Sequence[int]] = 1,
         dropout: Union[float, tuple] = 0.0,
+        last_conv_kernel_size: int = 1,
     ) -> None:
 
         super().__init__()
         self.num_layers_d = num_layers_d
         self.num_channels = num_channels
         input_channels = in_channels
-        output_channels = num_channels * 2
+        output_channels = num_channels
         for l_ in range(self.num_layers_d):
             layer = Convolution(
                 spatial_dims=spatial_dims,
@@ -173,12 +177,13 @@ class PatchDiscriminator(nn.Sequential):
             "final_conv",
             Convolution(
                 spatial_dims=spatial_dims,
-                kernel_size=1,
+                kernel_size=last_conv_kernel_size,
                 in_channels=input_channels,
                 out_channels=out_channels,
-                act=activation,
+                act=None,
                 bias=bias,
-                norm=norm,
+                norm=None,
+                padding=int((last_conv_kernel_size - 1) / 2),
                 dropout=dropout,
                 strides=1,
             ),
