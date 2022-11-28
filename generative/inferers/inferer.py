@@ -124,8 +124,7 @@ class LatentDiffusionInferer(Inferer):
             inputs: input image to which noise is added.
             stage_1_model: first stage model.
             diffusion_model: diffusion model.
-            scheduler: diffusion scheduler.
-            input_noise: random noise, of the same shape as the input.
+            noise: random noise, of the same shape as the input.
             condition: conditioning for network input.
         """
         with torch.no_grad():
@@ -150,10 +149,9 @@ class LatentDiffusionInferer(Inferer):
         """
         Args:
             input_noise: random noise, of the same shape as the desired latent space.
+            stage_1_model: first stage model.
             diffusion_model: model to sample from.
             scheduler: diffusion scheduler. If none provided will use the class attribute scheduler
-            save_intermediates: whether to return intermediates along the sampling change
-            intermediate_steps: if save_intermediates is True, saves every n steps
             conditioning: Conditioning for network input.
         """
         if not scheduler:
@@ -164,13 +162,11 @@ class LatentDiffusionInferer(Inferer):
         else:
             progress_bar = iter(scheduler.timesteps)
         for t in progress_bar:
-            # 1. predict noise model_output
             with torch.no_grad():
                 model_output = diffusion_model(
                     latent, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning
                 )
 
-            # 2. compute previous latent: x_t -> x_t-1
             latent, _ = scheduler.step(model_output, t, latent)
 
         with torch.no_grad():
