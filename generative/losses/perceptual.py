@@ -92,8 +92,10 @@ class PerceptualLoss(nn.Module):
             )
             + tuple(preserved_axes),
         )
-        indices = torch.randperm(input_slices.shape[0])[: int(input_slices.shape[0] * self.fake_3d_ratio)]
-        input_slices = input_slices[indices]
+        indices = torch.randperm(input_slices.shape[0])[: int(input_slices.shape[0] * self.fake_3d_ratio)].to(
+            input_slices.device()
+        )
+        input_slices = torch.index_select(input_slices, dim=0, index=indices)
         target_slices = batchify_axis(
             x=target,
             fake_3d_perm=(
@@ -102,7 +104,7 @@ class PerceptualLoss(nn.Module):
             )
             + tuple(preserved_axes),
         )
-        target_slices = target_slices[indices]
+        target_slices = torch.index_select(target_slices, dim=0, index=indices)
 
         axis_loss = torch.mean(self.perceptual_function(input_slices, target_slices))
 
