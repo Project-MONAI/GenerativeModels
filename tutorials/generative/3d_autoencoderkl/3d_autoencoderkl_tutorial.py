@@ -23,6 +23,7 @@ from tqdm import tqdm
 from generative.losses.adversarial_loss import PatchAdversarialLoss
 from generative.losses.perceptual import PerceptualLoss
 from generative.networks.nets import AutoencoderKL
+from generative.networks.nets.patchgan_discriminator import PatchDiscriminator
 
 print_config()
 # -
@@ -59,6 +60,7 @@ train_transforms = transforms.Compose(
             mode=("bilinear"),
         ),
         transforms.CenterSpatialCropd(keys=["image"], roi_size=(100, 100, 64)),
+        transforms.Resized(keys=["image"], spatial_size=(64, 80, 64)),
         transforms.ScaleIntensityRangePercentilesd(keys="image", lower=0, upper=99.5, b_min=0, b_max=1),
     ]
 )
@@ -108,6 +110,7 @@ val_transforms = transforms.Compose(
             mode=("bilinear"),
         ),
         transforms.CenterSpatialCropd(keys=["image"], roi_size=(100, 100, 64)),
+        transforms.Resized(keys=["image"], spatial_size=(64, 80, 64)),
         transforms.ScaleIntensityRangePercentilesd(keys="image", lower=0, upper=99.5, b_min=0, b_max=1),
     ]
 )
@@ -143,63 +146,108 @@ model = AutoencoderKL(
 )
 model.to(device)
 
+discriminator = PatchDiscriminator(
+    spatial_dims=3,
+    num_layers_d=3,
+    num_channels=64,
+    in_channels=1,
+    out_channels=1,
+    kernel_size=4,
+    activation="LEAKYRELU",
+    norm="BATCH",
+    bias=False,
+    padding=(1, 1, 1),
+)
+discriminator.to(device)
+
 perceptual_loss = PerceptualLoss(spatial_dims=3, network_type="squeeze", fake_3d_ratio=0.25)
 perceptual_loss.to(device)
-# -
 
+# +
 adv_loss = PatchAdversarialLoss(criterion="least_squares")
 adv_weight = 0.01
 perceptual_weight = 0.001
 
-scaler = torch.cuda.amp.GradScaler()
+optimizer_g = torch.optim.Adam(model.parameters(), 2.5e-5)
+optimizer_d = torch.optim.Adam(discriminator.parameters(), lr=5e-4)
+# -
+
+scaler_g = torch.cuda.amp.GradScaler()
+scaler_d = torch.cuda.amp.GradScaler()
 
 # ## Model training
 
 # +
 kl_weight = 1e-6
-optimizer = torch.optim.Adam(model.parameters(), 2.5e-5)
 n_epochs = 10
 val_interval = 2
-epoch_loss_list = []
-val_epoch_loss_list = []
+epoch_recon_loss_list = []
+epoch_gen_loss_list = []
+epoch_disc_loss_list = []
+val_recon_epoch_loss_list = []
 intermediary_images = []
 n_example_images = 4
 
 for epoch in range(n_epochs):
     model.train()
+    discriminator.train()
     epoch_loss = 0
+    gen_epoch_loss = 0
+    disc_epoch_loss = 0
     progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=70)
     progress_bar.set_description(f"Epoch {epoch}")
     for step, batch in progress_bar:
         # select only one channel from the Decathlon dataset
         one_channel = batch["image"][:, None, channel, ...]
         images = one_channel.to(device)
-        optimizer.zero_grad(set_to_none=True)
+        optimizer_g.zero_grad(set_to_none=True)
 
+        # Generator part
         with autocast(enabled=True):
             reconstruction, z_mu, z_sigma = model(images)
+            logits_fake = discriminator(reconstruction.contiguous().float())[-1]
 
-            mse_loss = F.mse_loss(reconstruction.float(), images.float())
+            recons_loss = F.mse_loss(reconstruction.float(), images.float())
             p_loss = perceptual_loss(reconstruction.float(), images.float())
+            generator_loss = adv_loss(logits_fake, target_is_real=True, for_discriminator=False)
 
             kl_loss = 0.5 * torch.sum(z_mu.pow(2) + z_sigma.pow(2) - torch.log(z_sigma.pow(2)) - 1, dim=[1, 2, 3])
             kl_loss = torch.sum(kl_loss) / kl_loss.shape[0]
 
-            # TODO: Add adversarial component
-            loss = mse_loss + kl_weight * kl_loss + perceptual_weight * p_loss
+            loss_g = recons_loss + (kl_weight * kl_loss) + (perceptual_weight * p_loss) + (adv_weight * generator_loss)
 
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
+        scaler_g.scale(loss_g).backward()
+        scaler_g.step(optimizer_g)
+        scaler_g.update()
 
-        epoch_loss += loss.item()
+        # Discriminator part
+        with autocast(enabled=True):
+            logits_fake = discriminator(reconstruction.contiguous().detach())
+            loss_d_fake = adv_loss(logits_fake, target_is_real=False, for_discriminator=True)
+            logits_real = discriminator(images.contiguous().detach())
+            loss_d_real = adv_loss(logits_fake, target_is_real=True, for_discriminator=True)
+            discriminator_loss = (loss_d_fake + loss_d_real) * 0.5
+
+            loss_d = adv_weight * discriminator_loss
+
+        scaler_d.scale(loss_d).backward()
+        scaler_d.step(optimizer_d)
+        scaler_d.update()
+
+        epoch_loss += recons_loss.item()
+        gen_epoch_loss += generator_loss.item()
+        disc_epoch_loss += discriminator_loss.item()
 
         progress_bar.set_postfix(
             {
-                "loss": epoch_loss / (step + 1),
+                "recons_loss": epoch_loss / (step + 1),
+                "gen_loss": gen_epoch_loss / (step + 1),
+                "disc_loss": disc_epoch_loss / (step + 1),
             }
         )
-    epoch_loss_list.append(epoch_loss / (step + 1))
+    epoch_recon_loss_list.append(epoch_loss / (step + 1))
+    epoch_gen_loss_list.append(gen_epoch_loss / (step + 1))
+    epoch_disc_loss_list.append(disc_epoch_loss / (step + 1))
 
     if (epoch + 1) % val_interval == 0:
         model.eval()
@@ -209,25 +257,20 @@ for epoch in range(n_epochs):
                 # select only one channel from the Decathlon dataset
                 one_channel = batch["image"][:, None, channel, ...]
                 images = one_channel.to(device)
-                optimizer.zero_grad(set_to_none=True)
+                optimizer_g.zero_grad(set_to_none=True)
+
                 reconstruction, z_mu, z_sigma = model(images)
                 # get the first sammple from the first validation batch for visualisation
                 # purposes
                 if val_step == 1:
                     intermediary_images.append(reconstruction[:n_example_images, 0])
 
-                mse_loss = F.mse_loss(reconstruction.float(), images.float())
-                p_loss = perceptual_loss(reconstruction.float(), images.float())
+                recons_loss = F.mse_loss(reconstruction.float(), images.float())
 
-                kl_loss = 0.5 * torch.sum(z_mu.pow(2) + z_sigma.pow(2) - torch.log(z_sigma.pow(2)) - 1, dim=[1, 2, 3])
-                kl_loss = torch.sum(kl_loss) / kl_loss.shape[0]
-
-                # TODO: Add adversarial component
-                loss = mse_loss + kl_weight * kl_loss + perceptual_weight * p_loss
-                val_loss += loss.item()
+                val_loss += recons_loss.item()
 
         val_loss /= val_step
-        val_epoch_loss_list.append(val_loss)
+        val_recon_epoch_loss_list.append(val_loss)
 
         print(f"epoch {epoch + 1} val loss: {val_loss:.4f}")
 progress_bar.close()
@@ -236,8 +279,8 @@ progress_bar.close()
 
 plt.figure()
 val_samples = np.linspace(val_interval, n_epochs, int(n_epochs / val_interval))
-plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, label="Train")
-plt.plot(val_samples, val_epoch_loss_list, label="Validation")
+plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_recon_loss_list, label="Train")
+plt.plot(val_samples, val_recon_epoch_loss_list, label="Validation")
 plt.xlabel("Epochs")
 plt.ylabel("Loss")
 plt.legend()
@@ -262,8 +305,6 @@ for image_n in range(len(intermediary_images)):
     axs[image_n, 2].imshow(intermediary_images[image_n][0, img.shape[0] // 2, ...].cpu().rot90(), cmap="gray")
     axs[image_n, 0].set_ylabel(f"Epoch {val_samples[image_n]:.0f}")
 # -
-
-images[0, 0, ..., img.shape[2] // 2].cpu().shape
 
 fig, ax = plt.subplots(nrows=1, ncols=2)
 ax[0].imshow(images[0, 0, ..., img.shape[2] // 2].cpu(), vmin=0, vmax=1, cmap="gray")
