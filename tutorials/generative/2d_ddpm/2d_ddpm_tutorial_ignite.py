@@ -28,6 +28,8 @@
 # %%
 # !python -c "import monai" || pip install -q "monai-weekly[pillow, tqdm, einops]"
 # !python -c "import matplotlib" || pip install -q matplotlib
+# !python -c "import ignite" || pip install -q pytorch-ignite
+
 # %matplotlib inline
 
 # %% [markdown]
@@ -47,18 +49,19 @@
 import os
 import shutil
 import tempfile
-import time
+from typing import Dict, Mapping, Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import torch.nn.functional as F
+from ignite.contrib.handlers import ProgressBar
 from monai import transforms
 from monai.apps import MedNISTDataset
 from monai.config import print_config
 from monai.data import CacheDataset, DataLoader
+from monai.engines import PrepareBatch, SupervisedEvaluator, SupervisedTrainer, default_prepare_batch
+from monai.handlers import MeanAbsoluteError, MeanSquaredError, StatsHandler, ValidationHandler, from_engine
 from monai.utils import first, set_determinism
-from tqdm import tqdm
 
 from generative.inferers import DiffusionInferer
 
@@ -124,7 +127,7 @@ train_transforms = transforms.Compose(
     ]
 )
 train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
-train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=4)
+train_loader = DataLoader(train_ds, batch_size=8, shuffle=True, num_workers=4)
 
 # %% jupyter={"outputs_hidden": false}
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, progress=False, seed=0)
@@ -137,7 +140,7 @@ val_transforms = transforms.Compose(
     ]
 )
 val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
-val_loader = DataLoader(val_ds, batch_size=128, shuffle=False, num_workers=4)
+val_loader = DataLoader(val_ds, batch_size=8, shuffle=False, num_workers=4)
 
 # %% [markdown]
 # ### Visualisation of the training images
@@ -181,101 +184,100 @@ scheduler = DDPMScheduler(
 
 optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
 
-inferer = DiffusionInferer()
+inferer = DiffusionInferer(scheduler)
+# %% [markdown]
+# ### Define a class for preparing batches
+
+# %%
+
+
+class DiffusionPrepareBatch(PrepareBatch):
+    """
+    This class is used as a callable for the `prepare_batch` parameter of engine classes for diffusion training.
+
+    Assuming a supervised training process, it will generate a noise field using `get_noise` for an input image, and
+    return the image and noise field as the image/target pair plus the noise field the kwargs under the key "noise".
+    This assumes the inferer being used in conjunction with this class expects a "noise" parameter to be provided.
+
+    If the `condition_name` is provided, this must refer to a key in the input dictionary containing the condition
+    field to be passed to the inferer. This will appear in the keyword arguments under the key "condition".
+
+    """
+
+    def __init__(self, condition_name: Optional[str] = None):
+        self.condition_name = condition_name
+
+    def get_noise(self, images):
+        """Returns the noise tensor for input tensor `images`, override this for different noise distributions."""
+        return torch.randn_like(images)
+
+    def __call__(
+        self,
+        batchdata: Dict[str, torch.Tensor],
+        device: Optional[Union[str, torch.device]] = None,
+        non_blocking: bool = False,
+        **kwargs,
+    ):
+        images, _ = default_prepare_batch(batchdata, device, non_blocking, **kwargs)
+        noise = self.get_noise(images).to(device, non_blocking=non_blocking, **kwargs)
+
+        kwargs = {"noise": noise}
+
+        if self.condition_name is not None and isinstance(batchdata, Mapping):
+            kwargs["conditioning"] = batchdata[self.condition_name].to(device, non_blocking=non_blocking, **kwargs)
+
+        # return input, target, arguments, and keyword arguments where noise is the target and also a keyword value
+        return images, noise, (), kwargs
+
+
 # %% [markdown]
 # ### Model training
 # Here, we are training our model for 50 epochs (training time: ~20 minutes).
 
 # %% jupyter={"outputs_hidden": false}
-n_epochs = 50
+n_epochs = 20
 val_interval = 5
-epoch_loss_list = []
-val_epoch_loss_list = []
 
-total_start = time.time()
-for epoch in range(n_epochs):
-    model.train()
-    epoch_loss = 0
-    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=70)
-    progress_bar.set_description(f"Epoch {epoch}")
-    for step, batch in progress_bar:
-        images = batch["image"].to(device)
-        optimizer.zero_grad(set_to_none=True)
+val_handlers = [StatsHandler(name="train_log", output_transform=lambda x: None)]
 
-        # Generate random noise
-        noise = torch.randn_like(images).to(device)
-
-        # Get model prediction
-        noise_pred = inferer(inputs=images, diffusion_model=model, scheduler=scheduler, noise=noise)
-
-        loss = F.mse_loss(noise_pred.float(), noise.float())
-
-        loss.backward()
-        optimizer.step()
-        epoch_loss += loss.item()
-
-        progress_bar.set_postfix(
-            {
-                "loss": epoch_loss / (step + 1),
-            }
-        )
-    epoch_loss_list.append(epoch_loss / (step + 1))
-
-    if (epoch + 1) % val_interval == 0:
-        model.eval()
-        val_epoch_loss = 0
-        for step, batch in enumerate(val_loader):
-            images = batch["image"].to(device)
-            timesteps = torch.randint(0, scheduler.num_train_timesteps, (images.shape[0],), device=device).long()
-            noise = torch.randn_like(images).to(device)
-            with torch.no_grad():
-                # Get model prediction
-                noise_pred = inferer(inputs=images, diffusion_model=model, scheduler=scheduler, noise=noise)
-                val_loss = F.l1_loss(noise_pred.float(), noise.float())
-
-            val_epoch_loss += val_loss.item()
-            progress_bar.set_postfix(
-                {
-                    "val_loss": val_epoch_loss / (step + 1),
-                }
-            )
-        val_epoch_loss_list.append(val_epoch_loss / (step + 1))
-
-        # Sampling image during training
-        noise = torch.randn((1, 1, 64, 64))
-        noise = noise.to(device)
-        scheduler.set_timesteps(num_inference_steps=1000)
-        image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=scheduler)
-
-        plt.figure(figsize=(2, 2))
-        plt.imshow(image[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
-        plt.tight_layout()
-        plt.axis("off")
-        plt.show()
-
-total_time = time.time() - total_start
-print(f"train completed, total time: {total_time}.")
-# %% [markdown]
-# ### Learning curves
-
-# %% jupyter={"outputs_hidden": false}
-plt.style.use("seaborn-v0_8")
-plt.title("Learning Curves", fontsize=20)
-plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, color="C0", linewidth=2.0, label="Train")
-plt.plot(
-    np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
-    val_epoch_loss_list,
-    color="C1",
-    linewidth=2.0,
-    label="Validation",
+evaluator = SupervisedEvaluator(
+    device=device,
+    val_data_loader=val_loader,
+    network=model,
+    inferer=inferer,
+    prepare_batch=DiffusionPrepareBatch(),
+    key_val_metric={"val_mean_abs_error": MeanAbsoluteError(output_transform=from_engine(["pred", "label"]))},
+    val_handlers=val_handlers,
 )
-plt.yticks(fontsize=12)
-plt.xticks(fontsize=12)
-plt.xlabel("Epochs", fontsize=16)
-plt.ylabel("Loss", fontsize=16)
-plt.legend(prop={"size": 14})
-plt.show()
 
+
+train_handlers = [
+    ValidationHandler(validator=evaluator, interval=val_interval, epoch_level=True),
+    # StatsHandler(name="train_log", tag_name="train_loss", output_transform=from_engine(["loss"], first=True)),
+]
+
+trainer = SupervisedTrainer(
+    device=device,
+    max_epochs=n_epochs,
+    train_data_loader=train_loader,
+    network=model,
+    optimizer=optimizer,
+    loss_function=torch.nn.MSELoss(),
+    inferer=inferer,
+    prepare_batch=DiffusionPrepareBatch(),
+    key_train_metric={"train_acc": MeanSquaredError(output_transform=from_engine(["pred", "label"]))},
+    train_handlers=train_handlers,
+)
+ProgressBar(
+    persist=True,
+    bar_format="[{n_fmt}/{total_fmt}] {percentage:3.0f}%|{postfix} [{elapsed}<{remaining}]",
+).attach(
+    trainer,
+    output_transform=from_engine(["loss"]),
+)
+
+
+trainer.run()
 # %% [markdown]
 # ### Plotting sampling process along DDPM's Markov chain
 
@@ -301,8 +303,6 @@ plt.show()
 #
 # Remove directory if a temporary was used.
 
-# %%
+# %% tags=[]
 if directory is None:
     shutil.rmtree(root_dir)
-
-# %%

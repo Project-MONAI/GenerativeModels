@@ -118,7 +118,7 @@ class PatchAdversarialLoss(_Loss):
 
         """
 
-        if not for_discriminator:
+        if not for_discriminator and not target_is_real:
             target_is_real = True  # With generator, we always want this to be true!
             warnings.warn(
                 "Variable target_is_real has been set to False, but for_discriminator is set"

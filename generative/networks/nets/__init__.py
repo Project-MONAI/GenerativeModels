@@ -11,5 +11,5 @@
 
 from .autoencoderkl import AutoencoderKL
 from .diffusion_model_unet import DiffusionModelUNet
-from .latent_diffusion_model import LatentDiffusionModel
+from .patchgan_discriminator import MultiScalePatchDiscriminator, PatchDiscriminator
 from .vqvae import VQVAE
