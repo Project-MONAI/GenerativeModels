@@ -6,6 +6,7 @@
 
 # +
 import os
+import shutil
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,8 +17,11 @@ from monai.apps import DecathlonDataset
 from monai.config import print_config
 from monai.data import DataLoader
 from monai.utils import first, set_determinism
+from torch.cuda.amp import autocast
 from tqdm import tqdm
 
+from generative.losses.adversarial_loss import PatchAdversarialLoss
+from generative.losses.perceptual import PerceptualLoss
 from generative.networks.nets import AutoencoderKL
 
 print_config()
@@ -54,7 +58,7 @@ train_transforms = transforms.Compose(
             pixdim=(2.0, 2.0, 2.0),
             mode=("bilinear"),
         ),
-        transforms.CenterSpatialCropd(keys=["image"], roi_size=(128, 128, 64)),
+        transforms.CenterSpatialCropd(keys=["image"], roi_size=(100, 100, 64)),
         transforms.ScaleIntensityRangePercentilesd(keys="image", lower=0, upper=99.5, b_min=0, b_max=1),
     ]
 )
@@ -83,7 +87,7 @@ fig, axs = plt.subplots(nrows=1, ncols=3)
 for ax in axs:
     ax.axis("off")
 ax = axs[0]
-ax.imshow(img[..., img.shape[2] // 2], cmap="gray")
+ax.imshow(img[..., img.shape[2] // 2].rot90(), cmap="gray")
 ax = axs[1]
 ax.imshow(img[:, img.shape[1] // 2, ...].rot90(), cmap="gray")
 ax = axs[2]
@@ -100,10 +104,10 @@ val_transforms = transforms.Compose(
         transforms.Orientationd(keys=["image"], axcodes="RAS"),
         transforms.Spacingd(
             keys=["image"],
-            pixdim=(2.0, 2.0, 2),
+            pixdim=(2.0, 2.0, 2.0),
             mode=("bilinear"),
         ),
-        transforms.CenterSpatialCropd(keys=["image"], roi_size=(120, 120, 64)),
+        transforms.CenterSpatialCropd(keys=["image"], roi_size=(100, 100, 64)),
         transforms.ScaleIntensityRangePercentilesd(keys="image", lower=0, upper=99.5, b_min=0, b_max=1),
     ]
 )
@@ -138,7 +142,16 @@ model = AutoencoderKL(
     attention_levels=(False, False, True),
 )
 model.to(device)
+
+perceptual_loss = PerceptualLoss(spatial_dims=3, network_type="squeeze", fake_3d_ratio=0.25)
+perceptual_loss.to(device)
 # -
+
+adv_loss = PatchAdversarialLoss(criterion="least_squares")
+adv_weight = 0.01
+perceptual_weight = 0.001
+
+scaler = torch.cuda.amp.GradScaler()
 
 # ## Model training
 
@@ -162,19 +175,23 @@ for epoch in range(n_epochs):
         one_channel = batch["image"][:, None, channel, ...]
         images = one_channel.to(device)
         optimizer.zero_grad(set_to_none=True)
-        reconstruction, z_mu, z_sigma = model(images)
 
-        mse_loss = F.mse_loss(reconstruction.float(), images.float())
+        with autocast(enabled=True):
+            reconstruction, z_mu, z_sigma = model(images)
 
-        kl_loss = 0.5 * torch.sum(z_mu.pow(2) + z_sigma.pow(2) - torch.log(z_sigma.pow(2)) - 1, dim=[1, 2, 3])
-        kl_loss = torch.sum(kl_loss) / kl_loss.shape[0]
+            mse_loss = F.mse_loss(reconstruction.float(), images.float())
+            p_loss = perceptual_loss(reconstruction.float(), images.float())
 
-        # TODO: Add adversarial component
-        # TODO: Add perceptual loss
+            kl_loss = 0.5 * torch.sum(z_mu.pow(2) + z_sigma.pow(2) - torch.log(z_sigma.pow(2)) - 1, dim=[1, 2, 3])
+            kl_loss = torch.sum(kl_loss) / kl_loss.shape[0]
 
-        loss = mse_loss + kl_weight * kl_loss
-        loss.backward()
-        optimizer.step()
+            # TODO: Add adversarial component
+            loss = mse_loss + kl_weight * kl_loss + perceptual_weight * p_loss
+
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+
         epoch_loss += loss.item()
 
         progress_bar.set_postfix(
@@ -200,14 +217,13 @@ for epoch in range(n_epochs):
                     intermediary_images.append(reconstruction[:n_example_images, 0])
 
                 mse_loss = F.mse_loss(reconstruction.float(), images.float())
+                p_loss = perceptual_loss(reconstruction.float(), images.float())
 
                 kl_loss = 0.5 * torch.sum(z_mu.pow(2) + z_sigma.pow(2) - torch.log(z_sigma.pow(2)) - 1, dim=[1, 2, 3])
                 kl_loss = torch.sum(kl_loss) / kl_loss.shape[0]
 
                 # TODO: Add adversarial component
-                # TODO: Add perceptual loss
-
-                loss = mse_loss + kl_weight * kl_loss
+                loss = mse_loss + kl_weight * kl_loss + perceptual_weight * p_loss
                 val_loss += loss.item()
 
         val_loss /= val_step
@@ -245,3 +261,22 @@ for image_n in range(len(intermediary_images)):
     axs[image_n, 1].imshow(intermediary_images[image_n][0, :, img.shape[1] // 2, ...].cpu().rot90(), cmap="gray")
     axs[image_n, 2].imshow(intermediary_images[image_n][0, img.shape[0] // 2, ...].cpu().rot90(), cmap="gray")
     axs[image_n, 0].set_ylabel(f"Epoch {val_samples[image_n]:.0f}")
+# -
+
+images[0, 0, ..., img.shape[2] // 2].cpu().shape
+
+fig, ax = plt.subplots(nrows=1, ncols=2)
+ax[0].imshow(images[0, 0, ..., img.shape[2] // 2].cpu(), vmin=0, vmax=1, cmap="gray")
+ax[0].axis("off")
+ax[0].title.set_text("Inputted Image")
+ax[1].imshow(reconstruction[0, 0, ..., img.shape[2] // 2].detach().cpu(), vmin=0, vmax=1, cmap="gray")
+ax[1].axis("off")
+ax[1].title.set_text("Reconstruction")
+plt.show()
+
+# ## Clean up data directory
+#
+# Remove directory if a temporary storage was used
+
+if directory is None:
+    shutil.rmtree(root_dir)
