@@ -157,7 +157,7 @@ class VQVAE(nn.Module):
         self.spatial_dims = spatial_dims
 
         assert num_levels == len(downsample_parameters) and num_levels == len(upsample_parameters), (
-            f"downsample_parameters, upsample_parameters must have the same number of elements as no_levels. "
+            f"downsample_parameters, upsample_parameters must have the same number of elements as num_levels. "
             f"But got {len(downsample_parameters)} and {len(upsample_parameters)}, instead of {num_levels}."
         )
 

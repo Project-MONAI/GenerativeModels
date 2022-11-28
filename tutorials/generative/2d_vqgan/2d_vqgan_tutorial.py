@@ -185,7 +185,7 @@ discriminator = PatchDiscriminator(
     activation="LEAKYRELU",
     norm="BATCH",
     bias=False,
-    padding=(1, 1),
+    padding=1,
 )
 discriminator.to(device)
 
@@ -207,10 +207,10 @@ perceptual_weight = 0.001
 
 # %% [markdown]
 # ### Model training
-# Here, we are training our model for 50 epochs (training time: ~20 minutes).
+# Here, we are training our model for 100 epochs (training time: ~50 minutes).
 
 # %%
-n_epochs = 50
+n_epochs = 100
 val_interval = 10
 epoch_recon_loss_list = []
 epoch_gen_loss_list = []
@@ -226,7 +226,7 @@ for epoch in range(n_epochs):
     epoch_loss = 0
     gen_epoch_loss = 0
     disc_epoch_loss = 0
-    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=100)
+    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=110)
     progress_bar.set_description(f"Epoch {epoch}")
     for step, batch in progress_bar:
         images = batch["image"].to(device)
@@ -245,9 +245,9 @@ for epoch in range(n_epochs):
         optimizer_g.step()
 
         # Discriminator part
-        logits_fake = discriminator(reconstruction.contiguous().detach())
+        logits_fake = discriminator(reconstruction.contiguous().detach())[-1]
         loss_d_fake = adv_loss(logits_fake, target_is_real=False, for_discriminator=True)
-        logits_real = discriminator(images.contiguous().detach())
+        logits_real = discriminator(images.contiguous().detach())[-1]
         loss_d_real = adv_loss(logits_real, target_is_real=True, for_discriminator=True)
         discriminator_loss = (loss_d_fake + loss_d_real) * 0.5
 
