@@ -96,3 +96,84 @@ class DiffusionInferer(Inferer):
             return image, intermediates
         else:
             return image
+
+
+class LatentDiffusionInferer(Inferer):
+
+    """
+    LatentDiffusionInferer takes a stage 1 model (VQVAE or AutoencoderKL), diffusion model, and a scheduler, and can be
+    used to perform a signal forward pass for a training iteration, and sample from the model.
+    """
+
+    def __init__(self, scheduler) -> None:
+        Inferer.__init__(self)
+        self.scheduler = scheduler
+
+    def __call__(
+        self,
+        inputs: torch.Tensor,
+        stage_1_model: Callable[..., torch.Tensor],
+        diffusion_model: Callable[..., torch.Tensor],
+        noise: torch.Tensor,
+        condition: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """
+        Implements the forward pass for a supervised training iteration.
+
+        Args:
+            inputs: input image to which noise is added.
+            stage_1_model: first stage model.
+            diffusion_model: diffusion model.
+            scheduler: diffusion scheduler.
+            input_noise: random noise, of the same shape as the input.
+            condition: conditioning for network input.
+        """
+        with torch.no_grad():
+            latent = stage_1_model.encode_stage_2_inputs(inputs)
+
+        num_timesteps = self.scheduler.num_train_timesteps
+        timesteps = torch.randint(0, num_timesteps, (inputs.shape[0],), device=inputs.device).long()
+        noisy_latent = self.scheduler.add_noise(original_samples=latent, noise=noise, timesteps=timesteps)
+        prediction = diffusion_model(x=noisy_latent, timesteps=timesteps, context=condition)
+
+        return prediction
+
+    def sample(
+        self,
+        input_noise: torch.Tensor,
+        stage_1_model: Callable[..., torch.Tensor],
+        diffusion_model: Callable[..., torch.Tensor],
+        scheduler: Optional[Callable[..., torch.Tensor]] = None,
+        conditioning: Optional[torch.Tensor] = None,
+        verbose: Optional[bool] = True,
+    ) -> torch.Tensor:
+        """
+        Args:
+            input_noise: random noise, of the same shape as the desired latent space.
+            diffusion_model: model to sample from.
+            scheduler: diffusion scheduler. If none provided will use the class attribute scheduler
+            save_intermediates: whether to return intermediates along the sampling change
+            intermediate_steps: if save_intermediates is True, saves every n steps
+            conditioning: Conditioning for network input.
+        """
+        if not scheduler:
+            scheduler = self.scheduler
+        latent = input_noise
+        if verbose and has_tqdm:
+            progress_bar = tqdm(scheduler.timesteps)
+        else:
+            progress_bar = iter(scheduler.timesteps)
+        for t in progress_bar:
+            # 1. predict noise model_output
+            with torch.no_grad():
+                model_output = diffusion_model(
+                    latent, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning
+                )
+
+            # 2. compute previous latent: x_t -> x_t-1
+            latent, _ = scheduler.step(model_output, t, latent)
+
+        with torch.no_grad():
+            image = stage_1_model.decode_stage_2_outputs(latent)
+
+        return image
