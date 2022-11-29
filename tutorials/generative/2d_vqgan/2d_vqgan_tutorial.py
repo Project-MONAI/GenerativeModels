@@ -138,25 +138,26 @@ val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
 val_loader = DataLoader(val_ds, batch_size=256, shuffle=False, num_workers=4, persistent_workers=True)
 
 # %% [markdown]
-# ### Visualisation of the training images
+# ### Visualization of the training images
 
 # %%
 check_data = first(train_loader)
 print(f"batch shape: {check_data['image'].shape}")
-image_visualisation = torch.cat(
+image_visualization = torch.cat(
     [check_data["image"][0, 0], check_data["image"][1, 0], check_data["image"][2, 0], check_data["image"][3, 0]], dim=1
 )
 plt.figure("training images", (12, 6))
-plt.imshow(image_visualisation, vmin=0, vmax=1, cmap="gray")
+plt.imshow(image_visualization, vmin=0, vmax=1, cmap="gray")
 plt.axis("off")
 plt.tight_layout()
 plt.show()
 
 # %% [markdown]
 # ### Define network, scheduler and optimizer
-# At this step, we instantiate the MONAI components to create a DDPM, the UNET and the noise scheduler. We are using
-# the original DDPM scheduler containing 1000 timesteps in its Markov chain, and a 2D UNET with attention mechanisms
-# in the 2nd and 3rd levels, each with 1 attention head.
+# At this step, we instantiate the MONAI components to create a VQVAE and a Discriminator model. We are using the
+# Discriminator to train the Autoencoder with a Generative Adversarial loss, where the VQVAE works as a Generator.
+# The VQVAE is trained to minimize the reconstruction error, a perceptual loss using AlexNet as the embedding model
+# and an adversarial loss versus the performance of the Discriminator.
 
 # %%
 device = torch.device("cuda")
@@ -280,7 +281,7 @@ for epoch in range(n_epochs):
 
                 reconstruction, quantization_loss = model(images=images)
 
-                # get the first sammple from the first validation batch for visualisation
+                # get the first sammple from the first validation batch for visualization
                 # purposes
                 if val_step == 1:
                     intermediary_images.append(reconstruction[:n_example_images, 0])
