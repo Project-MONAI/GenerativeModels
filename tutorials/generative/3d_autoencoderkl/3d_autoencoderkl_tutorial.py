@@ -1,12 +1,27 @@
 # # 3D AutoencoderKL
 
-# %cd /mnt_homes/home4T7/jdafflon/GenerativeModels
+# This demo is a toy example of how to use MONAI's AutoencoderKL. In particular, it uses the Autoencoder with a Kullback-Leibler regularisation as implemented by Rombach et. al [1].
+#
+# [1] Rombach et. al - ["High-Resolution Image Synthesis with Latent Diffusion Models"](https://arxiv.org/pdf/2112.10752.pdf)
+#
+# This tutorial was based on:
+#
+# [Brain tumor 3D segmentation with MONAI](https://github.com/Project-MONAI/tutorials/blob/main/3d_segmentation/brats_segmentation_3d.ipynb)
+
+# +
+# TODO: Add Open in Colab
+# -
+
+# !python -c "import monai" || pip install -q "monai-weekly[pillow, tqdm, einops, nibabel]"
+# !python -c "import matplotlib" || pip install -q matplotlib
+# %matplotlib inline
 
 # ## Setup imports
 
 # +
 import os
 import shutil
+import tempfile
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -36,8 +51,7 @@ set_determinism(42)
 # Specify a `MONAI_DATA_DIRECTORY` variable, where the data will be downloaded. If not specified a temporary directory will be used.
 
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
-# root_dir = tempfile.mkdtemp() if directory is None else directory
-root_dir = "/tmp/tmpyxyg6wxs"
+root_dir = tempfile.mkdtemp() if directory is None else directory
 print(root_dir)
 
 # ## Download the training set
@@ -56,11 +70,10 @@ train_transforms = transforms.Compose(
         transforms.Orientationd(keys=["image"], axcodes="RAS"),
         transforms.Spacingd(
             keys=["image"],
-            pixdim=(2.0, 2.0, 2.0),
+            pixdim=(2.4, 2.4, 2.2),
             mode=("bilinear"),
         ),
-        transforms.CenterSpatialCropd(keys=["image"], roi_size=(100, 100, 64)),
-        transforms.Resized(keys=["image"], spatial_size=(64, 80, 64)),
+        transforms.CenterSpatialCropd(keys=["image"], roi_size=(96, 96, 64)),
         transforms.ScaleIntensityRangePercentilesd(keys="image", lower=0, upper=99.5, b_min=0, b_max=1),
     ]
 )
@@ -106,11 +119,10 @@ val_transforms = transforms.Compose(
         transforms.Orientationd(keys=["image"], axcodes="RAS"),
         transforms.Spacingd(
             keys=["image"],
-            pixdim=(2.0, 2.0, 2.0),
+            pixdim=(2.4, 2.4, 2.2),
             mode=("bilinear"),
         ),
-        transforms.CenterSpatialCropd(keys=["image"], roi_size=(100, 100, 64)),
-        transforms.Resized(keys=["image"], spatial_size=(64, 80, 64)),
+        transforms.CenterSpatialCropd(keys=["image"], roi_size=(96, 96, 64)),
         transforms.ScaleIntensityRangePercentilesd(keys="image", lower=0, upper=99.5, b_min=0, b_max=1),
     ]
 )
@@ -137,9 +149,9 @@ model = AutoencoderKL(
     spatial_dims=3,
     in_channels=1,
     out_channels=1,
-    num_channels=64,
-    latent_channels=8,
-    ch_mult=(1, 2, 3),
+    num_channels=32,
+    latent_channels=3,
+    ch_mult=(1, 2, 2),
     num_res_blocks=1,
     norm_num_groups=16,
     attention_levels=(False, False, True),
@@ -149,7 +161,7 @@ model.to(device)
 discriminator = PatchDiscriminator(
     spatial_dims=3,
     num_layers_d=3,
-    num_channels=64,
+    num_channels=32,
     in_channels=1,
     out_channels=1,
     kernel_size=4,
@@ -160,15 +172,16 @@ discriminator = PatchDiscriminator(
 )
 discriminator.to(device)
 
+
+# +
 perceptual_loss = PerceptualLoss(spatial_dims=3, network_type="squeeze", fake_3d_ratio=0.25)
 perceptual_loss.to(device)
 
-# +
 adv_loss = PatchAdversarialLoss(criterion="least_squares")
 adv_weight = 0.01
 perceptual_weight = 0.001
 
-optimizer_g = torch.optim.Adam(model.parameters(), 2.5e-5)
+optimizer_g = torch.optim.Adam(model.parameters(), 1e-4)
 optimizer_d = torch.optim.Adam(discriminator.parameters(), lr=5e-4)
 # -
 
@@ -179,8 +192,8 @@ scaler_d = torch.cuda.amp.GradScaler()
 
 # +
 kl_weight = 1e-6
-n_epochs = 10
-val_interval = 2
+n_epochs = 30
+val_interval = 6
 epoch_recon_loss_list = []
 epoch_gen_loss_list = []
 epoch_disc_loss_list = []
@@ -287,6 +300,16 @@ plt.legend()
 plt.tight_layout()
 plt.show()
 plt.close()
+
+plt.title("Adversarial Training Curves", fontsize=20)
+plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_gen_loss_list, color="C0", linewidth=2.0, label="Generator")
+plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_disc_loss_list, color="C1", linewidth=2.0, label="Discriminator")
+plt.yticks(fontsize=12)
+plt.xticks(fontsize=12)
+plt.xlabel("Epochs", fontsize=16)
+plt.ylabel("Loss", fontsize=16)
+plt.legend(prop={"size": 14})
+plt.show()
 
 # ### Visualise some reconstruction images
 
