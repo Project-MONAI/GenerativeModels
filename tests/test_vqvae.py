@@ -37,7 +37,8 @@ CASES_2D = [
             "downsample_parameters": [(2, 4, 1, 1)] * no_levels,
             "upsample_parameters": [(2, 4, 1, 1, 0)] * no_levels,
             "num_res_layers": 1,
-            "num_channels": 8,
+            "num_channels": [4] * (no_levels - 1) + [8],
+            "num_res_channels": [4] * (no_levels - 1) + [8],
             "num_embeddings": 256,
             "embedding_dim": embedding_dim,
             "embedding_init": "normal",
@@ -73,7 +74,8 @@ CASES_3D = [
             "downsample_parameters": [(2, 4, 1, 1)] * no_levels,
             "upsample_parameters": [(2, 4, 1, 1, 0)] * no_levels,
             "num_res_layers": 1,
-            "num_channels": 8,
+            "num_channels": [4] * (no_levels - 1) + [8],
+            "num_res_channels": [4] * (no_levels - 1) + [8],
             "num_embeddings": 256,
             "embedding_dim": embedding_dim,
             "embedding_init": "normal",
@@ -91,7 +93,8 @@ CASES_3D = [
     for no_levels, embedding_dim, batch_size, in_channels, spatial_input_shape in configurations
 ]
 
-# 1-channel 2D, should fail because of number of levels, number of downsamplings, number of upsamplings mismatch.
+# 1-channel 2D, should fail because of number of levels, number of downsamplings, number of upsamplings, num_channels
+#   and num_res_channels mismatch.
 TEST_CASE_FAIL = {
     "spatial_dims": 3,
     "in_channels": 1,
@@ -100,7 +103,8 @@ TEST_CASE_FAIL = {
     "downsample_parameters": [(2, 4, 1, 1)] * 2,
     "upsample_parameters": [(2, 4, 1, 1, 0)] * 4,
     "num_res_layers": 1,
-    "num_channels": 8,
+    "num_channels": [4] * 1 + [8],
+    "num_res_channels": [4] * 5 + [8],
     "num_embeddings": 256,
     "embedding_dim": 32,
     "embedding_init": "normal",
@@ -121,7 +125,8 @@ TEST_LATENT_SHAPE = {
     "downsample_parameters": [(2, 4, 1, 1)] * 4,
     "upsample_parameters": [(2, 4, 1, 1, 0)] * 4,
     "num_res_layers": 1,
-    "num_channels": 8,
+    "num_channels": [4] * (4 - 1) + [8],
+    "num_res_channels": [4] * (4 - 1) + [8],
     "num_embeddings": 256,
     "embedding_dim": 32,
     "embedding_init": "normal",
@@ -156,7 +161,8 @@ class TestVQVAE(unittest.TestCase):
             downsample_parameters=tuple([(2, 4, 1, 1)] * 4),
             upsample_parameters=tuple([(2, 4, 1, 1, 0)] * 4),
             num_res_layers=1,
-            num_channels=256,
+            num_channels=[4] * (4 - 1) + [8],
+            num_res_channels=[4] * (4 - 1) + [8],
             num_embeddings=2048,
             embedding_dim=32,
             embedding_init="normal",
