@@ -409,7 +409,8 @@ class AttentionBlock(nn.Module):
 
 def get_timestep_embedding(timesteps: torch.Tensor, embedding_dim: int, max_period: int = 10000) -> torch.Tensor:
     """
-    This matches the implementation in Denoising Diffusion Probabilistic Models: Create sinusoidal timestep embeddings.
+    Create sinusoidal timestep embeddingsfollowing the implementation in Ho et al. "Denoising Diffusion Probabilistic
+    Models" https://arxiv.org/abs/2006.11239.
 
     Args:
         timesteps: a 1-D Tensor of N indices, one per batch element.
