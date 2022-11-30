@@ -138,25 +138,26 @@ val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
 val_loader = DataLoader(val_ds, batch_size=256, shuffle=False, num_workers=4, persistent_workers=True)
 
 # %% [markdown]
-# ### Visualisation of the training images
+# ### Visualization of the training images
 
 # %%
 check_data = first(train_loader)
 print(f"batch shape: {check_data['image'].shape}")
-image_visualisation = torch.cat(
+image_visualization = torch.cat(
     [check_data["image"][0, 0], check_data["image"][1, 0], check_data["image"][2, 0], check_data["image"][3, 0]], dim=1
 )
 plt.figure("training images", (12, 6))
-plt.imshow(image_visualisation, vmin=0, vmax=1, cmap="gray")
+plt.imshow(image_visualization, vmin=0, vmax=1, cmap="gray")
 plt.axis("off")
 plt.tight_layout()
 plt.show()
 
 # %% [markdown]
 # ### Define network, scheduler and optimizer
-# At this step, we instantiate the MONAI components to create a DDPM, the UNET and the noise scheduler. We are using
-# the original DDPM scheduler containing 1000 timesteps in its Markov chain, and a 2D UNET with attention mechanisms
-# in the 2nd and 3rd levels, each with 1 attention head.
+# At this step, we instantiate the MONAI components to create a VQVAE and a Discriminator model. We are using the
+# Discriminator to train the Autoencoder with a Generative Adversarial loss, where the VQVAE works as a Generator.
+# The VQVAE is trained to minimize the reconstruction error, a perceptual loss using AlexNet as the embedding model
+# and an adversarial loss versus the performance of the Discriminator.
 
 # %%
 device = torch.device("cuda")
@@ -185,7 +186,7 @@ discriminator = PatchDiscriminator(
     activation="LEAKYRELU",
     norm="BATCH",
     bias=False,
-    padding=(1, 1),
+    padding=1,
 )
 discriminator.to(device)
 
@@ -207,10 +208,10 @@ perceptual_weight = 0.001
 
 # %% [markdown]
 # ### Model training
-# Here, we are training our model for 50 epochs (training time: ~20 minutes).
+# Here, we are training our model for 100 epochs (training time: ~50 minutes).
 
 # %%
-n_epochs = 50
+n_epochs = 100
 val_interval = 10
 epoch_recon_loss_list = []
 epoch_gen_loss_list = []
@@ -226,7 +227,7 @@ for epoch in range(n_epochs):
     epoch_loss = 0
     gen_epoch_loss = 0
     disc_epoch_loss = 0
-    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=100)
+    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=110)
     progress_bar.set_description(f"Epoch {epoch}")
     for step, batch in progress_bar:
         images = batch["image"].to(device)
@@ -245,9 +246,9 @@ for epoch in range(n_epochs):
         optimizer_g.step()
 
         # Discriminator part
-        logits_fake = discriminator(reconstruction.contiguous().detach())
+        logits_fake = discriminator(reconstruction.contiguous().detach())[-1]
         loss_d_fake = adv_loss(logits_fake, target_is_real=False, for_discriminator=True)
-        logits_real = discriminator(images.contiguous().detach())
+        logits_real = discriminator(images.contiguous().detach())[-1]
         loss_d_real = adv_loss(logits_real, target_is_real=True, for_discriminator=True)
         discriminator_loss = (loss_d_fake + loss_d_real) * 0.5
 
@@ -280,7 +281,7 @@ for epoch in range(n_epochs):
 
                 reconstruction, quantization_loss = model(images=images)
 
-                # get the first sammple from the first validation batch for visualisation
+                # get the first sammple from the first validation batch for visualization
                 # purposes
                 if val_step == 1:
                     intermediary_images.append(reconstruction[:n_example_images, 0])

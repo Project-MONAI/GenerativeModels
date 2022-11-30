@@ -20,72 +20,107 @@ from generative.networks.nets import AutoencoderKL
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-TEST_CASE_0 = [
-    {
-        "spatial_dims": 2,
-        "in_channels": 1,
-        "out_channels": 1,
-        "num_channels": 32,
-        "latent_channels": 8,
-        "ch_mult": [1, 1, 1],
-        "num_res_blocks": 1,
-    },
-    (2, 1, 64, 64),
-    (2, 1, 64, 64),
-    (2, 8, 16, 16),
+CASES = [
+    [
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_channels": 4,
+            "latent_channels": 4,
+            "ch_mult": [1, 1, 1],
+            "attention_levels": None,
+            "num_res_blocks": 1,
+            "norm_num_groups": 4,
+        },
+        (1, 1, 16, 16),
+        (1, 1, 16, 16),
+        (1, 4, 4, 4),
+    ],
+    [
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_channels": 4,
+            "latent_channels": 4,
+            "ch_mult": [1, 1, 1],
+            "attention_levels": (False, False, False),
+            "num_res_blocks": 1,
+            "norm_num_groups": 4,
+        },
+        (1, 1, 16, 16),
+        (1, 1, 16, 16),
+        (1, 4, 4, 4),
+    ],
+    [
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_channels": 4,
+            "latent_channels": 4,
+            "ch_mult": [1, 1, 1],
+            "attention_levels": (False, False, True),
+            "num_res_blocks": 1,
+            "norm_num_groups": 4,
+        },
+        (1, 1, 16, 16),
+        (1, 1, 16, 16),
+        (1, 4, 4, 4),
+    ],
+    [
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_channels": 4,
+            "latent_channels": 4,
+            "ch_mult": [1, 1, 1],
+            "attention_levels": (False, False, False),
+            "num_res_blocks": 1,
+            "norm_num_groups": 4,
+            "with_encoder_nonlocal_attn": False,
+        },
+        (1, 1, 16, 16),
+        (1, 1, 16, 16),
+        (1, 4, 4, 4),
+    ],
+    [
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_channels": 4,
+            "latent_channels": 4,
+            "ch_mult": [1, 1, 1],
+            "attention_levels": (False, False, False),
+            "num_res_blocks": 1,
+            "norm_num_groups": 4,
+            "with_encoder_nonlocal_attn": False,
+            "with_decoder_nonlocal_attn": False,
+        },
+        (1, 1, 16, 16),
+        (1, 1, 16, 16),
+        (1, 4, 4, 4),
+    ],
+    [
+        {
+            "spatial_dims": 3,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_channels": 4,
+            "latent_channels": 4,
+            "ch_mult": [1, 1, 1],
+            "attention_levels": (False, False, True),
+            "num_res_blocks": 1,
+            "norm_num_groups": 4,
+        },
+        (1, 1, 16, 16, 16),
+        (1, 1, 16, 16, 16),
+        (1, 4, 4, 4, 4),
+    ],
 ]
-
-TEST_CASE_1 = [
-    {
-        "spatial_dims": 2,
-        "in_channels": 1,
-        "out_channels": 1,
-        "num_channels": 32,
-        "latent_channels": 32,
-        "ch_mult": [1, 1, 1, 1],
-        "num_res_blocks": 1,
-    },
-    (2, 1, 64, 64),
-    (2, 1, 64, 64),
-    (2, 32, 8, 8),
-]
-
-TEST_CASE_2 = [
-    {
-        "spatial_dims": 2,
-        "in_channels": 1,
-        "out_channels": 1,
-        "num_channels": 32,
-        "latent_channels": 32,
-        "ch_mult": [1, 1, 1, 1],
-        "num_res_blocks": 1,
-        "attention_levels": (False, False, False, True),
-        "with_encoder_nonlocal_attn": False,
-    },
-    (2, 1, 64, 64),
-    (2, 1, 64, 64),
-    (2, 32, 8, 8),
-]
-
-TEST_CASE_3 = [
-    {
-        "spatial_dims": 2,
-        "in_channels": 1,
-        "out_channels": 1,
-        "num_channels": 32,
-        "latent_channels": 32,
-        "ch_mult": [1, 1, 1, 1],
-        "num_res_blocks": 1,
-        "attention_levels": (True, True, True, True),
-        "with_encoder_nonlocal_attn": False,
-        "with_decoder_nonlocal_attn": False,
-    },
-    (2, 1, 64, 64),
-    (2, 1, 64, 64),
-    (2, 32, 8, 8),
-]
-
-CASES = [TEST_CASE_0, TEST_CASE_1, TEST_CASE_2, TEST_CASE_3]
 
 
 class TestAutoEncoderKL(unittest.TestCase):
@@ -131,12 +166,36 @@ class TestAutoEncoderKL(unittest.TestCase):
                 attention_levels=(True,),
             )
 
-    @parameterized.expand(CASES)
-    def test_shape_reconstruction(self, input_param, input_shape, expected_shape, _):
+    def test_shape_reconstruction(self):
+        input_param, input_shape, expected_shape, _ = CASES[0]
         net = AutoencoderKL(**input_param).to(device)
         with eval_mode(net):
             result = net.reconstruct(torch.randn(input_shape).to(device))
             self.assertEqual(result.shape, expected_shape)
+
+    def test_shape_encode(self):
+        input_param, input_shape, _, expected_latent_shape = CASES[0]
+        net = AutoencoderKL(**input_param).to(device)
+        with eval_mode(net):
+            result = net.encode(torch.randn(input_shape).to(device))
+            self.assertEqual(result[0].shape, expected_latent_shape)
+            self.assertEqual(result[1].shape, expected_latent_shape)
+
+    def test_shape_sampling(self):
+        input_param, _, _, expected_latent_shape = CASES[0]
+        net = AutoencoderKL(**input_param).to(device)
+        with eval_mode(net):
+            result = net.sampling(
+                torch.randn(expected_latent_shape).to(device), torch.randn(expected_latent_shape).to(device)
+            )
+            self.assertEqual(result.shape, expected_latent_shape)
+
+    def test_shape_decode(self):
+        input_param, expected_input_shape, _, latent_shape = CASES[0]
+        net = AutoencoderKL(**input_param).to(device)
+        with eval_mode(net):
+            result = net.decode(torch.randn(latent_shape).to(device))
+            self.assertEqual(result.shape, expected_input_shape)
 
 
 if __name__ == "__main__":

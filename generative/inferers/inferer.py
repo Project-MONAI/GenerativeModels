@@ -10,9 +10,10 @@
 # limitations under the License.
 
 
-from typing import Callable, Optional
+from typing import Callable, List, Optional, Tuple, Union
 
 import torch
+import torch.nn as nn
 from monai.inferers import Inferer
 from monai.utils import optional_import
 
@@ -20,13 +21,16 @@ tqdm, has_tqdm = optional_import("tqdm", name="tqdm")
 
 
 class DiffusionInferer(Inferer):
-
     """
     DiffusionInferer takes a trained diffusion model and a scheduler and can be used to perform a signal forward pass
     for a training iteration, and sample from the model.
+
+
+    Args:
+        scheduler: diffusion scheduler.
     """
 
-    def __init__(self, scheduler) -> None:
+    def __init__(self, scheduler: nn.Module) -> None:
         Inferer.__init__(self)
         self.scheduler = scheduler
 
@@ -41,10 +45,9 @@ class DiffusionInferer(Inferer):
         Implements the forward pass for a supervised training iteration.
 
         Args:
-            inputs: Input image to which noise is added
-            diffusion_model: model
-            scheduler: diffusion scheduler.
-            input_noise: random noise, of the same shape as the input.
+            inputs: Input image to which noise is added.
+            diffusion_model: diffusion model.
+            noise: random noise, of the same shape as the input.
             condition: Conditioning for network input.
         """
         num_timesteps = self.scheduler.num_train_timesteps
@@ -72,6 +75,7 @@ class DiffusionInferer(Inferer):
             save_intermediates: whether to return intermediates along the sampling change
             intermediate_steps: if save_intermediates is True, saves every n steps
             conditioning: Conditioning for network input.
+            verbose: if true, prints the progression bar of the sampling process.
         """
         if not scheduler:
             scheduler = self.scheduler
@@ -94,5 +98,103 @@ class DiffusionInferer(Inferer):
                 intermediates.append(image)
         if save_intermediates:
             return image, intermediates
+        else:
+            return image
+
+
+class LatentDiffusionInferer(DiffusionInferer):
+    """
+    LatentDiffusionInferer takes a stage 1 model (VQVAE or AutoencoderKL), diffusion model, and a scheduler, and can
+    be used to perform a signal forward pass for a training iteration, and sample from the model.
+
+    Args:
+        scheduler: a scheduler to be used in combination with `unet` to denoise the encoded image latents.
+        scale_factor: scale factor to multiply the values of the latent representation before processing it by the
+            second stage.
+    """
+
+    def __init__(self, scheduler: nn.Module, scale_factor: float = 1.0) -> None:
+        super().__init__(scheduler=scheduler)
+        self.scale_factor = scale_factor
+
+    def __call__(
+        self,
+        inputs: torch.Tensor,
+        autoencoder_model: Callable[..., torch.Tensor],
+        diffusion_model: Callable[..., torch.Tensor],
+        noise: torch.Tensor,
+        condition: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """
+        Implements the forward pass for a supervised training iteration.
+
+        Args:
+            inputs: input image to which the latent representation will be extracted and noise is added.
+            autoencoder_model: first stage model.
+            diffusion_model: diffusion model.
+            noise: random noise, of the same shape as the latent representation.
+            condition: conditioning for network input.
+        """
+        with torch.no_grad():
+            latent = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
+
+        prediction = super().__call__(
+            inputs=latent,
+            diffusion_model=diffusion_model,
+            noise=noise,
+            condition=condition,
+        )
+
+        return prediction
+
+    def sample(
+        self,
+        input_noise: torch.Tensor,
+        autoencoder_model: Callable[..., torch.Tensor],
+        diffusion_model: Callable[..., torch.Tensor],
+        scheduler: Optional[Callable[..., torch.Tensor]] = None,
+        save_intermediates: Optional[bool] = False,
+        intermediate_steps: Optional[int] = 100,
+        conditioning: Optional[torch.Tensor] = None,
+        verbose: Optional[bool] = True,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
+        """
+        Args:
+            input_noise: random noise, of the same shape as the desired latent representation.
+            autoencoder_model: first stage model.
+            diffusion_model: model to sample from.
+            scheduler: diffusion scheduler. If none provided will use the class attribute scheduler.
+            save_intermediates: whether to return intermediates along the sampling change
+            intermediate_steps: if save_intermediates is True, saves every n steps
+            conditioning: Conditioning for network input.
+            verbose: if true, prints the progression bar of the sampling process.
+        """
+        outputs = super().sample(
+            input_noise=input_noise,
+            diffusion_model=diffusion_model,
+            scheduler=scheduler,
+            save_intermediates=save_intermediates,
+            intermediate_steps=intermediate_steps,
+            conditioning=conditioning,
+            verbose=verbose,
+        )
+
+        if save_intermediates:
+            latent, latent_intermediates = outputs
+        else:
+            latent = outputs
+
+        with torch.no_grad():
+            image = autoencoder_model.decode_stage_2_outputs(latent) * self.scale_factor
+
+        if save_intermediates:
+            intermediates = []
+            for latent_intermediate in latent_intermediates:
+                with torch.no_grad():
+                    intermediates.append(
+                        autoencoder_model.decode_stage_2_outputs(latent_intermediate) * self.scale_factor
+                    )
+            return image, intermediates
+
         else:
             return image
