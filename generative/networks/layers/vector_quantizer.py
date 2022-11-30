@@ -199,7 +199,7 @@ class VectorQuantizer(torch.nn.Module):
     """
 
     def __init__(self, quantizer: torch.nn.Module = None):
-        super(VectorQuantizer, self).__init__()
+        super().__init__()
 
         self.quantizer: torch.nn.Module = quantizer
 
