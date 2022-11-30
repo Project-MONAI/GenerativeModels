@@ -693,6 +693,7 @@ class DownBlock(nn.Module):
     def forward(
         self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+        del context
         output_states = []
 
         for resnet in self.resnets:
@@ -778,6 +779,7 @@ class AttnDownBlock(nn.Module):
     def forward(
         self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+        del context
         output_states = []
 
         for resnet, attn in zip(self.resnets, self.attentions):
@@ -938,6 +940,7 @@ class AttnMidBlock(nn.Module):
     def forward(
         self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
+        del context
         hidden_states = self.resnet_1(hidden_states, temb)
         hidden_states = self.attention(hidden_states)
         hidden_states = self.resnet_2(hidden_states, temb)
@@ -1071,6 +1074,7 @@ class UpBlock(nn.Module):
         temb: torch.Tensor,
         context: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
+        del context
         for i, resnet in enumerate(self.resnets):
             # pop res hidden states
             res_hidden_states = res_hidden_states_list[-1]
@@ -1159,6 +1163,7 @@ class AttnUpBlock(nn.Module):
         temb: torch.Tensor,
         context: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
+        del context
         for resnet, attn in zip(self.resnets, self.attentions):
             # pop res hidden states
             res_hidden_states = res_hidden_states_list[-1]
