@@ -9,4 +9,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .inferer import DiffusionInferer
+from .inferer import DiffusionInferer, LatentDiffusionInferer

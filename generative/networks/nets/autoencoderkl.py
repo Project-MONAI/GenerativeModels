@@ -615,3 +615,12 @@ class AutoencoderKL(nn.Module):
         z = self.sampling(z_mu, z_sigma)
         reconstruction = self.decode(z)
         return reconstruction, z_mu, z_sigma
+
+    def encode_stage_2_inputs(self, x: torch.Tensor) -> torch.Tensor:
+        z_mu, z_sigma = self.encode(x)
+        z = self.sampling(z_mu, z_sigma)
+        return z
+
+    def decode_stage_2_outputs(self, z: torch.Tensor) -> torch.Tensor:
+        image = self.decode(z)
+        return image
