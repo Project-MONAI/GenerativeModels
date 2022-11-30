@@ -21,13 +21,16 @@ tqdm, has_tqdm = optional_import("tqdm", name="tqdm")
 
 
 class DiffusionInferer(Inferer):
-
     """
     DiffusionInferer takes a trained diffusion model and a scheduler and can be used to perform a signal forward pass
     for a training iteration, and sample from the model.
+
+
+    Args:
+        scheduler: diffusion scheduler.
     """
 
-    def __init__(self, scheduler) -> None:
+    def __init__(self, scheduler: nn.Module) -> None:
         Inferer.__init__(self)
         self.scheduler = scheduler
 
@@ -42,10 +45,9 @@ class DiffusionInferer(Inferer):
         Implements the forward pass for a supervised training iteration.
 
         Args:
-            inputs: Input image to which noise is added
-            diffusion_model: model
-            scheduler: diffusion scheduler.
-            input_noise: random noise, of the same shape as the input.
+            inputs: Input image to which noise is added.
+            diffusion_model: diffusion model.
+            noise: random noise, of the same shape as the input.
             condition: Conditioning for network input.
         """
         num_timesteps = self.scheduler.num_train_timesteps
@@ -73,6 +75,7 @@ class DiffusionInferer(Inferer):
             save_intermediates: whether to return intermediates along the sampling change
             intermediate_steps: if save_intermediates is True, saves every n steps
             conditioning: Conditioning for network input.
+            verbose: if true, prints the progression bar of the sampling process.
         """
         if not scheduler:
             scheduler = self.scheduler
