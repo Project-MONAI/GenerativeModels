@@ -54,14 +54,14 @@ TEST_CASES = [
             "spatial_dims": 2,
             "in_channels": 1,
             "out_channels": 1,
-            "num_channels": 8,
-            "latent_channels": 3,
-            "ch_mult": [1, 1, 1],
-            "attention_levels": [False, False, False],
-            "num_res_blocks": 1,
-            "with_encoder_nonlocal_attn": False,
-            "with_decoder_nonlocal_attn": False,
-            "norm_num_groups": 8,
+            "num_levels": 2,
+            "downsample_parameters": ((2, 4, 1, 1), (2, 4, 1, 1)),
+            "upsample_parameters": ((2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
+            "num_res_layers": 1,
+            "num_channels": [8, 8],
+            "num_res_channels": [8, 8],
+            "num_embeddings": 16,
+            "embedding_dim": 3,
         },
         {
             "spatial_dims": 2,
@@ -104,8 +104,11 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         self.assertEqual(prediction.shape, latent_shape)
 
     @parameterized.expand(TEST_CASES)
-    def test_sample_shape(self, stage_1_params, stage_2_params, input_shape, latent_shape):
-        stage_1 = AutoencoderKL(**stage_1_params)
+    def test_sample_shape(self, model_type, stage_1_params, stage_2_params, input_shape, latent_shape):
+        if model_type == "AutoencoderKL":
+            stage_1 = AutoencoderKL(**stage_1_params)
+        if model_type == "VQVAE":
+            stage_1 = VQVAE(**stage_1_params)
         stage_2 = DiffusionModelUNet(**stage_2_params)
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         stage_1.to(device)

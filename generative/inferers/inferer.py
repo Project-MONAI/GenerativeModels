@@ -162,6 +162,7 @@ class LatentDiffusionInferer(Inferer):
             diffusion_model: model to sample from.
             scheduler: diffusion scheduler. If none provided will use the class attribute scheduler.
             conditioning: Conditioning for network input.
+            verbose: if true, prints the progression bar of the sampling process.
         """
         if not scheduler:
             scheduler = self.scheduler
