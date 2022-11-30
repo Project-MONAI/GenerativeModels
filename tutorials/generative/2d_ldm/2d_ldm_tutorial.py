@@ -7,9 +7,9 @@
 # ## Set up environment using Colab
 #
 
-# !python -c "import monai" || pip install -q "monai-weekly[tqdm]"
-# !python -c "import matplotlib" || pip install -q matplotlib
-# %matplotlib inline
+# # !python -c "import monai" || pip install -q "monai-weekly[tqdm]"
+# # !python -c "import matplotlib" || pip install -q matplotlib
+# # %matplotlib inline
 
 # ## Set up imports
 
@@ -27,6 +27,8 @@ from monai.apps import MedNISTDataset
 from monai.config import print_config
 from monai.data import DataLoader, Dataset
 from monai.utils import first, set_determinism
+
+# from torch.cuda.amp import autocast
 from tqdm import tqdm
 
 from generative.inferers import DiffusionInferer
@@ -107,13 +109,14 @@ autoencoderkl = AutoencoderKL(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
-    num_channels=32,
+    num_channels=16,
     latent_channels=3,
     ch_mult=(1, 2, 2),
     num_res_blocks=1,
     norm_num_groups=16,
     attention_levels=(False, False, True),
 )
+autoencoderkl = autoencoderkl.to(device)
 
 
 # +
@@ -125,6 +128,7 @@ unet = DiffusionModelUNet(
     attention_resolutions=[4, 2],
     channel_mult=[1, 2, 2],
     model_channels=32,
+    norm_num_groups=32,
     num_heads=1,
 )
 
@@ -138,73 +142,115 @@ scheduler = DDPMScheduler(
 inferer = DiffusionInferer(scheduler)
 
 discriminator = PatchDiscriminator(
-    spatial_dims=3,
+    spatial_dims=2,
     num_layers_d=3,
-    num_channels=32,
+    num_channels=16,
     in_channels=1,
     out_channels=1,
     kernel_size=4,
     activation="LEAKYRELU",
     norm="BATCH",
     bias=False,
-    padding=(1, 1, 1),
+    padding=1,
 )
 discriminator.to(device)
 
 # +
-perceptual_loss = PerceptualLoss(spatial_dims=3, network_type="squeeze", fake_3d_ratio=0.25)
+perceptual_loss = PerceptualLoss(spatial_dims=2, network_type="alex")
 perceptual_loss.to(device)
+perceptual_weight = 0.001
 
 adv_loss = PatchAdversarialLoss(criterion="least_squares")
 adv_weight = 0.01
-perceptual_weight = 0.001
 
-optimizer_g = torch.optim.Adam(autoencoderkl.parameters(), 1e-4)
+optimizer_g = torch.optim.Adam(autoencoderkl.parameters(), lr=1e-4)
 optimizer_d = torch.optim.Adam(discriminator.parameters(), lr=5e-4)
 # -
+
+scaler_g = torch.cuda.amp.GradScaler()
+scaler_d = torch.cuda.amp.GradScaler()
 
 # ## Train AutoencoderKL
 
 # +
-autoencoderkl = autoencoderkl.to(device)
 kl_weight = 1e-6
-kl_optimizer = torch.optim.Adam(autoencoderkl.parameters(), 1e-5)
-n_epochs = 50
-val_interval = 10
-kl_epoch_loss_list = []
-kl_val_epoch_loss_list = []
+n_epochs = 30
+val_interval = 2
+autoencoder_warm_up_n_epochs = 2
+
+epoch_recon_loss_list = []
+epoch_gen_loss_list = []
+epoch_disc_loss_list = []
+val_recon_epoch_loss_list = []
 intermediary_images = []
 n_example_images = 4
 
 for epoch in range(n_epochs):
     autoencoderkl.train()
+    discriminator.train()
     epoch_loss = 0
-    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=70)
+    gen_epoch_loss = 0
+    disc_epoch_loss = 0
+    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=110)
     progress_bar.set_description(f"Epoch {epoch}")
     for step, batch in progress_bar:
         images = batch["image"].to(device)
-        kl_optimizer.zero_grad(set_to_none=True)
+        optimizer_g.zero_grad(set_to_none=True)
+
+        # Generator part
+        # with autocast(enabled=True):
         reconstruction, z_mu, z_sigma = autoencoderkl(images)
 
-        rec_loss = F.l1_loss(reconstruction.float(), images.float())
-
+        recons_loss = F.l1_loss(reconstruction.float(), images.float())
+        p_loss = perceptual_loss(reconstruction.float(), images.float())
         kl_loss = 0.5 * torch.sum(z_mu.pow(2) + z_sigma.pow(2) - torch.log(z_sigma.pow(2)) - 1, dim=[1, 2, 3])
         kl_loss = torch.sum(kl_loss) / kl_loss.shape[0]
+        loss_g = recons_loss + (kl_weight * kl_loss) + (perceptual_weight * p_loss)
 
-        # TODO: Add adversarial component
-        # TODO: Add perceptual loss
+        if epoch > autoencoder_warm_up_n_epochs:
+            logits_fake = discriminator(reconstruction.contiguous().float())[-1]
+            generator_loss = adv_loss(logits_fake, target_is_real=True, for_discriminator=False)
+            loss_g += adv_weight * generator_loss
 
-        loss = rec_loss + kl_weight * kl_loss
-        loss.backward()
-        kl_optimizer.step()
-        epoch_loss += loss.item()
+        loss_g.backward()
+        optimizer_g.step()
+
+        # scaler_g.scale(loss_g).backward()
+        # scaler_g.step(optimizer_g)
+        # scaler_g.update()
+
+        if epoch > autoencoder_warm_up_n_epochs:
+            # Discriminator part
+            # with autocast(enabled=False):
+            logtis_fake = discriminator(reconstruction.contiguous().detach())[-1]
+            loss_d_fake = adv_loss(logits_fake, target_is_real=False, for_discriminator=True)
+            logits_real = discriminator(images.contiguous().detach())[-1]
+            loss_d_real = adv_loss(logits_real, target_is_real=True, for_discriminator=True)
+            discriminator_loss = (loss_d_fake + loss_d_real) * 0.5
+
+            loss_d = adv_weight * discriminator_loss
+
+            loss_d.backward()
+            optimizer_d.step()
+            # scaler_d.scale(loss_d).backward()
+            # scaler_d.step(optimizer_d)
+            # scaler_d.update()
+
+        epoch_loss += recons_loss.item()
+        if epoch > autoencoder_warm_up_n_epochs:
+            gen_epoch_loss += generator_loss.item()
+            disc_epoch_loss += discriminator_loss.item()
 
         progress_bar.set_postfix(
             {
-                "loss": epoch_loss / (step + 1),
+                "recons_loss": epoch_loss / (step + 1),
+                "gen_loss": gen_epoch_loss / (step + 1),
+                "disc_loss": disc_epoch_loss / (step + 1),
             }
         )
-    kl_epoch_loss_list.append(epoch_loss / (step + 1))
+    epoch_recon_loss_list.append(epoch_loss / (step + 1))
+    epoch_gen_loss_list.append(gen_epoch_loss / (step + 1))
+    epoch_disc_loss_list.append(disc_epoch_loss / (step + 1))
 
     if (epoch + 1) % val_interval == 0:
         autoencoderkl.eval()
@@ -212,27 +258,20 @@ for epoch in range(n_epochs):
         with torch.no_grad():
             for val_step, batch in enumerate(val_loader, start=1):
                 images = batch["image"].to(device)
-                kl_optimizer.zero_grad(set_to_none=True)
+                optimizer_g.zero_grad(set_to_none=True)
+
                 reconstruction, z_mu, z_sigma = autoencoderkl(images)
-                # TODO: Remove this
                 # Get the first sammple from the first validation batch for visualisation
                 # purposes
                 if val_step == 1:
                     intermediary_images.append(reconstruction[:n_example_images, 0])
 
-                rec_loss = F.l1_loss(images.float(), reconstruction.float())
+                recons_loss = F.l1_loss(images.float(), reconstruction.float())
 
-                kl_loss = 0.5 * torch.sum(z_mu.pow(2) + z_sigma.pow(2) - torch.log(z_sigma.pow(2)) - 1, dim=[1, 2, 3])
-                kl_loss = torch.sum(kl_loss) / kl_loss.shape[0]
-
-                # TODO: Add adversarial component
-                # TODO: Add perceptual loss
-
-                loss = rec_loss + kl_weight * kl_loss
-                val_loss += loss.item()
+                val_loss += recons_loss.item()
 
         val_loss /= val_step
-        kl_val_epoch_loss_list.append(val_loss)
+        val_recon_epoch_loss_list.append(val_loss)
 
         print(f"epoch {epoch + 1} val loss: {val_loss:.4f}")
 progress_bar.close()
