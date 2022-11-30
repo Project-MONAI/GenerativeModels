@@ -1563,7 +1563,6 @@ class DiffusionModelUNet(nn.Module):
             )
 
             self.up_blocks.append(up_block)
-            prev_output_channel = output_channel
 
         # out
         self.out = nn.Sequential(
