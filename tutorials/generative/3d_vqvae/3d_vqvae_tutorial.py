@@ -135,7 +135,8 @@ model = VQVAE(
     num_levels=2,
     downsample_parameters=((2, 4, 1, 1), (2, 4, 1, 1)),
     upsample_parameters=((2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
-    num_channels=256,
+    num_channels=[256, 256],
+    num_res_channels=[256, 256],
     num_embeddings=256,
     embedding_dim=32,
 )
@@ -246,13 +247,14 @@ for image_n in range(len(val_samples)):
     reconstructions = intermediary_images[image_n]
     reconstructions = np.concatenate(
         [
-            reconstructions[0, 0, :, :, 15].cpu(),
-            np.flipud(reconstructions[0, 0, :, 24, :].cpu().T, np.flipud(reconstructions[0, 0, 15, :, :].cpu().T)),
+            reconstructions[0, :, :, 15],
+            np.flipud(reconstructions[0, :, 24, :].T),
+            np.flipud(reconstructions[0, 15, :, :].T),
         ],
         axis=1,
     )
 
-    ax[image_n].imshow(reconstructions.cpu(), cmap="gray")
+    ax[image_n].imshow(reconstructions, cmap="gray")
     ax[image_n].set_xticks([])
     ax[image_n].set_yticks([])
     ax[image_n].set_ylabel(f"Epoch {val_samples[image_n]:.0f}")
