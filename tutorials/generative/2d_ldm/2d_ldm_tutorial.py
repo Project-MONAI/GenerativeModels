@@ -29,7 +29,11 @@ from monai.data import DataLoader, Dataset
 from monai.utils import first, set_determinism
 from tqdm import tqdm
 
+from generative.inferers import DiffusionInferer
+from generative.losses.adversarial_loss import PatchAdversarialLoss
+from generative.losses.perceptual import PerceptualLoss
 from generative.networks.nets import AutoencoderKL, DiffusionModelUNet
+from generative.networks.nets.patchgan_discriminator import PatchDiscriminator
 from generative.schedulers import DDPMScheduler
 
 print_config()
@@ -99,28 +103,28 @@ val_loader = DataLoader(val_ds, batch_size=64, shuffle=True, num_workers=4)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using {device}")
 
-# +
 autoencoderkl = AutoencoderKL(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
-    num_channels=64,
-    latent_channels=1,
+    num_channels=32,
+    latent_channels=3,
     ch_mult=(1, 2, 2),
     num_res_blocks=1,
     norm_num_groups=16,
     attention_levels=(False, False, True),
 )
 
+
+# +
 unet = DiffusionModelUNet(
     spatial_dims=2,
-    in_channels=1,
-    out_channels=1,
+    in_channels=3,
+    out_channels=3,
     num_res_blocks=1,
-    attention_resolutions=[2, 4],
+    attention_resolutions=[4, 2],
     channel_mult=[1, 2, 2],
-    model_channels=64,
-    # TODO: play with this number
+    model_channels=32,
     num_heads=1,
 )
 
@@ -130,6 +134,33 @@ scheduler = DDPMScheduler(
     beta_start=0.0015,
     beta_end=0.0195,
 )
+
+inferer = DiffusionInferer(scheduler)
+
+discriminator = PatchDiscriminator(
+    spatial_dims=3,
+    num_layers_d=3,
+    num_channels=32,
+    in_channels=1,
+    out_channels=1,
+    kernel_size=4,
+    activation="LEAKYRELU",
+    norm="BATCH",
+    bias=False,
+    padding=(1, 1, 1),
+)
+discriminator.to(device)
+
+# +
+perceptual_loss = PerceptualLoss(spatial_dims=3, network_type="squeeze", fake_3d_ratio=0.25)
+perceptual_loss.to(device)
+
+adv_loss = PatchAdversarialLoss(criterion="least_squares")
+adv_weight = 0.01
+perceptual_weight = 0.001
+
+optimizer_g = torch.optim.Adam(autoencoderkl.parameters(), 1e-4)
+optimizer_d = torch.optim.Adam(discriminator.parameters(), lr=5e-4)
 # -
 
 # ## Train AutoencoderKL
@@ -155,7 +186,7 @@ for epoch in range(n_epochs):
         kl_optimizer.zero_grad(set_to_none=True)
         reconstruction, z_mu, z_sigma = autoencoderkl(images)
 
-        rec_loss = F.mse_loss(reconstruction.float(), images.float())
+        rec_loss = F.l1_loss(reconstruction.float(), images.float())
 
         kl_loss = 0.5 * torch.sum(z_mu.pow(2) + z_sigma.pow(2) - torch.log(z_sigma.pow(2)) - 1, dim=[1, 2, 3])
         kl_loss = torch.sum(kl_loss) / kl_loss.shape[0]
@@ -189,7 +220,7 @@ for epoch in range(n_epochs):
                 if val_step == 1:
                     intermediary_images.append(reconstruction[:n_example_images, 0])
 
-                rec_loss = F.mse_loss(images.float(), reconstruction.float())
+                rec_loss = F.l1_loss(images.float(), reconstruction.float())
 
                 kl_loss = 0.5 * torch.sum(z_mu.pow(2) + z_sigma.pow(2) - torch.log(z_sigma.pow(2)) - 1, dim=[1, 2, 3])
                 kl_loss = torch.sum(kl_loss) / kl_loss.shape[0]
@@ -222,15 +253,16 @@ for image_n in range(len(val_samples)):
 # ## Train Diffusion Model
 
 # +
-optimizer = torch.optim.Adam(unet.parameters(), lr=2.5e-5)
+optimizer = torch.optim.Adam(unet.parameters(), lr=2.5e-4)
 # TODO: Add lr_scheduler with warm-up
 # TODO: Add EMA model
 
 unet = unet.to(device)
 n_epochs = 50
-val_interval = 5
+val_interval = 4
 epoch_loss_list = []
 val_epoch_loss_list = []
+
 for epoch in range(n_epochs):
     unet.train()
     autoencoderkl.eval()
@@ -241,18 +273,12 @@ for epoch in range(n_epochs):
         images = batch["image"].to(device)
         optimizer.zero_grad(set_to_none=True)
 
-        # TODO: check how to deal with next commands with multi-GPU and for FL
-        # with torch.no_grad():
         z_mu, z_sigma = autoencoderkl.encode(images)
         z = autoencoderkl.sampling(z_mu, z_sigma)
 
-        timesteps = torch.randint(0, scheduler.num_train_timesteps, (z.shape[0],), device=z.device).long()
-
         noise = torch.randn_like(z).to(device)
-        noisy_latent = scheduler.add_noise(original_samples=z, noise=noise, timesteps=timesteps)
-        noise_pred = unet(noisy_latent, timesteps)
-
-        loss = F.mse_loss(noise.float(), noise_pred.float())
+        noise_pred = inferer(inputs=z, diffusion_model=unet, noise=noise)
+        loss = F.mse_loss(noise_pred.float(), noise.float())
 
         loss.backward()
         optimizer.step()
@@ -276,13 +302,10 @@ for epoch in range(n_epochs):
                 z_mu, z_sigma = autoencoderkl.encode(images)
                 z = autoencoderkl.sampling(z_mu, z_sigma)
 
-                timesteps = torch.randint(0, scheduler.num_train_timesteps, (z.shape[0],), device=z.device).long()
-
                 noise = torch.randn_like(z).to(device)
-                noisy_latent = scheduler.add_noise(original_samples=z, noise=noise, timesteps=timesteps)
-                noise_pred = unet(noisy_latent, timesteps)
+                noise_pred = inferer(inputs=z, diffusion_model=unet, noise=noise)
 
-                loss = F.mse_loss(noise.float(), noise_pred.float())
+                loss = F.mse_loss(noise_pred.float(), noise.float())
 
                 val_loss += loss.item()
         val_loss /= val_step
@@ -290,7 +313,7 @@ for epoch in range(n_epochs):
         print(f"Epoch {epoch} val loss: {val_loss:.4f}")
 
         # Sampling image during training
-        z = torch.randn((1, 1, 16, 16))
+        z = torch.randn((1, 3, 16, 16))
         z = z.to(device)
         scheduler.set_timesteps(num_inference_steps=1000)
         for t in tqdm(scheduler.timesteps, ncols=70):
