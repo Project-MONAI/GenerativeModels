@@ -121,7 +121,7 @@ class LatentDiffusionInferer(Inferer):
     def __call__(
         self,
         inputs: torch.Tensor,
-        stage_1_model: Callable[..., torch.Tensor],
+        autoencoder_model: Callable[..., torch.Tensor],
         diffusion_model: Callable[..., torch.Tensor],
         noise: torch.Tensor,
         condition: Optional[torch.Tensor] = None,
@@ -131,13 +131,13 @@ class LatentDiffusionInferer(Inferer):
 
         Args:
             inputs: input image to which noise is added.
-            stage_1_model: first stage model.
+            autoencoder_model: first stage model.
             diffusion_model: diffusion model.
             noise: random noise, of the same shape as the input.
             condition: conditioning for network input.
         """
         with torch.no_grad():
-            latent = stage_1_model.encode_stage_2_inputs(inputs) * self.scale_factor
+            latent = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
 
         num_timesteps = self.scheduler.num_train_timesteps
         timesteps = torch.randint(0, num_timesteps, (inputs.shape[0],), device=inputs.device).long()
@@ -149,7 +149,7 @@ class LatentDiffusionInferer(Inferer):
     def sample(
         self,
         input_noise: torch.Tensor,
-        stage_1_model: Callable[..., torch.Tensor],
+        autoencoder_model: Callable[..., torch.Tensor],
         diffusion_model: Callable[..., torch.Tensor],
         scheduler: Optional[Callable[..., torch.Tensor]] = None,
         conditioning: Optional[torch.Tensor] = None,
@@ -158,7 +158,7 @@ class LatentDiffusionInferer(Inferer):
         """
         Args:
             input_noise: random noise, of the same shape as the desired latent space.
-            stage_1_model: first stage model.
+            autoencoder_model: first stage model.
             diffusion_model: model to sample from.
             scheduler: diffusion scheduler. If none provided will use the class attribute scheduler.
             conditioning: Conditioning for network input.
@@ -180,6 +180,6 @@ class LatentDiffusionInferer(Inferer):
             latent, _ = scheduler.step(model_output, t, latent)
 
         with torch.no_grad():
-            image = stage_1_model.decode_stage_2_outputs(latent) * self.scale_factor
+            image = autoencoder_model.decode_stage_2_outputs(latent) * self.scale_factor
 
         return image
