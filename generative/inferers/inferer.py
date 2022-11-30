@@ -13,6 +13,7 @@
 from typing import Callable, Optional
 
 import torch
+import torch.nn as nn
 from monai.inferers import Inferer
 from monai.utils import optional_import
 
@@ -99,15 +100,20 @@ class DiffusionInferer(Inferer):
 
 
 class LatentDiffusionInferer(Inferer):
-
     """
-    LatentDiffusionInferer takes a stage 1 model (VQVAE or AutoencoderKL), diffusion model, and a scheduler, and can be
-    used to perform a signal forward pass for a training iteration, and sample from the model.
+    LatentDiffusionInferer takes a stage 1 model (VQVAE or AutoencoderKL), diffusion model, and a scheduler, and can
+    be used to perform a signal forward pass for a training iteration, and sample from the model.
+
+    Args:
+        scheduler: a scheduler to be used in combination with `unet` to denoise the encoded image latents.
+        scale_factor: scale factor to multiply the values of the latent representation before processing it by the
+            second stage.
     """
 
-    def __init__(self, scheduler) -> None:
+    def __init__(self, scheduler: nn.Module, scale_factor: float = 1.0) -> None:
         Inferer.__init__(self)
         self.scheduler = scheduler
+        self.scale_factor = scale_factor
 
     def __call__(
         self,
@@ -127,8 +133,9 @@ class LatentDiffusionInferer(Inferer):
             noise: random noise, of the same shape as the input.
             condition: conditioning for network input.
         """
+        # TODO: Add scale_factor
         with torch.no_grad():
-            latent = stage_1_model.encode_stage_2_inputs(inputs)
+            latent = stage_1_model.encode_stage_2_inputs(inputs) * self.scale_factor
 
         num_timesteps = self.scheduler.num_train_timesteps
         timesteps = torch.randint(0, num_timesteps, (inputs.shape[0],), device=inputs.device).long()
@@ -170,6 +177,6 @@ class LatentDiffusionInferer(Inferer):
             latent, _ = scheduler.step(model_output, t, latent)
 
         with torch.no_grad():
-            image = stage_1_model.decode_stage_2_outputs(latent)
+            image = stage_1_model.decode_stage_2_outputs(latent) * self.scale_factor
 
         return image
