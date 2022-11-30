@@ -133,7 +133,6 @@ class LatentDiffusionInferer(Inferer):
             noise: random noise, of the same shape as the input.
             condition: conditioning for network input.
         """
-        # TODO: Add scale_factor
         with torch.no_grad():
             latent = stage_1_model.encode_stage_2_inputs(inputs) * self.scale_factor
 
@@ -158,7 +157,7 @@ class LatentDiffusionInferer(Inferer):
             input_noise: random noise, of the same shape as the desired latent space.
             stage_1_model: first stage model.
             diffusion_model: model to sample from.
-            scheduler: diffusion scheduler. If none provided will use the class attribute scheduler
+            scheduler: diffusion scheduler. If none provided will use the class attribute scheduler.
             conditioning: Conditioning for network input.
         """
         if not scheduler:
