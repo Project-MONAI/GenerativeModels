@@ -126,6 +126,35 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         )
         self.assertEqual(sample.shape, input_shape)
 
+    @parameterized.expand(TEST_CASES)
+    def test_sample_intermediates(self, model_type, autoencoder_params, stage_2_params, input_shape, latent_shape):
+        if model_type == "AutoencoderKL":
+            autoencoder_model = AutoencoderKL(**autoencoder_params)
+        if model_type == "VQVAE":
+            autoencoder_model = VQVAE(**autoencoder_params)
+        stage_2 = DiffusionModelUNet(**stage_2_params)
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        autoencoder_model.to(device)
+        stage_2.to(device)
+        autoencoder_model.eval()
+        autoencoder_model.train()
+        noise = torch.randn(latent_shape).to(device)
+        scheduler = DDPMScheduler(
+            num_train_timesteps=10,
+        )
+        inferer = LatentDiffusionInferer(scheduler=scheduler, scale_factor=1.0)
+        scheduler.set_timesteps(num_inference_steps=10)
+        sample, intermediates = inferer.sample(
+            input_noise=noise,
+            autoencoder_model=autoencoder_model,
+            diffusion_model=stage_2,
+            scheduler=scheduler,
+            save_intermediates=True,
+            intermediate_steps=1,
+        )
+        self.assertEqual(len(intermediates), 10)
+        self.assertEqual(intermediates[0].shape, input_shape)
+
 
 if __name__ == "__main__":
     unittest.main()

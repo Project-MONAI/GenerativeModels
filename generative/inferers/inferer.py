@@ -10,7 +10,7 @@
 # limitations under the License.
 
 
-from typing import Callable, Optional
+from typing import Callable, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -102,7 +102,7 @@ class DiffusionInferer(Inferer):
             return image
 
 
-class LatentDiffusionInferer(Inferer):
+class LatentDiffusionInferer(DiffusionInferer):
     """
     LatentDiffusionInferer takes a stage 1 model (VQVAE or AutoencoderKL), diffusion model, and a scheduler, and can
     be used to perform a signal forward pass for a training iteration, and sample from the model.
@@ -114,8 +114,7 @@ class LatentDiffusionInferer(Inferer):
     """
 
     def __init__(self, scheduler: nn.Module, scale_factor: float = 1.0) -> None:
-        Inferer.__init__(self)
-        self.scheduler = scheduler
+        super().__init__(scheduler=scheduler)
         self.scale_factor = scale_factor
 
     def __call__(
@@ -130,19 +129,21 @@ class LatentDiffusionInferer(Inferer):
         Implements the forward pass for a supervised training iteration.
 
         Args:
-            inputs: input image to which noise is added.
+            inputs: input image to which the latent representation will be extracted and noise is added.
             autoencoder_model: first stage model.
             diffusion_model: diffusion model.
-            noise: random noise, of the same shape as the input.
+            noise: random noise, of the same shape as the latent representation.
             condition: conditioning for network input.
         """
         with torch.no_grad():
             latent = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
 
-        num_timesteps = self.scheduler.num_train_timesteps
-        timesteps = torch.randint(0, num_timesteps, (inputs.shape[0],), device=inputs.device).long()
-        noisy_latent = self.scheduler.add_noise(original_samples=latent, noise=noise, timesteps=timesteps)
-        prediction = diffusion_model(x=noisy_latent, timesteps=timesteps, context=condition)
+        prediction = super().__call__(
+            inputs=latent,
+            diffusion_model=diffusion_model,
+            noise=noise,
+            condition=condition,
+        )
 
         return prediction
 
@@ -152,34 +153,48 @@ class LatentDiffusionInferer(Inferer):
         autoencoder_model: Callable[..., torch.Tensor],
         diffusion_model: Callable[..., torch.Tensor],
         scheduler: Optional[Callable[..., torch.Tensor]] = None,
+        save_intermediates: Optional[bool] = False,
+        intermediate_steps: Optional[int] = 100,
         conditioning: Optional[torch.Tensor] = None,
         verbose: Optional[bool] = True,
-    ) -> torch.Tensor:
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
         """
         Args:
-            input_noise: random noise, of the same shape as the desired latent space.
+            input_noise: random noise, of the same shape as the desired latent representation.
             autoencoder_model: first stage model.
             diffusion_model: model to sample from.
             scheduler: diffusion scheduler. If none provided will use the class attribute scheduler.
+            save_intermediates: whether to return intermediates along the sampling change
+            intermediate_steps: if save_intermediates is True, saves every n steps
             conditioning: Conditioning for network input.
             verbose: if true, prints the progression bar of the sampling process.
         """
-        if not scheduler:
-            scheduler = self.scheduler
-        latent = input_noise
-        if verbose and has_tqdm:
-            progress_bar = tqdm(scheduler.timesteps)
-        else:
-            progress_bar = iter(scheduler.timesteps)
-        for t in progress_bar:
-            with torch.no_grad():
-                model_output = diffusion_model(
-                    latent, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning
-                )
+        outputs = super().sample(
+            input_noise=input_noise,
+            diffusion_model=diffusion_model,
+            scheduler=scheduler,
+            save_intermediates=save_intermediates,
+            intermediate_steps=intermediate_steps,
+            conditioning=conditioning,
+            verbose=verbose,
+        )
 
-            latent, _ = scheduler.step(model_output, t, latent)
+        if save_intermediates:
+            latent, latent_intermediates = outputs
+        else:
+            latent = outputs
 
         with torch.no_grad():
             image = autoencoder_model.decode_stage_2_outputs(latent) * self.scale_factor
 
-        return image
+        if save_intermediates:
+            intermediates = []
+            for latent_intermediate in latent_intermediates:
+                with torch.no_grad():
+                    intermediates.append(
+                        autoencoder_model.decode_stage_2_outputs(latent_intermediate) * self.scale_factor
+                    )
+            return image, intermediates
+
+        else:
+            return image
