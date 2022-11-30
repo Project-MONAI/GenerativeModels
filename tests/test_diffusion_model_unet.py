@@ -14,50 +14,44 @@ import unittest
 import torch
 from monai.networks import eval_mode
 from parameterized import parameterized
+from tests.utils import test_script_save
 
 from generative.networks.nets import DiffusionModelUNet
-
-# from tests.utils import test_script_save
-
 
 UNCOND_CASES_2D = [
     [
         {
             "spatial_dims": 2,
             "in_channels": 1,
-            "model_channels": 32,
             "out_channels": 1,
             "num_res_blocks": 1,
-            "attention_resolutions": [16, 8],
-            "channel_mult": [1, 1, 1, 1],
-            "num_heads": 1,
+            "num_channels": (8, 8, 8),
+            "attention_levels": (False, False, False),
+            "norm_num_groups": 8,
         },
     ],
     [
         {
             "spatial_dims": 2,
             "in_channels": 1,
-            "model_channels": 32,
             "out_channels": 1,
             "num_res_blocks": 1,
-            "attention_resolutions": [16, 8],
-            "channel_mult": [1, 1, 1, 1],
-            "num_heads": -1,
-            "num_head_channels": 1,
+            "num_channels": (8, 8, 8),
+            "attention_levels": (False, False, True),
+            "num_head_channels": 8,
+            "norm_num_groups": 8,
         },
     ],
     [
         {
             "spatial_dims": 2,
             "in_channels": 1,
-            "model_channels": 32,
             "out_channels": 1,
             "num_res_blocks": 1,
-            "attention_resolutions": [16, 8],
-            "channel_mult": [1, 1, 1, 1],
-            "num_heads": 4,
-            "num_head_channels": 2,
-            "legacy": False,
+            "num_channels": (8, 8, 8),
+            "attention_levels": (False, False, True),
+            "num_head_channels": 4,
+            "norm_num_groups": 8,
         },
     ],
 ]
@@ -67,42 +61,35 @@ UNCOND_CASES_3D = [
         {
             "spatial_dims": 3,
             "in_channels": 1,
-            "model_channels": 16,
             "out_channels": 1,
             "num_res_blocks": 1,
-            "attention_resolutions": [16, 8],
-            "channel_mult": [1, 1, 1, 1],
-            "num_heads": 1,
-            "norm_num_groups": 16,
+            "num_channels": (8, 8, 8),
+            "attention_levels": (False, False, False),
+            "norm_num_groups": 8,
         },
     ],
     [
         {
             "spatial_dims": 3,
             "in_channels": 1,
-            "model_channels": 16,
             "out_channels": 1,
             "num_res_blocks": 1,
-            "attention_resolutions": [16, 8],
-            "channel_mult": [1, 1, 1, 1],
-            "num_heads": -1,
-            "num_head_channels": 1,
-            "norm_num_groups": 16,
+            "num_channels": (8, 8, 8),
+            "attention_levels": (False, False, True),
+            "num_head_channels": 8,
+            "norm_num_groups": 8,
         },
     ],
     [
         {
             "spatial_dims": 3,
             "in_channels": 1,
-            "model_channels": 16,
             "out_channels": 1,
             "num_res_blocks": 1,
-            "attention_resolutions": [16, 8],
-            "channel_mult": [1, 1, 1, 1],
-            "num_heads": 1,
-            "num_head_channels": 1,
-            "legacy": False,
-            "norm_num_groups": 16,
+            "num_channels": (8, 8, 8),
+            "attention_levels": (False, False, True),
+            "num_head_channels": 4,
+            "norm_num_groups": 8,
         },
     ],
 ]
@@ -113,8 +100,8 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
     def test_shape_unconditioned_models(self, input_param):
         net = DiffusionModelUNet(**input_param)
         with eval_mode(net):
-            result = net.forward(torch.rand((1, 1, 32, 64)), torch.randint(0, 1000, (1,)).long())
-            self.assertEqual(result.shape, (1, 1, 32, 64))
+            result = net.forward(torch.rand((1, 1, 16, 16)), torch.randint(0, 1000, (1,)).long())
+            self.assertEqual(result.shape, (1, 1, 16, 16))
 
     def test_shape_with_different_in_channel_out_channel(self):
         in_channels = 6
@@ -122,95 +109,91 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
         net = DiffusionModelUNet(
             spatial_dims=2,
             in_channels=in_channels,
-            model_channels=32,
             out_channels=out_channels,
             num_res_blocks=1,
-            attention_resolutions=[16, 8],
-            channel_mult=[1, 1, 1, 1],
-            num_heads=1,
+            num_channels=(8, 8, 8),
+            attention_levels=(False, False, False),
+            norm_num_groups=8,
         )
         with eval_mode(net):
-            result = net.forward(torch.rand((1, in_channels, 64, 64)), torch.randint(0, 1000, (1,)).long())
-            self.assertEqual(result.shape, (1, out_channels, 64, 64))
-
-    def test_attention_heads_not_declared(self):
-        with self.assertRaises(ValueError):
-            DiffusionModelUNet(
-                spatial_dims=2,
-                in_channels=3,
-                model_channels=32,
-                out_channels=3,
-                num_res_blocks=1,
-                attention_resolutions=[16, 8],
-                channel_mult=[1, 1, 1, 1],
-                num_heads=-1,
-                num_head_channels=-1,
-            )
+            result = net.forward(torch.rand((1, in_channels, 16, 16)), torch.randint(0, 1000, (1,)).long())
+            self.assertEqual(result.shape, (1, out_channels, 16, 16))
 
     def test_model_channels_not_multiple_of_norm_num_group(self):
         with self.assertRaises(ValueError):
             DiffusionModelUNet(
                 spatial_dims=2,
-                in_channels=3,
-                model_channels=40,
-                out_channels=3,
+                in_channels=1,
+                out_channels=1,
                 num_res_blocks=1,
-                attention_resolutions=[16, 8],
-                channel_mult=[1, 1, 1, 1],
-                norm_num_groups=32,
+                num_channels=(8, 8, 12),
+                attention_levels=(False, False, False),
+                norm_num_groups=8,
             )
 
     def test_shape_conditioned_models(self):
         net = DiffusionModelUNet(
             spatial_dims=2,
             in_channels=1,
-            model_channels=32,
             out_channels=1,
             num_res_blocks=1,
-            attention_resolutions=[16, 8],
-            channel_mult=[1, 1, 1, 1],
-            num_heads=1,
-            use_spatial_transformer=True,
-            transformer_depth=1,
-            context_dim=3,
+            num_channels=(8, 8, 8),
+            attention_levels=(False, False, True),
+            with_conditioning=True,
+            transformer_num_layers=1,
+            cross_attention_dim=3,
+            norm_num_groups=8,
+            num_head_channels=8,
         )
         with eval_mode(net):
             result = net.forward(
-                x=torch.rand((1, 1, 32, 64)),
+                x=torch.rand((1, 1, 16, 32)),
                 timesteps=torch.randint(0, 1000, (1,)).long(),
                 context=torch.rand((1, 1, 3)),
             )
-            self.assertEqual(result.shape, (1, 1, 32, 64))
+            self.assertEqual(result.shape, (1, 1, 16, 32))
 
-    # TODO: Fix problem with torchscript
-    # def test_script_unconditioned_models(self):
-    #     input_param = UNCOND_CASES_2D[0][0]
-    #     net = DiffusionModelUNet(**input_param)
-    #     test_script_save(net, {"x": torch.rand((1, 1, 32, 64)), "timesteps": torch.randint(0, 1000, (1,)).long()})
+    def test_with_conditioning_cross_attention_dim_none(self):
+        with self.assertRaises(ValueError):
+            DiffusionModelUNet(
+                spatial_dims=2,
+                in_channels=1,
+                out_channels=1,
+                num_res_blocks=1,
+                num_channels=(8, 8, 8),
+                attention_levels=(False, False, True),
+                with_conditioning=True,
+                transformer_num_layers=1,
+                cross_attention_dim=None,
+                norm_num_groups=8,
+            )
 
-    # TODO: Fix problem with torchscript
-    # def test_script_conditioned_models(self):
-    #     net = DiffusionModelUNet(
-    #         spatial_dims=2,
-    #         in_channels=1,
-    #         model_channels=32,
-    #         out_channels=1,
-    #         num_res_blocks=1,
-    #         attention_resolutions=[16, 8],
-    #         channel_mult=[1, 1, 1, 1],
-    #         num_heads=1,
-    #         use_spatial_transformer=True,
-    #         transformer_depth=1,
-    #         context_dim=3,
-    #     )
-    #     test_script_save(
-    #         net,
-    #         {
-    #             "x": torch.rand((1, 1, 32, 64)),
-    #             "timesteps": torch.randint(0, 1000, (1,)).long(),
-    #             "context": torch.rand((1, 1, 3)),
-    #         },
-    #     )
+    def test_script_unconditioned_2d_models(self):
+        net = DiffusionModelUNet(
+            spatial_dims=2,
+            in_channels=1,
+            out_channels=1,
+            num_res_blocks=1,
+            num_channels=(8, 8, 8),
+            attention_levels=(False, False, True),
+            norm_num_groups=8,
+        )
+        test_script_save(net, torch.rand((1, 1, 16, 16)), torch.randint(0, 1000, (1,)).long())
+
+    def test_script_conditioned_2d_models(self):
+        net = DiffusionModelUNet(
+            spatial_dims=2,
+            in_channels=1,
+            out_channels=1,
+            num_res_blocks=1,
+            num_channels=(8, 8, 8),
+            attention_levels=(False, False, True),
+            norm_num_groups=8,
+            with_conditioning=True,
+            transformer_num_layers=1,
+            cross_attention_dim=3,
+        )
+        test_script_save(net, torch.rand((1, 1, 16, 16)), torch.randint(0, 1000, (1,)).long(), torch.rand((1, 1, 3)))
 
 
 class TestDiffusionModelUNet3D(unittest.TestCase):
@@ -218,8 +201,8 @@ class TestDiffusionModelUNet3D(unittest.TestCase):
     def test_shape_unconditioned_models(self, input_param):
         net = DiffusionModelUNet(**input_param)
         with eval_mode(net):
-            result = net.forward(torch.rand((1, 1, 16, 32, 48)), torch.randint(0, 1000, (1,)).long())
-            self.assertEqual(result.shape, (1, 1, 16, 32, 48))
+            result = net.forward(torch.rand((1, 1, 16, 16, 16)), torch.randint(0, 1000, (1,)).long())
+            self.assertEqual(result.shape, (1, 1, 16, 16, 16))
 
     def test_shape_with_different_in_channel_out_channel(self):
         in_channels = 6
@@ -227,40 +210,68 @@ class TestDiffusionModelUNet3D(unittest.TestCase):
         net = DiffusionModelUNet(
             spatial_dims=3,
             in_channels=in_channels,
-            model_channels=16,
             out_channels=out_channels,
             num_res_blocks=1,
-            attention_resolutions=[16, 8],
-            channel_mult=[1, 1, 1, 1],
-            num_heads=1,
-            norm_num_groups=16,
+            num_channels=(8, 8, 8),
+            attention_levels=(False, False, True),
+            norm_num_groups=4,
         )
         with eval_mode(net):
-            result = net.forward(torch.rand((1, in_channels, 16, 32, 48)), torch.randint(0, 1000, (1,)).long())
-            self.assertEqual(result.shape, (1, out_channels, 16, 32, 48))
+            result = net.forward(torch.rand((1, in_channels, 16, 16, 16)), torch.randint(0, 1000, (1,)).long())
+            self.assertEqual(result.shape, (1, out_channels, 16, 16, 16))
 
     def test_shape_conditioned_models(self):
         net = DiffusionModelUNet(
             spatial_dims=3,
             in_channels=1,
-            model_channels=16,
             out_channels=1,
             num_res_blocks=1,
-            attention_resolutions=[16, 8],
-            channel_mult=[1, 1, 1, 1],
-            num_heads=1,
+            num_channels=(16, 16, 16),
+            attention_levels=(False, False, True),
             norm_num_groups=16,
-            use_spatial_transformer=True,
-            transformer_depth=1,
-            context_dim=3,
+            with_conditioning=True,
+            transformer_num_layers=1,
+            cross_attention_dim=3,
         )
         with eval_mode(net):
             result = net.forward(
-                x=torch.rand((1, 1, 16, 32, 48)),
+                x=torch.rand((1, 1, 16, 16, 16)),
                 timesteps=torch.randint(0, 1000, (1,)).long(),
                 context=torch.rand((1, 1, 3)),
             )
-            self.assertEqual(result.shape, (1, 1, 16, 32, 48))
+            self.assertEqual(result.shape, (1, 1, 16, 16, 16))
+
+    def test_script_unconditioned_3d_models(self):
+        net = DiffusionModelUNet(
+            spatial_dims=3,
+            in_channels=1,
+            out_channels=1,
+            num_res_blocks=1,
+            num_channels=(8, 8, 8),
+            attention_levels=(False, False, True),
+            norm_num_groups=8,
+        )
+        test_script_save(net, torch.rand((1, 1, 16, 16, 16)), torch.randint(0, 1000, (1,)).long())
+
+    def test_script_conditioned_3d_models(self):
+        net = DiffusionModelUNet(
+            spatial_dims=3,
+            in_channels=1,
+            out_channels=1,
+            num_res_blocks=1,
+            num_channels=(8, 8, 8),
+            attention_levels=(False, False, True),
+            norm_num_groups=8,
+            with_conditioning=True,
+            transformer_num_layers=1,
+            cross_attention_dim=3,
+        )
+        test_script_save(
+            net,
+            torch.rand((1, 1, 16, 16, 16)),
+            torch.randint(0, 1000, (1,)).long(),
+            torch.rand((1, 1, 3)),
+        )
 
 
 if __name__ == "__main__":
