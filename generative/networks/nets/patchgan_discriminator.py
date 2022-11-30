@@ -89,7 +89,6 @@ class MultiScalePatchDiscriminator(nn.Sequential):
                 last_conv_kernel_size=last_conv_kernel_size,
             )
 
-            subnet_d.apply(self.initialise_weights)
             self.add_module("discriminator_%d" % i_, subnet_d)
 
     def forward(self, i: torch.Tensor) -> Tuple[List[torch.Tensor], List[List[torch.Tensor]]]:
@@ -110,24 +109,6 @@ class MultiScalePatchDiscriminator(nn.Sequential):
             intermediate_features.append(out_d[:-1])
 
         return out, intermediate_features
-
-    def initialise_weights(self, m):
-        """
-        Initialise weights of Convolution and BatchNorm layers.
-        Args:
-            m: nn layer
-        Returns:
-        """
-        classname = m.__class__.__name__
-        if classname.find("Conv2d") != -1:
-            nn.init.normal_(m.weight.data, 0.0, 0.02)
-        elif classname.find("Conv3d") != -1:
-            nn.init.normal_(m.weight.data, 0.0, 0.02)
-        elif classname.find("Conv1d") != -1:
-            nn.init.normal_(m.weight.data, 0.0, 0.02)
-        elif classname.find("BatchNorm") != -1:
-            nn.init.normal_(m.weight.data, 1.0, 0.02)
-            nn.init.constant_(m.bias.data, 0)
 
 
 class PatchDiscriminator(nn.Sequential):
@@ -199,9 +180,9 @@ class PatchDiscriminator(nn.Sequential):
         # Initial Layer
         for l_ in range(self.num_layers_d):
             if l_ == self.num_layers_d - 1:
-                strides_ = 1
+                stride = 1
             else:
-                strides_ = 2
+                stride = 2
             layer = Convolution(
                 spatial_dims=spatial_dims,
                 kernel_size=kernel_size,
@@ -212,7 +193,7 @@ class PatchDiscriminator(nn.Sequential):
                 norm=norm,
                 dropout=dropout,
                 padding=padding,
-                strides=strides_,
+                strides=stride,
             )
             self.add_module("%d" % l_, layer)
             input_channels = output_channels
@@ -226,13 +207,15 @@ class PatchDiscriminator(nn.Sequential):
                 kernel_size=last_conv_kernel_size,
                 in_channels=input_channels,
                 out_channels=out_channels,
-                bias=bias,
+                bias=True,
                 conv_only=True,
                 padding=int((last_conv_kernel_size - 1) / 2),
                 dropout=0.0,
                 strides=1,
             ),
         )
+
+        self.apply(self.initialise_weights)
 
     def forward(self, x: torch.Tensor) -> List[torch.Tensor]:
         """
@@ -249,3 +232,21 @@ class PatchDiscriminator(nn.Sequential):
             out.append(intermediate_output)
 
         return out[1:]
+
+    def initialise_weights(self, m):
+        """
+        Initialise weights of Convolution and BatchNorm layers.
+        Args:
+            m: nn layer
+        Returns:
+        """
+        classname = m.__class__.__name__
+        if classname.find("Conv2d") != -1:
+            nn.init.normal_(m.weight.data, 0.0, 0.02)
+        elif classname.find("Conv3d") != -1:
+            nn.init.normal_(m.weight.data, 0.0, 0.02)
+        elif classname.find("Conv1d") != -1:
+            nn.init.normal_(m.weight.data, 0.0, 0.02)
+        elif classname.find("BatchNorm") != -1:
+            nn.init.normal_(m.weight.data, 1.0, 0.02)
+            nn.init.constant_(m.bias.data, 0)
