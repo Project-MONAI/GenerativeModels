@@ -11,6 +11,11 @@
 # # !python -c "import matplotlib" || pip install -q matplotlib
 # # %matplotlib inline
 
+# %cd /mnt_homes/home4T7/jdafflon/GenerativeModels
+
+# %load_ext autoreload
+# %autoreload 2
+
 # ## Set up imports
 
 # +
@@ -125,11 +130,8 @@ unet = DiffusionModelUNet(
     in_channels=3,
     out_channels=3,
     num_res_blocks=1,
-    attention_resolutions=[4, 2],
-    channel_mult=[1, 2, 2],
-    model_channels=32,
-    norm_num_groups=32,
-    num_heads=1,
+    num_channels=(128, 256, 256),
+    num_head_channels=256,
 )
 
 scheduler = DDPMScheduler(
@@ -144,7 +146,7 @@ inferer = DiffusionInferer(scheduler)
 discriminator = PatchDiscriminator(
     spatial_dims=2,
     num_layers_d=3,
-    num_channels=16,
+    num_channels=32,
     in_channels=1,
     out_channels=1,
     kernel_size=4,
@@ -175,8 +177,8 @@ scaler_d = torch.cuda.amp.GradScaler()
 # +
 kl_weight = 1e-6
 n_epochs = 30
-val_interval = 2
-autoencoder_warm_up_n_epochs = 2
+val_interval = 6
+autoencoder_warm_up_n_epochs = 5
 
 epoch_recon_loss_list = []
 epoch_gen_loss_list = []
@@ -220,9 +222,11 @@ for epoch in range(n_epochs):
         # scaler_g.update()
 
         if epoch > autoencoder_warm_up_n_epochs:
+            optimizer_d.zero_grad(set_to_none=True)
+
             # Discriminator part
             # with autocast(enabled=False):
-            logtis_fake = discriminator(reconstruction.contiguous().detach())[-1]
+            logits_fake = discriminator(reconstruction.contiguous().detach())[-1]
             loss_d_fake = adv_loss(logits_fake, target_is_real=False, for_discriminator=True)
             logits_real = discriminator(images.contiguous().detach())[-1]
             loss_d_real = adv_loss(logits_real, target_is_real=True, for_discriminator=True)
@@ -272,7 +276,6 @@ for epoch in range(n_epochs):
 
         val_loss /= val_step
         val_recon_epoch_loss_list.append(val_loss)
-
         print(f"epoch {epoch + 1} val loss: {val_loss:.4f}")
 progress_bar.close()
 
@@ -291,14 +294,16 @@ for image_n in range(len(val_samples)):
 
 # ## Train Diffusion Model
 
+# It takes about ~20 min to train the model.
+
 # +
-optimizer = torch.optim.Adam(unet.parameters(), lr=2.5e-4)
+optimizer = torch.optim.Adam(unet.parameters(), lr=1e-4)
 # TODO: Add lr_scheduler with warm-up
 # TODO: Add EMA model
 
 unet = unet.to(device)
-n_epochs = 50
-val_interval = 4
+n_epochs = 100
+val_interval = 20
 epoch_loss_list = []
 val_epoch_loss_list = []
 
@@ -379,32 +384,28 @@ progress_bar.close()
 
 # +
 unet.eval()
-image = torch.randn(
-    (1, 1, 64, 64),
-)
+image = torch.randn((1, 1, 64, 64))
 image = image.to(device)
 scheduler.set_timesteps(num_inference_steps=1000)
 
-intermediary = []
-for t in tqdm(scheduler.timesteps, ncols=70):
-    # 1. predict noise model_output
-    with torch.no_grad():
-        z_mu, z_sigma = autoencoderkl.encode(image)
-        z = autoencoderkl.sampling(z_mu, z_sigma)
-        model_output = unet(z, torch.Tensor((t,)).to(device))
+with torch.no_grad():
 
-        # 2. compute previous image: x_t -> x_t-1
-        r_image, _ = scheduler.step(model_output, t, z)
-        if t % 100 == 0:
-            intermediary.append(r_image)
+    z_mu, z_sigma = autoencoderkl.encode(image)
+    z = autoencoderkl.sampling(z_mu, z_sigma)
+
+    noise = torch.randn_like(z).to(device)
+    image, intermediates = inferer.sample(
+        input_noise=z, diffusion_model=unet, scheduler=scheduler, save_intermediates=True, intermediate_steps=100
+    )
+
 
 # -
 
 # Invert the autoencoderKL model
 decoded_images = []
-for image in intermediary:
+for image in intermediates:
     with torch.no_grad():
-        decoded = autoencoderkl.decode(r_image)
+        decoded = autoencoderkl.decode(image)
         decoded_images.append(decoded)
 plt.figure()
 chain = torch.cat(decoded_images, dim=-1)
