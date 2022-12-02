@@ -8,7 +8,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.14.1
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: Python 3 (ipykernel)
 #     language: python
 #     name: python3
 # ---
@@ -62,6 +62,8 @@ from monai.config import print_config
 from monai.data import CacheDataset, DataLoader
 from monai.utils import first, set_determinism
 from tqdm import tqdm
+
+from generative.inferers import DiffusionInferer
 
 # TODO: Add right import reference after deployed
 from generative.networks.nets import DiffusionModelUNet
@@ -193,23 +195,11 @@ pndm_scheduler = PNDMScheduler(num_train_timesteps=1000, skip_prk_steps=True)
 # the range of sampling steps we want to use when testing the DDIM and PNDM schedulers
 sampling_steps = [1000, 500, 200, 50]
 
-
 # %% [markdown]
-# ### Define helper function for sampling
+# ### Define inferer for sampling
 
 # %%
-def sample(model, scheduler, noise):
-    image = noise.clone()
-    progress_bar = tqdm(scheduler.timesteps)
-    progress_bar.set_description(f"Epoch {epoch} - Sampling from {scheduler.__class__.__name__}...")
-    for t in progress_bar:
-        # 1. predict noise model_output
-        with torch.no_grad():
-            model_output = model(image, torch.Tensor((t,)).to(device))
-        # 2. compute previous image: x_t -> x_t-1
-        image, _ = scheduler.step(model_output, t, image)
-    return image
-
+inferer = DiffusionInferer(scheduler=ddpm_scheduler)
 
 # %% [markdown]
 # ### Model training
@@ -278,8 +268,7 @@ for epoch in range(n_epochs):
         # Sampling image during training
         noise = torch.randn((1, 1, 64, 64))
         noise = noise.to(device)
-        ddpm_scheduler.set_timesteps(1000)
-        image = sample(model, ddpm_scheduler, noise)
+        image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=ddpm_scheduler)
         plt.figure(figsize=(8, 4))
         plt.subplot(3, len(sampling_steps), 1)
         plt.imshow(image[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
@@ -289,7 +278,7 @@ for epoch in range(n_epochs):
         # DDIM
         for idx, reduced_sampling_steps in enumerate(sampling_steps):
             ddim_scheduler.set_timesteps(reduced_sampling_steps)
-            image = sample(model, ddim_scheduler, noise)
+            image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=ddim_scheduler)
             plt.subplot(3, len(sampling_steps), len(sampling_steps) + idx + 1)
             plt.imshow(image[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
             plt.ylabel("DDIM")
@@ -301,7 +290,7 @@ for epoch in range(n_epochs):
         # PNDM
         for idx, reduced_sampling_steps in enumerate(sampling_steps):
             pndm_scheduler.set_timesteps(reduced_sampling_steps)
-            image = sample(model, pndm_scheduler, noise)
+            image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=pndm_scheduler)
             plt.subplot(3, len(sampling_steps), len(sampling_steps) * 2 + idx + 1)
             plt.imshow(image[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
             plt.ylabel("PNDM")
