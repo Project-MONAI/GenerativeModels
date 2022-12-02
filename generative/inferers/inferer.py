@@ -12,6 +12,7 @@
 
 from typing import Callable, List, Optional, Tuple, Union
 
+import numpy as np
 import torch
 import torch.nn as nn
 from monai.inferers import Inferer
@@ -100,6 +101,75 @@ class DiffusionInferer(Inferer):
             return image, intermediates
         else:
             return image
+
+    def get_likelihood(
+        self,
+        inputs: torch.Tensor,
+        diffusion_model: Callable[..., torch.Tensor],
+        scheduler: Optional[Callable[..., torch.Tensor]] = None,
+        save_intermediates: Optional[bool] = False,
+        conditioning: Optional[torch.Tensor] = None,
+        verbose: Optional[bool] = True,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
+        """
+        Computes the likelihoods for an input.
+
+        Args:
+            inputs: input images, NxCxHxW[xD]
+            diffusion_model: model to compute likelihood from
+            scheduler: diffusion scheduler. If none provided will use the class attribute scheduler
+            save_intermediates: save the
+            conditioning:
+            verbose: if true, prints the progression bar of the sampling process.
+        """
+
+        if not scheduler:
+            scheduler = self.scheduler
+        if scheduler._get_name() != "DDPMScheduler":
+            raise NotImplementedError(
+                f"Likelihood computation is only compatible with DDPMScheduler,"
+                f" you are using {scheduler._get_name()}"
+            )
+        if verbose and has_tqdm:
+            progress_bar = tqdm(scheduler.timesteps)
+        else:
+            progress_bar = iter(scheduler.timesteps)
+        intermediates = []
+        noise = torch.randn_like(inputs).to(inputs.device)
+        total_kl = torch.zeros_like(inputs)
+        for t in progress_bar:
+            timesteps = torch.full(inputs.shape[:1], t, device=inputs.device).long()
+            noisy_image = self.scheduler.add_noise(original_samples=inputs, noise=noise, timesteps=timesteps)
+            model_output = diffusion_model(x=noisy_image, timesteps=timesteps, context=conditioning)
+            # get the model's predicted mean and variance if it is predicted
+            if model_output.shape[1] == inputs.shape[1] * 2 and scheduler.variance_type in ["learned", "learned_range"]:
+                predicted_mean, predicted_variance = torch.split(model_output, inputs.shape[1], dim=1)
+            else:
+                predicted_mean = model_output
+                predicted_variance = None
+            # get the posterior mean and variance
+            posterior_mean = scheduler._get_mean(timestep=t, x_0=inputs, x_t=noisy_image)
+            posterior_variance = scheduler._get_variance(timestep=t, predicted_variance=predicted_variance)
+            log_posterior_variance = torch.log(posterior_variance)
+            log_predicted_variance = torch.log(predicted_variance) if predicted_variance else log_posterior_variance
+
+            # compute kl between two normals
+            kl = 0.5 * (
+                -1.0
+                + log_predicted_variance
+                - log_posterior_variance
+                + torch.exp(log_posterior_variance - log_predicted_variance)
+                + ((posterior_mean - predicted_mean) ** 2) * torch.exp(-log_predicted_variance)
+            )
+            total_kl += kl
+            if save_intermediates:
+                intermediates.append(kl.cpu())
+        total_kl = total_kl.view(total_kl.shape[0], -1).sum(axis=1)
+        log_likelihood_per_dim = -total_kl / np.prod(inputs.shape[1:])
+        if save_intermediates:
+            return log_likelihood_per_dim, intermediates
+        else:
+            return log_likelihood_per_dim
 
 
 class LatentDiffusionInferer(DiffusionInferer):
