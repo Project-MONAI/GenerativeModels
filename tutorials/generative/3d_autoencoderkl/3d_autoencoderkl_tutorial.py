@@ -31,14 +31,14 @@ from monai import transforms
 from monai.apps import DecathlonDataset
 from monai.config import print_config
 from monai.data import DataLoader
+from monai.networks.layers import Act
 from monai.utils import first, set_determinism
 from torch.cuda.amp import autocast
 from tqdm import tqdm
 
 from generative.losses.adversarial_loss import PatchAdversarialLoss
 from generative.losses.perceptual import PerceptualLoss
-from generative.networks.nets import AutoencoderKL
-from generative.networks.nets.patchgan_discriminator import PatchDiscriminator
+from generative.networks.nets import AutoencoderKL, PatchDiscriminator
 
 print_config()
 # -
@@ -89,7 +89,7 @@ train_ds = DecathlonDataset(
     seed=0,
     transform=train_transforms,
 )
-train_loader = DataLoader(train_ds, batch_size=2, shuffle=True, num_workers=4)
+train_loader = DataLoader(train_ds, batch_size=2, shuffle=True, num_workers=4, persistent_workers=True)
 print(f'Image shape {train_ds[0]["image"].shape}')
 # -
 
@@ -140,7 +140,7 @@ val_ds = DecathlonDataset(
     seed=0,
     transform=val_transforms,
 )
-val_loader = DataLoader(val_ds, batch_size=2, shuffle=False, num_workers=4)
+val_loader = DataLoader(val_ds, batch_size=2, shuffle=False, num_workers=4, persistent_workers=True)
 print(f'Image shape {val_ds[0]["image"].shape}')
 
 # ## Define the network
@@ -169,10 +169,10 @@ discriminator = PatchDiscriminator(
     in_channels=1,
     out_channels=1,
     kernel_size=4,
-    activation="LEAKYRELU",
+    activation=(Act.LEAKYRELU, {"negative_slope": 0.2}),
     norm="BATCH",
     bias=False,
-    padding=(1, 1, 1),
+    padding=1,
 )
 discriminator.to(device)
 
@@ -223,7 +223,7 @@ for epoch in range(n_epochs):
             reconstruction, z_mu, z_sigma = model(images)
             logits_fake = discriminator(reconstruction.contiguous().float())[-1]
 
-            recons_loss = F.mse_loss(reconstruction.float(), images.float())
+            recons_loss = F.l1_loss(reconstruction.float(), images.float())
             p_loss = perceptual_loss(reconstruction.float(), images.float())
             generator_loss = adv_loss(logits_fake, target_is_real=True, for_discriminator=False)
 
@@ -281,7 +281,7 @@ for epoch in range(n_epochs):
                 if val_step == 1:
                     intermediary_images.append(reconstruction[:n_example_images, 0])
 
-                recons_loss = F.mse_loss(reconstruction.float(), images.float())
+                recons_loss = F.l1(reconstruction.float(), images.float())
 
                 val_loss += recons_loss.item()
 
