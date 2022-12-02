@@ -66,6 +66,8 @@ train_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),
         transforms.EnsureChannelFirstd(keys=["image"]),
+        transforms.Lambdad(keys="image", func=lambda x: x[channel, :, :, :]),
+        transforms.AddChanneld(keys=["image"]),
         transforms.EnsureTyped(keys=["image"]),
         transforms.Orientationd(keys=["image"], axcodes="RAS"),
         transforms.Spacingd(
@@ -115,6 +117,8 @@ val_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),
         transforms.EnsureChannelFirstd(keys=["image"]),
+        transforms.Lambdad(keys="image", func=lambda x: x[channel, :, :, :]),
+        transforms.AddChanneld(keys=["image"]),
         transforms.EnsureTyped(keys=["image"]),
         transforms.Orientationd(keys=["image"], axcodes="RAS"),
         transforms.Spacingd(
@@ -211,8 +215,7 @@ for epoch in range(n_epochs):
     progress_bar.set_description(f"Epoch {epoch}")
     for step, batch in progress_bar:
         # select only one channel from the Decathlon dataset
-        one_channel = batch["image"][:, None, channel, ...]
-        images = one_channel.to(device)
+        images = batch["image"].to(device)
         optimizer_g.zero_grad(set_to_none=True)
 
         # Generator part
@@ -224,7 +227,7 @@ for epoch in range(n_epochs):
             p_loss = perceptual_loss(reconstruction.float(), images.float())
             generator_loss = adv_loss(logits_fake, target_is_real=True, for_discriminator=False)
 
-            kl_loss = 0.5 * torch.sum(z_mu.pow(2) + z_sigma.pow(2) - torch.log(z_sigma.pow(2)) - 1, dim=[1, 2, 3])
+            kl_loss = 0.5 * torch.sum(z_mu.pow(2) + z_sigma.pow(2) - torch.log(z_sigma.pow(2)) - 1, dim=[1, 2, 3, 4])
             kl_loss = torch.sum(kl_loss) / kl_loss.shape[0]
 
             loss_g = recons_loss + (kl_weight * kl_loss) + (perceptual_weight * p_loss) + (adv_weight * generator_loss)
@@ -235,10 +238,11 @@ for epoch in range(n_epochs):
 
         # Discriminator part
         with autocast(enabled=True):
-            logits_fake = discriminator(reconstruction.contiguous().detach())
+            optimizer_d.zero_grad(set_to_none=True)
+            logits_fake = discriminator(reconstruction.contiguous().detach())[-1]
             loss_d_fake = adv_loss(logits_fake, target_is_real=False, for_discriminator=True)
-            logits_real = discriminator(images.contiguous().detach())
-            loss_d_real = adv_loss(logits_fake, target_is_real=True, for_discriminator=True)
+            logits_real = discriminator(images.contiguous().detach())[-1]
+            loss_d_real = adv_loss(logits_real, target_is_real=True, for_discriminator=True)
             discriminator_loss = (loss_d_fake + loss_d_real) * 0.5
 
             loss_d = adv_weight * discriminator_loss
@@ -268,8 +272,7 @@ for epoch in range(n_epochs):
         with torch.no_grad():
             for val_step, batch in enumerate(val_loader, start=1):
                 # select only one channel from the Decathlon dataset
-                one_channel = batch["image"][:, None, channel, ...]
-                images = one_channel.to(device)
+                images = batch["image"].to(device)
                 optimizer_g.zero_grad(set_to_none=True)
 
                 reconstruction, z_mu, z_sigma = model(images)
