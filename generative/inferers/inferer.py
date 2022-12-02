@@ -13,6 +13,7 @@
 import math
 from typing import Callable, List, Optional, Tuple, Union
 
+import numpy as np
 import torch
 import torch.nn as nn
 from monai.inferers import Inferer
@@ -107,7 +108,6 @@ class DiffusionInferer(Inferer):
         inputs: torch.Tensor,
         diffusion_model: Callable[..., torch.Tensor],
         scheduler: Optional[Callable[..., torch.Tensor]] = None,
-        predict_epsilon: bool = True,
         save_intermediates: Optional[bool] = False,
         conditioning: Optional[torch.Tensor] = None,
         original_input_range: Optional[Tuple] = [0, 255],
@@ -121,8 +121,6 @@ class DiffusionInferer(Inferer):
             inputs: input images, NxCxHxW[xD]
             diffusion_model: model to compute likelihood from
             scheduler: diffusion scheduler. If none provided will use the class attribute scheduler
-                        predict_epsilon: flag to use when model predicts the samples directly instead of the noise, epsilon.
-
             save_intermediates: save the intermediate spatial KL maps
             conditioning: Conditioning for network input.
             original_input_range: the [min,max] intensity range of the input data before any scaling was applied.
@@ -261,7 +259,6 @@ class DiffusionInferer(Inferer):
         )
         assert log_probs.shape == inputs.shape
         return log_probs
-
 
 class LatentDiffusionInferer(DiffusionInferer):
     """
