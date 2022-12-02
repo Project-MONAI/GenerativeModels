@@ -66,7 +66,7 @@ class DiffusionInferer(Inferer):
         intermediate_steps: Optional[int] = 100,
         conditioning: Optional[torch.Tensor] = None,
         verbose: Optional[bool] = True,
-    ) -> torch.Tensor:
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
         """
         Args:
             input_noise: random noise, of the same shape as the desired sample.
