@@ -53,16 +53,15 @@ from monai import transforms
 from monai.apps import MedNISTDataset
 from monai.config import print_config
 from monai.data import CacheDataset, DataLoader
+from monai.networks.layers import Act
 from monai.utils import first, set_determinism
 from torch.nn import L1Loss
 from tqdm import tqdm
 
+# TODO: Add right import reference after deployed
 from generative.losses.adversarial_loss import PatchAdversarialLoss
 from generative.losses.perceptual import PerceptualLoss
-
-# TODO: Add right import reference after deployed
-from generative.networks.nets import VQVAE
-from generative.networks.nets.patchgan_discriminator import PatchDiscriminator
+from generative.networks.nets import VQVAE, PatchDiscriminator
 
 print_config()
 
@@ -170,7 +169,8 @@ model = VQVAE(
     num_levels=2,
     downsample_parameters=((2, 4, 1, 1), (2, 4, 1, 1)),
     upsample_parameters=((2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
-    num_channels=256,
+    num_channels=[256, 512],
+    num_res_channels=[256, 512],
     num_embeddings=256,
     embedding_dim=32,
 )
@@ -183,7 +183,7 @@ discriminator = PatchDiscriminator(
     in_channels=1,
     out_channels=1,
     kernel_size=4,
-    activation="LEAKYRELU",
+    activation=(Act.LEAKYRELU, {"negative_slope": 0.2}),
     norm="BATCH",
     bias=False,
     padding=1,
@@ -246,6 +246,8 @@ for epoch in range(n_epochs):
         optimizer_g.step()
 
         # Discriminator part
+        optimizer_d.zero_grad(set_to_none=True)
+
         logits_fake = discriminator(reconstruction.contiguous().detach())[-1]
         loss_d_fake = adv_loss(logits_fake, target_is_real=False, for_discriminator=True)
         logits_real = discriminator(images.contiguous().detach())[-1]
@@ -331,10 +333,10 @@ plt.show()
 # ### Checking reconstructions
 
 # %%
-# Plot every evaluation as a new line and example as columns
+# Plot first 4 evaluations
 val_samples = np.linspace(val_interval, n_epochs, int(n_epochs / val_interval))
-fig, ax = plt.subplots(nrows=len(val_samples), ncols=1, sharey=True)
-for image_n in range(len(val_samples)):
+fig, ax = plt.subplots(nrows=4, ncols=1, sharey=True)
+for image_n in range(4):
     reconstructions = torch.reshape(intermediary_images[image_n], (64 * n_example_images, 64)).T
     ax[image_n].imshow(reconstructions.cpu(), cmap="gray")
     ax[image_n].set_xticks([])
