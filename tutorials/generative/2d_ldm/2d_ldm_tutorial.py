@@ -31,6 +31,7 @@ from monai import transforms
 from monai.apps import MedNISTDataset
 from monai.config import print_config
 from monai.data import DataLoader, Dataset
+from monai.networks.layers import Act
 from monai.utils import first, set_determinism
 
 # from torch.cuda.amp import autocast
@@ -39,8 +40,7 @@ from tqdm import tqdm
 from generative.inferers import DiffusionInferer
 from generative.losses.adversarial_loss import PatchAdversarialLoss
 from generative.losses.perceptual import PerceptualLoss
-from generative.networks.nets import AutoencoderKL, DiffusionModelUNet
-from generative.networks.nets.patchgan_discriminator import PatchDiscriminator
+from generative.networks.nets import AutoencoderKL, DiffusionModelUNet, PatchDiscriminator
 from generative.schedulers import DDPMScheduler
 
 print_config()
@@ -150,7 +150,7 @@ discriminator = PatchDiscriminator(
     in_channels=1,
     out_channels=1,
     kernel_size=4,
-    activation="LEAKYRELU",
+    activation=(Act.LEAKYRELU, {"negative_slope": 0.2}),
     norm="BATCH",
     bias=False,
     padding=1,
