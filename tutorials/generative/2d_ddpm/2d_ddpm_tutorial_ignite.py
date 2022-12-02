@@ -8,7 +8,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.14.1
 #   kernelspec:
-#     display_name: Python 3 (ipykernel)
+#     display_name: Python 3
 #     language: python
 #     name: python3
 # ---
@@ -127,7 +127,7 @@ train_transforms = transforms.Compose(
     ]
 )
 train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
-train_loader = DataLoader(train_ds, batch_size=8, shuffle=True, num_workers=4)
+train_loader = DataLoader(train_ds, batch_size=8, shuffle=True, num_workers=4, persistent_workers=True)
 
 # %% jupyter={"outputs_hidden": false}
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, progress=False, seed=0)
@@ -140,7 +140,7 @@ val_transforms = transforms.Compose(
     ]
 )
 val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
-val_loader = DataLoader(val_ds, batch_size=8, shuffle=False, num_workers=4)
+val_loader = DataLoader(val_ds, batch_size=8, shuffle=False, num_workers=4, persistent_workers=True)
 
 # %% [markdown]
 # ### Visualisation of the training images
@@ -170,11 +170,10 @@ model = DiffusionModelUNet(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
-    model_channels=64,
-    attention_resolutions=[2, 4],
+    num_channels=(64, 128, 128),
+    attention_levels=(False, True, True),
     num_res_blocks=1,
-    channel_mult=[1, 2, 2],
-    num_heads=1,
+    num_head_channels=128,
 )
 model.to(device)
 
@@ -232,10 +231,10 @@ class DiffusionPrepareBatch(PrepareBatch):
 
 # %% [markdown]
 # ### Model training
-# Here, we are training our model for 50 epochs (training time: ~20 minutes).
+# Here, we are training our model for 75 epochs (training time: ~50 minutes).
 
 # %% jupyter={"outputs_hidden": false}
-n_epochs = 20
+n_epochs = 75
 val_interval = 5
 
 val_handlers = [StatsHandler(name="train_log", output_transform=lambda x: None)]

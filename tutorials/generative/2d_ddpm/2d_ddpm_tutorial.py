@@ -8,7 +8,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.14.1
 #   kernelspec:
-#     display_name: Python 3 (ipykernel)
+#     display_name: Python 3
 #     language: python
 #     name: python3
 # ---
@@ -58,6 +58,7 @@ from monai.apps import MedNISTDataset
 from monai.config import print_config
 from monai.data import CacheDataset, DataLoader
 from monai.utils import first, set_determinism
+from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
 from generative.inferers import DiffusionInferer
@@ -86,7 +87,7 @@ print(root_dir)
 # ## Set deterministic training for reproducibility
 
 # %% jupyter={"outputs_hidden": false}
-set_determinism(0)
+set_determinism(42)
 
 # %% [markdown]
 # ## Setup MedNIST Dataset and training and validation dataloaders
@@ -124,7 +125,7 @@ train_transforms = transforms.Compose(
     ]
 )
 train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
-train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=4)
+train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=4, persistent_workers=True)
 
 # %% jupyter={"outputs_hidden": false}
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, progress=False, seed=0)
@@ -137,7 +138,7 @@ val_transforms = transforms.Compose(
     ]
 )
 val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
-val_loader = DataLoader(val_ds, batch_size=128, shuffle=False, num_workers=4)
+val_loader = DataLoader(val_ds, batch_size=128, shuffle=False, num_workers=4, persistent_workers=True)
 
 # %% [markdown]
 # ### Visualisation of the training images
@@ -167,11 +168,10 @@ model = DiffusionModelUNet(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
-    model_channels=64,
-    attention_resolutions=[2, 4],
+    num_channels=(128, 256, 256),
+    attention_levels=(False, True, True),
     num_res_blocks=1,
-    channel_mult=[1, 2, 2],
-    num_heads=1,
+    num_head_channels=256,
 )
 model.to(device)
 
@@ -181,17 +181,18 @@ scheduler = DDPMScheduler(
 
 optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
 
-inferer = DiffusionInferer()
+inferer = DiffusionInferer(scheduler)
 # %% [markdown]
 # ### Model training
-# Here, we are training our model for 50 epochs (training time: ~20 minutes).
+# Here, we are training our model for 75 epochs (training time: ~50 minutes).
 
 # %% jupyter={"outputs_hidden": false}
-n_epochs = 50
+n_epochs = 75
 val_interval = 5
 epoch_loss_list = []
 val_epoch_loss_list = []
 
+scaler = GradScaler()
 total_start = time.time()
 for epoch in range(n_epochs):
     model.train()
@@ -202,16 +203,19 @@ for epoch in range(n_epochs):
         images = batch["image"].to(device)
         optimizer.zero_grad(set_to_none=True)
 
-        # Generate random noise
-        noise = torch.randn_like(images).to(device)
+        with autocast(enabled=True):
+            # Generate random noise
+            noise = torch.randn_like(images).to(device)
 
-        # Get model prediction
-        noise_pred = inferer(inputs=images, diffusion_model=model, scheduler=scheduler, noise=noise)
+            # Get model prediction
+            noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise)
 
-        loss = F.mse_loss(noise_pred.float(), noise.float())
+            loss = F.mse_loss(noise_pred.float(), noise.float())
 
-        loss.backward()
-        optimizer.step()
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+
         epoch_loss += loss.item()
 
         progress_bar.set_postfix(
@@ -226,12 +230,11 @@ for epoch in range(n_epochs):
         val_epoch_loss = 0
         for step, batch in enumerate(val_loader):
             images = batch["image"].to(device)
-            timesteps = torch.randint(0, scheduler.num_train_timesteps, (images.shape[0],), device=device).long()
-            noise = torch.randn_like(images).to(device)
             with torch.no_grad():
-                # Get model prediction
-                noise_pred = inferer(inputs=images, diffusion_model=model, scheduler=scheduler, noise=noise)
-                val_loss = F.l1_loss(noise_pred.float(), noise.float())
+                with autocast(enabled=True):
+                    noise = torch.randn_like(images).to(device)
+                    noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise)
+                    val_loss = F.mse_loss(noise_pred.float(), noise.float())
 
             val_epoch_loss += val_loss.item()
             progress_bar.set_postfix(
@@ -245,7 +248,8 @@ for epoch in range(n_epochs):
         noise = torch.randn((1, 1, 64, 64))
         noise = noise.to(device)
         scheduler.set_timesteps(num_inference_steps=1000)
-        image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=scheduler)
+        with autocast(enabled=True):
+            image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=scheduler)
 
         plt.figure(figsize=(2, 2))
         plt.imshow(image[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
@@ -284,9 +288,10 @@ model.eval()
 noise = torch.randn((1, 1, 64, 64))
 noise = noise.to(device)
 scheduler.set_timesteps(num_inference_steps=1000)
-image, intermediates = inferer.sample(
-    input_noise=noise, diffusion_model=model, scheduler=scheduler, save_intermediates=True, intermediate_steps=100
-)
+with autocast(enabled=True):
+    image, intermediates = inferer.sample(
+        input_noise=noise, diffusion_model=model, scheduler=scheduler, save_intermediates=True, intermediate_steps=100
+    )
 
 chain = torch.cat(intermediates, dim=-1)
 
@@ -304,5 +309,3 @@ plt.show()
 # %%
 if directory is None:
     shutil.rmtree(root_dir)
-
-# %%
