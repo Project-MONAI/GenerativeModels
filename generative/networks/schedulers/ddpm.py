@@ -82,7 +82,7 @@ class DDPMScheduler(nn.Module):
         self.clip_sample = clip_sample
         self.variance_type = variance_type
 
-        # setable values
+        # settable values
         self.num_inference_steps = None
         self.timesteps = torch.from_numpy(np.arange(0, num_train_timesteps)[::-1].copy())
 
@@ -101,9 +101,33 @@ class DDPMScheduler(nn.Module):
         ].copy()
         self.timesteps = torch.from_numpy(timesteps).to(device)
 
+    def _get_mean(self, timestep: int, x_0: torch.Tensor, x_t: torch.Tensor) -> torch.Tensor:
+        """
+        Compute the mean of the posterior at timestep t.
+
+        Args:
+            timestep: current timestep.
+            x0: the noise-free input.
+            x_t: the input noised to timestep t.
+
+        Returns:
+            Returns the mean
+        """
+        # these attributes are used for calculating the posterior, q(x_{t-1}|x_t,x_0),
+        # (see formula (5-7) from https://arxiv.org/pdf/2006.11239.pdf)
+        alpha_prod_t = self.alphas_cumprod[timestep]
+        alpha_prod_t_prev = self.alphas_cumprod[timestep - 1] if timestep > 0 else self.one
+
+        x_0_coefficient = alpha_prod_t_prev.sqrt() * self.betas[timestep] / (1 - alpha_prod_t)
+        x_t_coefficient = alpha_prod_t.sqrt() * (1 - alpha_prod_t_prev) / (1 - alpha_prod_t)
+
+        mean = x_0_coefficient * x_0 + x_t_coefficient * x_t
+
+        return mean
+
     def _get_variance(self, timestep: int, predicted_variance: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
-        Compute the variance.
+        Compute the variance of the posterior at timestep t.
 
         Args:
             timestep: current timestep.
