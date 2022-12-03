@@ -7,9 +7,9 @@
 # ## Set up environment using Colab
 #
 
-# # !python -c "import monai" || pip install -q "monai-weekly[tqdm]"
-# # !python -c "import matplotlib" || pip install -q matplotlib
-# # %matplotlib inline
+# !python -c "import monai" || pip install -q "monai-weekly[tqdm]"
+# !python -c "import matplotlib" || pip install -q matplotlib
+# %matplotlib inline
 
 # ## Set up imports
 
