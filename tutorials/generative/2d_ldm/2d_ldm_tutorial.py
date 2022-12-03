@@ -11,11 +11,6 @@
 # # !python -c "import matplotlib" || pip install -q matplotlib
 # # %matplotlib inline
 
-# %cd /mnt_homes/home4T7/jdafflon/GenerativeModels
-
-# %load_ext autoreload
-# %autoreload 2
-
 # ## Set up imports
 
 # +
@@ -33,8 +28,6 @@ from monai.config import print_config
 from monai.data import DataLoader, Dataset
 from monai.networks.layers import Act
 from monai.utils import first, set_determinism
-
-# from torch.cuda.amp import autocast
 from tqdm import tqdm
 
 from generative.inferers import DiffusionInferer
@@ -114,11 +107,11 @@ autoencoderkl = AutoencoderKL(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
-    num_channels=16,
+    num_channels=64,
     latent_channels=3,
     ch_mult=(1, 2, 2),
     num_res_blocks=1,
-    norm_num_groups=16,
+    norm_num_groups=32,
     attention_levels=(False, False, True),
 )
 autoencoderkl = autoencoderkl.to(device)
@@ -174,11 +167,13 @@ scaler_d = torch.cuda.amp.GradScaler()
 
 # ## Train AutoencoderKL
 
+# It takes about ~60 min to train the model.
+
 # +
 kl_weight = 1e-6
-n_epochs = 30
+n_epochs = 100
 val_interval = 6
-autoencoder_warm_up_n_epochs = 5
+autoencoder_warm_up_n_epochs = 10
 
 epoch_recon_loss_list = []
 epoch_gen_loss_list = []
@@ -199,8 +194,6 @@ for epoch in range(n_epochs):
         images = batch["image"].to(device)
         optimizer_g.zero_grad(set_to_none=True)
 
-        # Generator part
-        # with autocast(enabled=True):
         reconstruction, z_mu, z_sigma = autoencoderkl(images)
 
         recons_loss = F.l1_loss(reconstruction.float(), images.float())
@@ -217,15 +210,9 @@ for epoch in range(n_epochs):
         loss_g.backward()
         optimizer_g.step()
 
-        # scaler_g.scale(loss_g).backward()
-        # scaler_g.step(optimizer_g)
-        # scaler_g.update()
-
         if epoch > autoencoder_warm_up_n_epochs:
             optimizer_d.zero_grad(set_to_none=True)
 
-            # Discriminator part
-            # with autocast(enabled=False):
             logits_fake = discriminator(reconstruction.contiguous().detach())[-1]
             loss_d_fake = adv_loss(logits_fake, target_is_real=False, for_discriminator=True)
             logits_real = discriminator(images.contiguous().detach())[-1]
@@ -236,9 +223,6 @@ for epoch in range(n_epochs):
 
             loss_d.backward()
             optimizer_d.step()
-            # scaler_d.scale(loss_d).backward()
-            # scaler_d.step(optimizer_d)
-            # scaler_d.update()
 
         epoch_loss += recons_loss.item()
         if epoch > autoencoder_warm_up_n_epochs:
@@ -283,9 +267,10 @@ progress_bar.close()
 
 # ### Visualise the results from the autoencoderKL
 
-val_samples = np.linspace(val_interval, n_epochs, int(n_epochs / val_interval))
-fig, ax = plt.subplots(nrows=len(val_samples), ncols=1, sharey=True)
-for image_n in range(len(val_samples)):
+# Plot last 5 evaluations
+val_samples = np.linspace(n_epochs, val_interval, int(n_epochs / val_interval))
+fig, ax = plt.subplots(nrows=5, ncols=1, sharey=True)
+for image_n in range(5):
     reconstructions = torch.reshape(intermediary_images[image_n], (image_size * n_example_images, image_size)).T
     ax[image_n].imshow(reconstructions.cpu(), cmap="gray")
     ax[image_n].set_xticks([])
@@ -294,16 +279,14 @@ for image_n in range(len(val_samples)):
 
 # ## Train Diffusion Model
 
-# It takes about ~20 min to train the model.
+# It takes about ~80 min to train the model.
 
 # +
 optimizer = torch.optim.Adam(unet.parameters(), lr=1e-4)
-# TODO: Add lr_scheduler with warm-up
-# TODO: Add EMA model
 
 unet = unet.to(device)
-n_epochs = 100
-val_interval = 20
+n_epochs = 200
+val_interval = 40
 epoch_loss_list = []
 val_epoch_loss_list = []
 
@@ -407,7 +390,7 @@ for image in intermediates:
     with torch.no_grad():
         decoded = autoencoderkl.decode(image)
         decoded_images.append(decoded)
-plt.figure()
+plt.figure(figsize=(10, 12))
 chain = torch.cat(decoded_images, dim=-1)
 plt.style.use("default")
 plt.imshow(chain[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
