@@ -32,19 +32,23 @@
 # +
 import os
 import tempfile
+import time
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import torch.nn.functional as F
 from monai import transforms
 from monai.apps import MedNISTDataset
 from monai.config import print_config
 from monai.data import DataLoader, Dataset
+from monai.networks.layers import Act
 from monai.utils import first, set_determinism
+from torch.nn import L1Loss
 from tqdm import tqdm
 
-from generative.networks.nets import AutoencoderKL
+from generative.losses.adversarial_loss import PatchAdversarialLoss
+from generative.losses.perceptual import PerceptualLoss
+from generative.networks.nets import AutoencoderKL, PatchDiscriminator
 
 print_config()
 # -
@@ -116,56 +120,113 @@ model = AutoencoderKL(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
-    num_channels=64,
+    num_channels=128,
     latent_channels=8,
     ch_mult=(1, 2, 3),
     num_res_blocks=1,
-    norm_num_groups=16,
+    norm_num_groups=32,
     attention_levels=(False, False, True),
 )
 model.to(device)
+
+discriminator = PatchDiscriminator(
+    spatial_dims=2,
+    num_layers_d=3,
+    num_channels=64,
+    in_channels=1,
+    out_channels=1,
+    kernel_size=4,
+    activation=(Act.LEAKYRELU, {"negative_slope": 0.2}),
+    norm="BATCH",
+    bias=False,
+    padding=1,
+)
+discriminator.to(device)
+
+perceptual_loss = PerceptualLoss(
+    spatial_dims=2,
+    network_type="alex",
+)
+perceptual_loss.to(device)
+
+optimizer_g = torch.optim.Adam(params=model.parameters(), lr=1e-4)
+optimizer_d = torch.optim.Adam(params=discriminator.parameters(), lr=5e-4)
+
+# %%
+l1_loss = L1Loss()
+adv_loss = PatchAdversarialLoss(criterion="least_squares")
+adv_weight = 0.01
+perceptual_weight = 0.001
 
 # ## Model Training
 
 # +
 kl_weight = 1e-6
-optimizer = torch.optim.Adam(model.parameters(), 1e-5)
-n_epochs = 50
-val_interval = 10
-epoch_loss_list = []
-val_epoch_loss_list = []
+n_epochs = 100
+val_interval = 25
+epoch_recon_loss_list = []
+epoch_gen_loss_list = []
+epoch_disc_loss_list = []
+val_recon_epoch_loss_list = []
 intermediary_images = []
 n_example_images = 4
 
+total_start = time.time()
 for epoch in range(n_epochs):
     model.train()
+    discriminator.train()
     epoch_loss = 0
-    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=70)
+    gen_epoch_loss = 0
+    disc_epoch_loss = 0
+    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=110)
     progress_bar.set_description(f"Epoch {epoch}")
     for step, batch in progress_bar:
         images = batch["image"].to(device)
-        optimizer.zero_grad(set_to_none=True)
+        optimizer_g.zero_grad(set_to_none=True)
+
         reconstruction, z_mu, z_sigma = model(images)
 
-        l1_loss = F.l1_loss(reconstruction.float(), images.float())
+        recons_loss = l1_loss(reconstruction.float(), images.float())
 
         kl_loss = 0.5 * torch.sum(z_mu.pow(2) + z_sigma.pow(2) - torch.log(z_sigma.pow(2)) - 1, dim=[1, 2, 3])
         kl_loss = torch.sum(kl_loss) / kl_loss.shape[0]
 
-        # TODO: Add adversarial component
-        # TODO: Add perceptual loss
+        logits_fake = discriminator(reconstruction.contiguous().float())[-1]
+        p_loss = perceptual_loss(reconstruction.float(), images.float())
+        generator_loss = adv_loss(logits_fake, target_is_real=True, for_discriminator=False)
+        loss_g = recons_loss + kl_weight * kl_loss + perceptual_weight * p_loss + adv_weight * generator_loss
 
-        loss = l1_loss + kl_weight * kl_loss
-        loss.backward()
-        optimizer.step()
-        epoch_loss += loss.item()
+        loss_g.backward()
+        optimizer_g.step()
+
+        # Discriminator part
+        optimizer_d.zero_grad(set_to_none=True)
+
+        logits_fake = discriminator(reconstruction.contiguous().detach())[-1]
+        loss_d_fake = adv_loss(logits_fake, target_is_real=False, for_discriminator=True)
+        logits_real = discriminator(images.contiguous().detach())[-1]
+        loss_d_real = adv_loss(logits_real, target_is_real=True, for_discriminator=True)
+        discriminator_loss = (loss_d_fake + loss_d_real) * 0.5
+
+        loss_d = adv_weight * discriminator_loss
+
+        loss_d.backward()
+        optimizer_d.step()
+
+        epoch_loss += recons_loss.item()
+        gen_epoch_loss += generator_loss.item()
+        disc_epoch_loss += discriminator_loss.item()
 
         progress_bar.set_postfix(
             {
-                "loss": epoch_loss / (step + 1),
+                "recons_loss": epoch_loss / (step + 1),
+                "gen_loss": gen_epoch_loss / (step + 1),
+                "disc_loss": disc_epoch_loss / (step + 1),
             }
         )
-    epoch_loss_list.append(epoch_loss / (step + 1))
+    epoch_recon_loss_list.append(epoch_loss / (step + 1))
+    epoch_gen_loss_list.append(gen_epoch_loss / (step + 1))
+    epoch_disc_loss_list.append(disc_epoch_loss / (step + 1))
 
     if (epoch + 1) % val_interval == 0:
         model.eval()
@@ -173,53 +234,76 @@ for epoch in range(n_epochs):
         with torch.no_grad():
             for val_step, batch in enumerate(val_loader, start=1):
                 images = batch["image"].to(device)
-                optimizer.zero_grad(set_to_none=True)
-                reconstruction, z_mu, z_sigma = model(images)
+                reconstruction, _, _ = model(images)
+
                 # get the first sammple from the first validation batch for visualisation
                 # purposes
                 if val_step == 1:
                     intermediary_images.append(reconstruction[:n_example_images, 0])
 
-                l1_loss = F.l1_loss(reconstruction.float(), images.float())
+                recons_loss = l1_loss(reconstruction.float(), images.float())
 
-                kl_loss = 0.5 * torch.sum(z_mu.pow(2) + z_sigma.pow(2) - torch.log(z_sigma.pow(2)) - 1, dim=[1, 2, 3])
-                kl_loss = torch.sum(kl_loss) / kl_loss.shape[0]
-
-                # TODO: Add adversarial component
-                # TODO: Add perceptual loss
-
-                loss = l1_loss + kl_weight * kl_loss
-                val_loss += loss.item()
+                val_loss += recons_loss.item()
 
         val_loss /= val_step
-        val_epoch_loss_list.append(val_loss)
+        val_recon_epoch_loss_list.append(val_loss)
 
-        print(f"epoch {epoch + 1} val loss: {val_loss:.4f}")
-progress_bar.close()
-
+total_time = time.time() - total_start
+print(f"train completed, total time: {total_time}.")
 # -
 
 # ## Evaluate the training
 # ### Visualise the loss
 
-plt.figure()
-val_samples = np.linspace(val_interval, n_epochs, int(n_epochs / val_interval))
-plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, label="Train")
-plt.plot(val_samples, val_epoch_loss_list, label="Validation")
-plt.xlabel("Epochs")
-plt.ylabel("Loss")
-plt.legend()
-plt.tight_layout()
+plt.style.use("seaborn-v0_8")
+plt.title("Learning Curves", fontsize=20)
+plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_recon_loss_list, color="C0", linewidth=2.0, label="Train")
+plt.plot(
+    np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
+    val_recon_epoch_loss_list,
+    color="C1",
+    linewidth=2.0,
+    label="Validation",
+)
+plt.yticks(fontsize=12)
+plt.xticks(fontsize=12)
+plt.xlabel("Epochs", fontsize=16)
+plt.ylabel("Loss", fontsize=16)
+plt.legend(prop={"size": 14})
 plt.show()
-plt.close()
+
+
+# %%
+plt.title("Adversarial Training Curves", fontsize=20)
+plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_gen_loss_list, color="C0", linewidth=2.0, label="Generator")
+plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_disc_loss_list, color="C1", linewidth=2.0, label="Discriminator")
+plt.yticks(fontsize=12)
+plt.xticks(fontsize=12)
+plt.xlabel("Epochs", fontsize=16)
+plt.ylabel("Loss", fontsize=16)
+plt.legend(prop={"size": 14})
+plt.show()
+
 
 # ### Visualise some reconstruction images
 
 # Plot every evaluation as a new line and example as columns
+val_samples = np.linspace(val_interval, n_epochs, int(n_epochs / val_interval))
 fig, ax = plt.subplots(nrows=len(val_samples), ncols=1, sharey=True)
 for image_n in range(len(val_samples)):
-    reconstructions = torch.reshape(intermediary_images[image_n], (image_size * n_example_images, image_size)).T
+    reconstructions = torch.reshape(intermediary_images[image_n], (64 * n_example_images, 64)).T
     ax[image_n].imshow(reconstructions.cpu(), cmap="gray")
     ax[image_n].set_xticks([])
     ax[image_n].set_yticks([])
     ax[image_n].set_ylabel(f"Epoch {val_samples[image_n]:.0f}")
+
+
+# %%
+fig, ax = plt.subplots(nrows=1, ncols=2)
+ax[0].imshow(images[0, 0].detach().cpu(), vmin=0, vmax=1, cmap="gray")
+ax[0].axis("off")
+ax[0].title.set_text("Inputted Image")
+ax[1].imshow(reconstruction[0, 0].detach().cpu(), vmin=0, vmax=1, cmap="gray")
+ax[1].axis("off")
+ax[1].title.set_text("Reconstruction")
+plt.show()
