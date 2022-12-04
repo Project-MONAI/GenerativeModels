@@ -143,6 +143,22 @@ val_ds = DecathlonDataset(
 val_loader = DataLoader(val_ds, batch_size=2, shuffle=False, num_workers=4, persistent_workers=True)
 print(f'Image shape {val_ds[0]["image"].shape}')
 
+# +
+check_data = first(val_loader)
+idx = 0
+
+img = check_data["image"][idx, channel]
+fig, axs = plt.subplots(nrows=1, ncols=3)
+for ax in axs:
+    ax.axis("off")
+ax = axs[0]
+ax.imshow(img[..., img.shape[2] // 2].rot90(), cmap="gray")
+ax = axs[1]
+ax.imshow(img[:, img.shape[1] // 2, ...].rot90(), cmap="gray")
+ax = axs[2]
+ax.imshow(img[img.shape[0] // 2, ...].rot90(), cmap="gray")
+# -
+
 # ## Define the network
 
 # +
@@ -153,7 +169,7 @@ model = AutoencoderKL(
     spatial_dims=3,
     in_channels=1,
     out_channels=1,
-    num_channels=32,
+    num_channels=16,
     latent_channels=3,
     ch_mult=(1, 2, 2),
     num_res_blocks=1,
@@ -196,7 +212,7 @@ scaler_d = torch.cuda.amp.GradScaler()
 
 # +
 kl_weight = 1e-6
-n_epochs = 30
+n_epochs = 100
 val_interval = 6
 epoch_recon_loss_list = []
 epoch_gen_loss_list = []
@@ -214,7 +230,6 @@ for epoch in range(n_epochs):
     progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=70)
     progress_bar.set_description(f"Epoch {epoch}")
     for step, batch in progress_bar:
-        # select only one channel from the Decathlon dataset
         images = batch["image"].to(device)
         optimizer_g.zero_grad(set_to_none=True)
 
@@ -271,7 +286,6 @@ for epoch in range(n_epochs):
         val_loss = 0
         with torch.no_grad():
             for val_step, batch in enumerate(val_loader, start=1):
-                # select only one channel from the Decathlon dataset
                 images = batch["image"].to(device)
                 optimizer_g.zero_grad(set_to_none=True)
 
@@ -281,14 +295,13 @@ for epoch in range(n_epochs):
                 if val_step == 1:
                     intermediary_images.append(reconstruction[:n_example_images, 0])
 
-                recons_loss = F.l1(reconstruction.float(), images.float())
+                recons_loss = F.l1_loss(reconstruction.float(), images.float())
 
                 val_loss += recons_loss.item()
 
         val_loss /= val_step
         val_recon_epoch_loss_list.append(val_loss)
 
-        print(f"epoch {epoch + 1} val loss: {val_loss:.4f}")
 progress_bar.close()
 # -
 # ## Evaluate the trainig
@@ -318,14 +331,19 @@ plt.show()
 
 # +
 img = check_data["image"][idx, channel]
-fig, axs = plt.subplots(nrows=len(intermediary_images), ncols=3, constrained_layout=True, figsize=(8, 6))
+# get the first 5 examples to plot
+n_evaluations = 5
+
+fig, axs = plt.subplots(nrows=n_evaluations, ncols=3, constrained_layout=True, figsize=(8, 6))
+
 
 # Remove ticks
 for ax in axs.flatten():
     ax.set_xticks([])
     ax.set_yticks([])
 
-for image_n in range(len(intermediary_images)):
+
+for image_n in range(n_evaluations):
     axs[image_n, 0].imshow(intermediary_images[image_n][0, ..., img.shape[2] // 2].cpu(), cmap="gray")
     axs[image_n, 1].imshow(intermediary_images[image_n][0, :, img.shape[1] // 2, ...].cpu().rot90(), cmap="gray")
     axs[image_n, 2].imshow(intermediary_images[image_n][0, img.shape[0] // 2, ...].cpu().rot90(), cmap="gray")
