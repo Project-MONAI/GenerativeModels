@@ -8,7 +8,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.14.1
 #   kernelspec:
-#     display_name: Python 3 (ipykernel)
+#     display_name: Python 3
 #     language: python
 #     name: python3
 # ---
@@ -67,7 +67,7 @@ from generative.inferers import DiffusionInferer
 
 # TODO: Add right import reference after deployed
 from generative.networks.nets import DiffusionModelUNet
-from generative.schedulers import DDIMScheduler, DDPMScheduler, PNDMScheduler
+from generative.networks.schedulers import DDIMScheduler, DDPMScheduler, PNDMScheduler
 
 print_config()
 
