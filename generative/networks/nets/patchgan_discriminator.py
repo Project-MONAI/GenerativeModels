@@ -233,12 +233,12 @@ class PatchDiscriminator(nn.Sequential):
 
         return out[1:]
 
-    def initialise_weights(self, m):
+    def initialise_weights(self, m: nn.Module) -> None:
         """
         Initialise weights of Convolution and BatchNorm layers.
+
         Args:
-            m: nn layer
-        Returns:
+            m: instance of torch.nn.module (or of class inheriting torch.nn.module)
         """
         classname = m.__class__.__name__
         if classname.find("Conv2d") != -1:
