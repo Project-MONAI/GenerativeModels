@@ -13,7 +13,6 @@
 import math
 from typing import Callable, List, Optional, Tuple, Union
 
-import numpy as np
 import torch
 import torch.nn as nn
 from monai.inferers import Inferer
@@ -108,6 +107,7 @@ class DiffusionInferer(Inferer):
         inputs: torch.Tensor,
         diffusion_model: Callable[..., torch.Tensor],
         scheduler: Optional[Callable[..., torch.Tensor]] = None,
+        predict_epsilon: bool = True,
         save_intermediates: Optional[bool] = False,
         conditioning: Optional[torch.Tensor] = None,
         original_input_range: Optional[Tuple] = [0, 255],
@@ -162,7 +162,7 @@ class DiffusionInferer(Inferer):
             # 2. compute predicted original sample from predicted noise also called
             # "predicted x_0" of formula (15) from https://arxiv.org/pdf/2006.11239.pdf
             if predict_epsilon:
-                pred_original_sample = (noisy_image - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
+                pred_original_sample = (model_output - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
             else:
                 pred_original_sample = model_output
 
@@ -200,6 +200,7 @@ class DiffusionInferer(Inferer):
                     + torch.exp(log_posterior_variance - log_predicted_variance)
                     + ((posterior_mean - predicted_mean) ** 2) * torch.exp(-log_predicted_variance)
                 )
+
             total_kl += kl.view(kl.shape[0], -1).mean(axis=1)
             if save_intermediates:
                 intermediates.append(kl.cpu())
