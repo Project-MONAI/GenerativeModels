@@ -31,6 +31,7 @@
 
 # +
 import os
+import shutil
 import tempfile
 import time
 
@@ -307,3 +308,10 @@ ax[1].imshow(reconstruction[0, 0].detach().cpu(), vmin=0, vmax=1, cmap="gray")
 ax[1].axis("off")
 ax[1].title.set_text("Reconstruction")
 plt.show()
+
+# ### Cleanup data directory
+#
+# Remove directory if a temporary was used.
+
+if directory is None:
+    shutil.rmtree(root_dir)
