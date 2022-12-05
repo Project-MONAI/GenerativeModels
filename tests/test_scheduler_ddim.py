@@ -14,7 +14,7 @@ import unittest
 import torch
 from parameterized import parameterized
 
-from generative.schedulers import DDIMScheduler
+from generative.networks.schedulers import DDIMScheduler
 
 TEST_2D_CASE = []
 for beta_schedule in ["linear", "scaled_linear"]:

@@ -67,7 +67,7 @@ from generative.inferers import DiffusionInferer
 
 # TODO: Add right import reference after deployed
 from generative.networks.nets import DiffusionModelUNet
-from generative.schedulers import DDPMScheduler
+from generative.networks.schedulers import DDPMScheduler
 
 print_config()
 
