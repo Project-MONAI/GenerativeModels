@@ -40,7 +40,6 @@ set_determinism(42)
 # %%
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
 root_dir = tempfile.mkdtemp() if directory is None else directory
-root_dir = "/home/s2086085/pedro_idcom/experiment_data"
 print(root_dir)
 
 # %% [markdown]
