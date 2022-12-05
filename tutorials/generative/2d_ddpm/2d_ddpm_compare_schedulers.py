@@ -125,7 +125,7 @@ train_transforms = transforms.Compose(
     ]
 )
 train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
-train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=4)
+train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=4, persistent_workers=True)
 
 # %%
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, seed=0)
@@ -138,7 +138,7 @@ val_transforms = transforms.Compose(
     ]
 )
 val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
-val_loader = DataLoader(val_ds, batch_size=128, shuffle=False, num_workers=4)
+val_loader = DataLoader(val_ds, batch_size=128, shuffle=False, num_workers=4, persistent_workers=True)
 
 # %% [markdown]
 # ### Visualisation of the training images
@@ -146,7 +146,7 @@ val_loader = DataLoader(val_ds, batch_size=128, shuffle=False, num_workers=4)
 # %%
 check_data = first(train_loader)
 print(f"batch shape: {check_data['image'].shape}")
-image_visualisation = torch.concat(
+image_visualisation = torch.cat(
     [check_data["image"][0, 0], check_data["image"][1, 0], check_data["image"][2, 0], check_data["image"][3, 0]], dim=1
 )
 plt.figure("training images", (12, 6))
@@ -167,11 +167,10 @@ model = DiffusionModelUNet(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
-    model_channels=64,
-    attention_resolutions=[2, 4],
+    num_channels=(64, 128, 128),
+    attention_levels=(False, True, True),
     num_res_blocks=1,
-    channel_mult=[1, 2, 2],
-    num_heads=1,
+    num_head_channels=128,
 )
 model.to(device)
 

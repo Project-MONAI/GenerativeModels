@@ -9,7 +9,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Tuple, Union
+from typing import Optional, Sequence, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -29,21 +29,20 @@ class VQVAEResidualUnit(nn.Module):
 
     Args:
         spatial_dims: number of spatial spatial_dims of the input data.
-        no_channels: number of input channels.
-        no_res_channels: number of channels in the residual layers.
+        num_channels: number of input channels.
+        num_res_channels: number of channels in the residual layers.
         adn_ordering : a string representing the ordering of activation, normalization, and dropout. Defaults to "NDA".
         act: activation type and arguments. Defaults to RELU.
         dropout: dropout ratio. Defaults to no dropout.
         dropout_dim: dimension along which to apply dropout. Defaults to 1.
-        groups: controls the connections between inputs and outputs. Defaults to 1.
         bias: whether to have a bias term. Defaults to True.
     """
 
     def __init__(
         self,
         spatial_dims: int,
-        no_channels: int,
-        no_res_channels: int,
+        num_channels: int,
+        num_res_channels: int,
         adn_ordering: str = "NDA",
         act: Optional[Union[Tuple, str]] = "RELU",
         dropout: Optional[Union[Tuple, str, float]] = None,
@@ -53,8 +52,8 @@ class VQVAEResidualUnit(nn.Module):
         super().__init__()
 
         self.spatial_dims = spatial_dims
-        self.no_channels = no_channels
-        self.no_res_channels = no_res_channels
+        self.num_channels = num_channels
+        self.num_res_channels = num_res_channels
         self.adn_ordering = adn_ordering
         self.act = act
         self.dropout = dropout
@@ -63,8 +62,8 @@ class VQVAEResidualUnit(nn.Module):
 
         self.conv1 = Convolution(
             spatial_dims=self.spatial_dims,
-            in_channels=self.no_channels,
-            out_channels=self.no_res_channels,
+            in_channels=self.num_channels,
+            out_channels=self.num_res_channels,
             adn_ordering=self.adn_ordering,
             act=self.act,
             norm=None,
@@ -75,8 +74,8 @@ class VQVAEResidualUnit(nn.Module):
 
         self.conv2 = Convolution(
             spatial_dims=self.spatial_dims,
-            in_channels=self.no_res_channels,
-            out_channels=self.no_channels,
+            in_channels=self.num_res_channels,
+            out_channels=self.num_channels,
             adn_ordering=self.adn_ordering,
             act=None,
             norm=None,
@@ -110,6 +109,7 @@ class VQVAE(nn.Module):
             Defaults to ((2,4,1,1,0),(2,4,1,1,0),(2,4,1,1,0)).
         num_res_layers: number of sequential residual layers at each level. Defaults to 3.
         num_channels: number of channels at the deepest level, besides that is num_channels//2 . Defaults to 192.
+        num_res_channels: number of channels in the residual layers. Defaults to 64.
         num_embeddings: VectorQuantization number of atomic elements in the codebook. Defaults to 32.
         embedding_dim: VectorQuantization number of channels of the input and atomic elements. Defaults to 64.
         commitment_cost: VectorQuantization commitment_cost. Defaults to 0.25.
@@ -137,7 +137,8 @@ class VQVAE(nn.Module):
             (2, 4, 1, 1, 0),
         ),
         num_res_layers: int = 3,
-        num_channels: int = 192,
+        num_channels: Sequence[int] = (96, 96, 192),
+        num_res_channels: Sequence[int] = (96, 96, 192),
         num_embeddings: int = 32,
         embedding_dim: int = 64,
         embedding_init: str = "normal",
@@ -156,9 +157,15 @@ class VQVAE(nn.Module):
         self.out_channels = out_channels
         self.spatial_dims = spatial_dims
 
-        assert num_levels == len(downsample_parameters) and num_levels == len(upsample_parameters), (
-            f"downsample_parameters, upsample_parameters must have the same number of elements as num_levels. "
-            f"But got {len(downsample_parameters)} and {len(upsample_parameters)}, instead of {num_levels}."
+        assert (
+            num_levels == len(downsample_parameters)
+            and num_levels == len(upsample_parameters)
+            and num_levels == len(num_channels)
+            and num_levels == len(num_res_channels)
+        ), (
+            f"downsample_parameters, upsample_parameters, num_channels and num_res_channels must have the same number of"
+            f" elements as num_levels. But got {len(downsample_parameters)}, {len(upsample_parameters)}, "
+            f"{len(num_res_channels)} and {len(num_res_channels)} instead of {num_levels}."
         )
 
         self.num_levels = num_levels
@@ -166,6 +173,7 @@ class VQVAE(nn.Module):
         self.upsample_parameters = upsample_parameters
         self.num_res_layers = num_res_layers
         self.num_channels = num_channels
+        self.num_res_channels = num_res_channels
 
         self.dropout = dropout
         self.act = act
@@ -193,8 +201,8 @@ class VQVAE(nn.Module):
             encoder.append(
                 Convolution(
                     spatial_dims=self.spatial_dims,
-                    in_channels=self.in_channels if idx == 0 else self.num_channels // 2,
-                    out_channels=self.num_channels // (2 if idx != self.num_levels - 1 else 1),
+                    in_channels=self.in_channels if idx == 0 else self.num_channels[idx - 1],
+                    out_channels=self.num_channels[idx],
                     strides=self.downsample_parameters[idx][0],
                     kernel_size=self.downsample_parameters[idx][1],
                     adn_ordering=self.adn_ordering,
@@ -216,8 +224,8 @@ class VQVAE(nn.Module):
                 encoder.append(
                     VQVAEResidualUnit(
                         spatial_dims=self.spatial_dims,
-                        no_channels=self.num_channels // (2 if idx != self.num_levels - 1 else 1),
-                        no_res_channels=self.num_channels // (2 if idx != self.num_levels - 1 else 1),
+                        num_channels=self.num_channels[idx],
+                        num_res_channels=self.num_res_channels[idx],
                         adn_ordering=self.adn_ordering,
                         act=self.act,
                         dropout=self.dropout,
@@ -229,7 +237,7 @@ class VQVAE(nn.Module):
         encoder.append(
             Convolution(
                 spatial_dims=self.spatial_dims,
-                in_channels=self.num_channels,
+                in_channels=self.num_channels[len(self.num_channels) - 1],
                 out_channels=self.embedding_dim,
                 strides=1,
                 kernel_size=3,
@@ -265,11 +273,14 @@ class VQVAE(nn.Module):
         )
 
     def construct_decoder(self) -> torch.nn.Sequential:
+        decoder_num_channels = list(reversed(self.num_channels))
+        decoder_num_res_channels = list(reversed(self.num_res_channels))
+
         decoder = [
             Convolution(
                 spatial_dims=self.spatial_dims,
                 in_channels=self.embedding_dim,
-                out_channels=self.num_channels,
+                out_channels=decoder_num_channels[0],
                 strides=1,
                 kernel_size=3,
                 adn_ordering=self.adn_ordering,
@@ -290,8 +301,8 @@ class VQVAE(nn.Module):
                 decoder.append(
                     VQVAEResidualUnit(
                         spatial_dims=self.spatial_dims,
-                        no_channels=self.num_channels // (1 if idx == 0 else 2),
-                        no_res_channels=self.num_channels // (1 if idx == 0 else 2),
+                        num_channels=decoder_num_channels[idx],
+                        num_res_channels=decoder_num_res_channels[idx],
                         adn_ordering=self.adn_ordering,
                         act=self.act,
                         dropout=self.dropout,
@@ -303,8 +314,8 @@ class VQVAE(nn.Module):
             decoder.append(
                 Convolution(
                     spatial_dims=self.spatial_dims,
-                    in_channels=self.num_channels // (1 if idx == 0 else 2),
-                    out_channels=self.out_channels if idx == self.num_levels - 1 else self.num_channels // 2,
+                    in_channels=decoder_num_channels[idx],
+                    out_channels=self.out_channels if idx == self.num_levels - 1 else decoder_num_channels[idx + 1],
                     strides=self.upsample_parameters[idx][0],
                     kernel_size=self.upsample_parameters[idx][1],
                     adn_ordering=self.adn_ordering,
@@ -348,3 +359,13 @@ class VQVAE(nn.Module):
         reconstruction = self.decode(quantizations)
 
         return reconstruction, quantization_losses
+
+    def encode_stage_2_inputs(self, x: torch.Tensor) -> torch.Tensor:
+        z = self.encoder(x)
+        e, _ = self.quantize(z)
+        return e
+
+    def decode_stage_2_outputs(self, z: torch.Tensor) -> torch.Tensor:
+        e, _ = self.quantize(z)
+        image = self.decode(e)
+        return image
