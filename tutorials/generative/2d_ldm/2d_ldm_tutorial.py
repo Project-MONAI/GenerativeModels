@@ -83,6 +83,7 @@ for image_n in range(3):
     ax[image_n].imshow(check_data["image"][image_n, 0, :, :], cmap="gray")
     ax[image_n].axis("off")
 
+
 # ## Download the validation set
 
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, seed=0)
