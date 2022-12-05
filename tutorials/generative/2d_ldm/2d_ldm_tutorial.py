@@ -15,10 +15,7 @@
 
 # +
 import os
-<<<<<<< HEAD
-=======
 import shutil
->>>>>>> origin/main
 import tempfile
 
 import matplotlib.pyplot as plt
@@ -29,12 +26,6 @@ from monai import transforms
 from monai.apps import MedNISTDataset
 from monai.config import print_config
 from monai.data import DataLoader, Dataset
-<<<<<<< HEAD
-from monai.utils import first, set_determinism
-from tqdm import tqdm
-
-from generative.networks.nets import AutoencoderKL, DiffusionModelUNet, LatentDiffusionModel
-=======
 from monai.networks.layers import Act
 from monai.utils import first, set_determinism
 from tqdm import tqdm
@@ -43,7 +34,6 @@ from generative.inferers import DiffusionInferer
 from generative.losses.adversarial_loss import PatchAdversarialLoss
 from generative.losses.perceptual import PerceptualLoss
 from generative.networks.nets import AutoencoderKL, DiffusionModelUNet, PatchDiscriminator
->>>>>>> origin/main
 from generative.schedulers import DDPMScheduler
 
 print_config()
@@ -92,12 +82,6 @@ fig, ax = plt.subplots(nrows=1, ncols=3)
 for image_n in range(3):
     ax[image_n].imshow(check_data["image"][image_n, 0, :, :], cmap="gray")
     ax[image_n].axis("off")
-<<<<<<< HEAD
-# TODO: remove path
-plt.savefig("/project/tutorials/generative/2d_ldm/hand_examples.png")
-=======
-
->>>>>>> origin/main
 
 # ## Download the validation set
 
@@ -118,12 +102,7 @@ val_loader = DataLoader(val_ds, batch_size=64, shuffle=True, num_workers=4)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using {device}")
 
-<<<<<<< HEAD
-# +
-stage1_model = AutoencoderKL(
-=======
 autoencoderkl = AutoencoderKL(
->>>>>>> origin/main
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
@@ -131,12 +110,6 @@ autoencoderkl = AutoencoderKL(
     latent_channels=3,
     ch_mult=(1, 2, 2),
     num_res_blocks=1,
-<<<<<<< HEAD
-    norm_num_groups=16,
-    attention_levels=(False, False, True),
-)
-
-=======
     norm_num_groups=32,
     attention_levels=(False, False, True),
 )
@@ -144,22 +117,13 @@ autoencoderkl = autoencoderkl.to(device)
 
 
 # +
->>>>>>> origin/main
 unet = DiffusionModelUNet(
     spatial_dims=2,
     in_channels=3,
     out_channels=3,
     num_res_blocks=1,
-<<<<<<< HEAD
-    attention_resolutions=[4, 2],
-    channel_mult=[1, 2, 2],
-    model_channels=64,
-    # TODO: play with this number
-    num_heads=1,
-=======
     num_channels=(128, 256, 256),
     num_head_channels=256,
->>>>>>> origin/main
 )
 
 scheduler = DDPMScheduler(
@@ -169,41 +133,6 @@ scheduler = DDPMScheduler(
     beta_end=0.0195,
 )
 
-<<<<<<< HEAD
-model = LatentDiffusionModel(first_stage=stage1_model, unet_network=unet, scheduler=scheduler)
-
-model = model.to(device)
-
-# +
-optimizer = torch.optim.Adam(model.parameters(), 2.5e-5)
-# TODO: Add lr_scheduler with warm-up
-# TODO: Add EMA model
-
-n_epochs = 20
-val_interval = 2
-for epoch in range(n_epochs):
-    model.train()
-    epoch_loss = 0
-    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader))
-    progress_bar.set_description(f"Epoch {epoch}")
-    for step, batch in progress_bar:
-        images = batch["image"].to(device)
-        optimizer.zero_grad(set_to_none=True)
-
-        # TODO: check how to deal with next commands with multi-GPU and for FL
-        with torch.no_grad():
-            clean_latent = model.first_stage(images)
-            ldm_inputs = model.first_stage.sampling(clean_latent[1], clean_latent[2])
-
-        timesteps = torch.randint(
-            0, model.scheduler.num_train_timesteps, (ldm_inputs.shape[0],), device=ldm_inputs.device
-        ).long()
-        noise = torch.randn_like(ldm_inputs).to(device)
-        noisy_latent = model.scheduler.add_noise(original_samples=ldm_inputs, noise=noise, timesteps=timesteps)
-        noise_pred = model.unet_network(noisy_latent, timesteps)
-
-        loss = F.l1_loss(noise_pred.float(), noise.float())
-=======
 inferer = DiffusionInferer(scheduler)
 
 discriminator = PatchDiscriminator(
@@ -376,7 +305,6 @@ for epoch in range(n_epochs):
         noise = torch.randn_like(z).to(device)
         noise_pred = inferer(inputs=z, diffusion_model=unet, noise=noise)
         loss = F.mse_loss(noise_pred.float(), noise.float())
->>>>>>> origin/main
 
         loss.backward()
         optimizer.step()
@@ -387,8 +315,6 @@ for epoch in range(n_epochs):
                 "loss": epoch_loss / (step + 1),
             }
         )
-<<<<<<< HEAD
-=======
     epoch_loss_list.append(epoch_loss / (step + 1))
 
     if (epoch + 1) % val_interval == 0:
@@ -494,4 +420,3 @@ plt.legend(prop={"size": 14})
 
 if directory is None:
     shutil.rmtree(root_dir)
->>>>>>> origin/main
