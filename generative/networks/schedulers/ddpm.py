@@ -123,11 +123,12 @@ class DDPMScheduler(nn.Module):
         """
         # these attributes are used for calculating the posterior, q(x_{t-1}|x_t,x_0),
         # (see formula (5-7) from https://arxiv.org/pdf/2006.11239.pdf)
+        alpha_t = self.alphas[timestep]
         alpha_prod_t = self.alphas_cumprod[timestep]
         alpha_prod_t_prev = self.alphas_cumprod[timestep - 1] if timestep > 0 else self.one
 
         x_0_coefficient = alpha_prod_t_prev.sqrt() * self.betas[timestep] / (1 - alpha_prod_t)
-        x_t_coefficient = alpha_prod_t.sqrt() * (1 - alpha_prod_t_prev) / (1 - alpha_prod_t)
+        x_t_coefficient = alpha_t.sqrt() * (1 - alpha_prod_t_prev) / (1 - alpha_prod_t)
 
         mean = x_0_coefficient * x_0 + x_t_coefficient * x_t
 
@@ -151,7 +152,6 @@ class DDPMScheduler(nn.Module):
         # and sample from it to get previous sample
         # x_{t-1} ~ N(pred_prev_sample, variance) == add variance to pred_sample
         variance = (1 - alpha_prod_t_prev) / (1 - alpha_prod_t) * self.betas[timestep]
-
         # hacks - were probably added for training stability
         if self.variance_type == "fixed_small":
             variance = torch.clamp(variance, min=1e-20)
