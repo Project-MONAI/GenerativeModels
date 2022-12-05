@@ -48,6 +48,25 @@ class TestEMA(unittest.TestCase):
         self.assertEqual(outputs[1].shape, (64, 16))  # (HxW, E)
         self.assertEqual(outputs[2].shape, (1, 8, 8))  # (1, H, W)
 
+    def test_ema(self):
+        layer = EMAQuantizer(spatial_dims=2, num_embeddings=2, embedding_dim=2, epsilon=0, decay=0)
+        original_weight_0 = layer.embedding.weight[0].clone()
+        original_weight_1 = layer.embedding.weight[1].clone()
+        x_0 = original_weight_0
+        x_0 = x_0.unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+        x_0 = x_0.repeat(1, 1, 1, 2) + 0.001
+
+        x_1 = original_weight_1
+        x_1 = x_1.unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+        x_1 = x_1.repeat(1, 1, 1, 2)
+
+        x = torch.cat([x_0, x_1], dim=0)
+        layer = layer.train()
+        _ = layer(x)
+
+        self.assertTrue(all(layer.embedding.weight[0] != original_weight_0))
+        self.assertTrue(all(layer.embedding.weight[1] == original_weight_1))
+
 
 class TestVectorQuantizer(unittest.TestCase):
     def test_vector_quantizer_shape(self):
