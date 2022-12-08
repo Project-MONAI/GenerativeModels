@@ -83,9 +83,9 @@ train_ds = DecathlonDataset(
     root_dir=root_dir,
     task="Task01_BrainTumour",
     section="training",
-    cache_rate=1.0,
+    cache_rate=1.0,  # you may need a few Gb of RAM... Set to 0 otherwise
     num_workers=4,
-    download=False,
+    download=True,
     seed=0,
     transform=train_transforms,
 )
@@ -97,18 +97,18 @@ print(f'Image shape {train_ds[0]["image"].shape}')
 
 # +
 check_data = first(train_loader)
-idx = 0
 
-img = check_data["image"][idx, channel]
+# Select the first image from the batch
+img = check_data["image"][0]
 fig, axs = plt.subplots(nrows=1, ncols=3)
 for ax in axs:
     ax.axis("off")
 ax = axs[0]
-ax.imshow(img[..., img.shape[2] // 2].rot90(), cmap="gray")
+ax.imshow(img[0, ..., img.shape[3] // 2].rot90(), cmap="gray")
 ax = axs[1]
-ax.imshow(img[:, img.shape[1] // 2, ...].rot90(), cmap="gray")
+ax.imshow(img[0, :, img.shape[2] // 2, ...].rot90(), cmap="gray")
 ax = axs[2]
-ax.imshow(img[img.shape[0] // 2, ...].rot90(), cmap="gray")
+ax.imshow(img[0, img.shape[1] // 2, ...].rot90(), cmap="gray")
 # -
 
 # ## Download the validation set
@@ -145,18 +145,17 @@ print(f'Image shape {val_ds[0]["image"].shape}')
 
 # +
 check_data = first(val_loader)
-idx = 0
 
-img = check_data["image"][idx, channel]
+img = check_data["image"][0]
 fig, axs = plt.subplots(nrows=1, ncols=3)
 for ax in axs:
     ax.axis("off")
 ax = axs[0]
-ax.imshow(img[..., img.shape[2] // 2].rot90(), cmap="gray")
+ax.imshow(img[0, ..., img.shape[3] // 2].rot90(), cmap="gray")
 ax = axs[1]
-ax.imshow(img[:, img.shape[1] // 2, ...].rot90(), cmap="gray")
+ax.imshow(img[0, :, img.shape[2] // 2, ...].rot90(), cmap="gray")
 ax = axs[2]
-ax.imshow(img[img.shape[0] // 2, ...].rot90(), cmap="gray")
+ax.imshow(img[0, img.shape[1] // 2, ...].rot90(), cmap="gray")
 # -
 
 # ## Define the network
@@ -252,8 +251,9 @@ for epoch in range(n_epochs):
         scaler_g.update()
 
         # Discriminator part
+        optimizer_d.zero_grad(set_to_none=True)
+
         with autocast(enabled=True):
-            optimizer_d.zero_grad(set_to_none=True)
             logits_fake = discriminator(reconstruction.contiguous().detach())[-1]
             loss_d_fake = adv_loss(logits_fake, target_is_real=False, for_discriminator=True)
             logits_real = discriminator(images.contiguous().detach())[-1]
@@ -330,7 +330,9 @@ plt.show()
 # ### Visualise some reconstruction images
 
 # +
-img = check_data["image"][idx, channel]
+# select first subject from the batch for visualisation purposes
+idx = 0
+img = check_data["image"][idx]
 # get the first 5 examples to plot
 n_evaluations = 5
 
@@ -344,9 +346,9 @@ for ax in axs.flatten():
 
 
 for image_n in range(n_evaluations):
-    axs[image_n, 0].imshow(intermediary_images[image_n][0, ..., img.shape[2] // 2].cpu(), cmap="gray")
-    axs[image_n, 1].imshow(intermediary_images[image_n][0, :, img.shape[1] // 2, ...].cpu().rot90(), cmap="gray")
-    axs[image_n, 2].imshow(intermediary_images[image_n][0, img.shape[0] // 2, ...].cpu().rot90(), cmap="gray")
+    axs[image_n, 0].imshow(intermediary_images[image_n][0, ..., img.shape[3] // 2].cpu(), cmap="gray")
+    axs[image_n, 1].imshow(intermediary_images[image_n][0, :, img.shape[2] // 2, ...].cpu().rot90(), cmap="gray")
+    axs[image_n, 2].imshow(intermediary_images[image_n][0, img.shape[1] // 2, ...].cpu().rot90(), cmap="gray")
     axs[image_n, 0].set_ylabel(f"Epoch {val_samples[image_n]:.0f}")
 # -
 
