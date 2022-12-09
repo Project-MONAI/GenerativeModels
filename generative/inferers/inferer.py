@@ -162,7 +162,7 @@ class DiffusionInferer(Inferer):
             # 2. compute predicted original sample from predicted noise also called
             # "predicted x_0" of formula (15) from https://arxiv.org/pdf/2006.11239.pdf
             if predict_epsilon:
-                pred_original_sample = (model_output - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
+                pred_original_sample = (noisy_image - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
             else:
                 pred_original_sample = model_output
 
