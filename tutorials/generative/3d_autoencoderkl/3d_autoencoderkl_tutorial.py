@@ -168,11 +168,11 @@ model = AutoencoderKL(
     spatial_dims=3,
     in_channels=1,
     out_channels=1,
-    num_channels=16,
+    num_channels=32,
     latent_channels=3,
     ch_mult=(1, 2, 2),
     num_res_blocks=1,
-    norm_num_groups=16,
+    norm_num_groups=32,
     attention_levels=(False, False, True),
 )
 model.to(device)
@@ -330,9 +330,6 @@ plt.show()
 # ### Visualise some reconstruction images
 
 # +
-# select first subject from the batch for visualisation purposes
-idx = 0
-img = check_data["image"][idx]
 # get the first 5 examples to plot
 n_evaluations = 5
 
@@ -346,17 +343,23 @@ for ax in axs.flatten():
 
 
 for image_n in range(n_evaluations):
-    axs[image_n, 0].imshow(intermediary_images[image_n][0, ..., img.shape[3] // 2].cpu(), cmap="gray")
-    axs[image_n, 1].imshow(intermediary_images[image_n][0, :, img.shape[2] // 2, ...].cpu().rot90(), cmap="gray")
-    axs[image_n, 2].imshow(intermediary_images[image_n][0, img.shape[1] // 2, ...].cpu().rot90(), cmap="gray")
+    axs[image_n, 0].imshow(
+        intermediary_images[image_n][0, ..., intermediary_images[image_n].shape[3] // 2].cpu(), cmap="gray"
+    )
+    axs[image_n, 1].imshow(
+        intermediary_images[image_n][0, :, intermediary_images[image_n].shape[2] // 2, ...].cpu().rot90(), cmap="gray"
+    )
+    axs[image_n, 2].imshow(
+        intermediary_images[image_n][0, intermediary_images[image_n].shape[1] // 2, ...].cpu().rot90(), cmap="gray"
+    )
     axs[image_n, 0].set_ylabel(f"Epoch {val_samples[image_n]:.0f}")
 # -
 
 fig, ax = plt.subplots(nrows=1, ncols=2)
-ax[0].imshow(images[0, 0, ..., img.shape[2] // 2].cpu(), vmin=0, vmax=1, cmap="gray")
+ax[0].imshow(images[0, channel, ..., images.shape[2] // 2].cpu(), vmin=0, vmax=1, cmap="gray")
 ax[0].axis("off")
 ax[0].title.set_text("Inputted Image")
-ax[1].imshow(reconstruction[0, 0, ..., img.shape[2] // 2].detach().cpu(), vmin=0, vmax=1, cmap="gray")
+ax[1].imshow(reconstruction[0, channel, ..., reconstruction.shape[2] // 2].detach().cpu(), vmin=0, vmax=1, cmap="gray")
 ax[1].axis("off")
 ax[1].title.set_text("Reconstruction")
 plt.show()
