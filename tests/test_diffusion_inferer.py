@@ -16,7 +16,7 @@ from parameterized import parameterized
 
 from generative.inferers import DiffusionInferer
 from generative.networks.nets import DiffusionModelUNet
-from generative.schedulers import DDIMScheduler, DDPMScheduler
+from generative.networks.schedulers import DDIMScheduler, DDPMScheduler
 
 TEST_CASES = [
     [

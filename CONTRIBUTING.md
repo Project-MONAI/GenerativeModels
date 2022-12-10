@@ -98,10 +98,8 @@ To run tests, use the following command:
 All code changes to the main branch must be done via [pull requests](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/proposing-changes-to-your-work-with-pull-requests).
 1. Create a new ticket or take a known ticket from [the issue list][monai issue list].
 1. Check if there's already a branch dedicated to the task.
-1. If the task has not been taken, [create a new branch in your fork](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork)
-of the codebase named `[ticket_id]-[task_name]`.
-For example, branch name `19-ci-pipeline-setup` corresponds to [issue #19](https://github.com/Project-MONAI/MONAI/issues/19).
-Ideally, the new branch should be based on the latest `main` branch.
+1. If the task has not been taken, [create a new branch from the issue](https://docs.github.com/en/issues/tracking-your-work-with-issues/creating-a-branch-for-an-issue).
+The new branch should be based on the latest `main` branch.
 1. Make changes to the branch ([use detailed commit messages if possible](https://chris.beams.io/posts/git-commit/)).
 1. Make sure that new tests cover the changes and the changed codebase [passes all tests locally](#unit-testing).
 1. [Create a new pull request](https://help.github.com/en/desktop/contributing-to-projects/creating-a-pull-request) from the task branch to the main branch, with detailed descriptions of the purpose of this pull request.
