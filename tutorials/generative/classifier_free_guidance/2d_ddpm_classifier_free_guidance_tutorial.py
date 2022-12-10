@@ -1,7 +1,7 @@
 # ---
 # jupyter:
 #   jupytext:
-#     formats: ipynb,py:percent
+#     formats: py:percent,ipynb
 #     text_representation:
 #       extension: .py
 #       format_name: percent
@@ -14,12 +14,14 @@
 # ---
 
 # %% [markdown]
-# # Denoising Diffusion Probabilistic Models with MedNIST Dataset
+# # Classifier-free Guidance
 #
-# This tutorial illustrates how to use MONAI for training a denoising diffusion probabilistic model (DDPM)[1] to create
-# synthetic 2D images.
+# This tutorial illustrates how to use MONAI for training a denoising diffusion probabilistic model (DDPM)[1] to create synthetic 2D images using the classifier-free guidance technique [2] to perform conditioning.
+#
 #
 # [1] - Ho et al. "Denoising Diffusion Probabilistic Models" https://arxiv.org/abs/2006.11239
+# [2] - Ho and Salimans "Classifier-Free Diffusion Guidance" https://arxiv.org/abs/2207.12598
+#
 #
 # TODO: Add Open in Colab
 #
@@ -71,12 +73,6 @@ print_config()
 
 # %% [markdown]
 # ## Setup data directory
-#
-# You can specify a directory with the MONAI_DATA_DIRECTORY environment variable.
-#
-# This allows you to save results and reuse downloads.
-#
-# If not specified a temporary directory will be used.
 
 # %% jupyter={"outputs_hidden": false}
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
@@ -92,8 +88,8 @@ set_determinism(42)
 # %% [markdown]
 # ## Setup MedNIST Dataset and training and validation dataloaders
 # In this tutorial, we will train our models on the MedNIST dataset available on MONAI
-# (https://docs.monai.io/en/stable/apps.html#monai.apps.MedNISTDataset). In order to train faster, we will select just
-# one of the available classes ("Hand"), resulting in a training set with 7999 2D images.
+# (https://docs.monai.io/en/stable/apps.html#monai.apps.MedNISTDataset).
+# Here, we will use the "Hand" and "HeadCT", where our conditioning variable `class` will specify the modality.
 
 # %% jupyter={"outputs_hidden": false}
 train_data = MedNISTDataset(root_dir=root_dir, section="training", download=True, progress=False, seed=0)
@@ -103,12 +99,21 @@ for item in train_data.data:
         train_datalist.append({"image": item["image"], "class": 1 if item["class_name"] == "Hand" else 2})
 
 # %% [markdown]
-# Here we use transforms to augment the training dataset:
+# Here we use transforms to augment the training dataset, as usual:
 #
 # 1. `LoadImaged` loads the hands images from files.
 # 1. `EnsureChannelFirstd` ensures the original data to construct "channel first" shape.
 # 1. `ScaleIntensityRanged` extracts intensity range [0, 255] and scales to [0, 1].
 # 1. `RandAffined` efficiently performs rotate, scale, shear, translate, etc. together based on PyTorch affine transform.
+#
+# ### Classifier-free guidance during training
+#
+# In order to use the classifier-free guidance during training time, we need to not just have the `class` variable saying the modality of the image (`1` for Hands and `2` for HeadCTs) but we also need to train the model with an "unconditional" class.
+# Here we specify the "unconditional" class with the value `-1` with a probability of training on unconditional being 15%. Specified in the following line using MONAI's RandLambdad:
+#
+# `transforms.RandLambdad(keys=["class"], prob=0.15, func=lambda x: -1 * torch.ones_like(x))`
+#
+# Finally, our conditioning variable need to have the format (batch_size, 1, cross_attention_dim) when feeding into the model. For this reason, we use Lambdad to reshape our variables in the right format.
 
 # %% jupyter={"outputs_hidden": false}
 train_transforms = transforms.Compose(
@@ -126,7 +131,9 @@ train_transforms = transforms.Compose(
             prob=0.5,
         ),
         transforms.RandLambdad(keys=["class"], prob=0.15, func=lambda x: -1 * torch.ones_like(x)),
-        transforms.EnsureTyped(keys=["class"], dtype=torch.float),
+        transforms.Lambdad(
+            keys=["class"], func=lambda x: torch.tensor(x, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+        ),
     ]
 )
 train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
@@ -145,7 +152,9 @@ val_transforms = transforms.Compose(
         transforms.LoadImaged(keys=["image"]),
         transforms.EnsureChannelFirstd(keys=["image"]),
         transforms.ScaleIntensityRanged(keys=["image"], a_min=0.0, a_max=255.0, b_min=0.0, b_max=1.0, clip=True),
-        transforms.EnsureTyped(keys=["class"], dtype=torch.float),
+        transforms.Lambdad(
+            keys=["class"], func=lambda x: torch.tensor(x, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+        ),
     ]
 )
 val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
@@ -170,7 +179,14 @@ plt.show()
 # ### Define network, scheduler, optimizer, and inferer
 # At this step, we instantiate the MONAI components to create a DDPM, the UNET, the noise scheduler, and the inferer used for training and sampling. We are using
 # the original DDPM scheduler containing 1000 timesteps in its Markov chain, and a 2D UNET with attention mechanisms
-# in the 2nd and 3rd levels, each with 1 attention head.
+# in the 3rd level, each with 1 attention head (`num_head_channels=64`).
+#
+# In order to pass conditioning variables with dimension of 1 (just specifying the modality of the image), we use:
+#
+# `
+# with_conditioning=True,
+# cross_attention_dim=1,
+# `
 
 # %% jupyter={"outputs_hidden": false}
 device = torch.device("cuda")
@@ -222,9 +238,7 @@ for epoch in range(n_epochs):
             noise = torch.randn_like(images).to(device)
 
             # Get model prediction
-            noise_pred = inferer(
-                inputs=images, diffusion_model=model, noise=noise, condition=classes.unsqueeze(-1).unsqueeze(-1)
-            )
+            noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, condition=classes)
 
             loss = F.mse_loss(noise_pred.float(), noise.float())
 
@@ -250,9 +264,7 @@ for epoch in range(n_epochs):
             with torch.no_grad():
                 with autocast(enabled=True):
                     noise = torch.randn_like(images).to(device)
-                    noise_pred = inferer(
-                        inputs=images, diffusion_model=model, noise=noise, condition=classes.unsqueeze(-1).unsqueeze(-1)
-                    )
+                    noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, condition=classes)
                     val_loss = F.mse_loss(noise_pred.float(), noise.float())
 
             val_epoch_loss += val_loss.item()
@@ -287,12 +299,14 @@ plt.legend(prop={"size": 14})
 plt.show()
 
 # %% [markdown]
-# ### Plotting sampling process along DDPM's Markov chain
+# ### Sapling process with classifier-free guidance
+# In order to sample using classifier-free guidance, for each step of the process we need to have 2 elements, one generated conditioned in the desired class (here we want to condition on Hands `=1`) and one using the unconditional class (`=-1`).
+# Instead using directly the predicted class in every step, we use the unconditional plus the direction vector pointing to the condition that we want (`noise_pred_text - noise_pred_uncond`). The effect of the condition is defined by the `guidance_scale` defining the influence of our direction vector.
 
 # %% jupyter={"outputs_hidden": false}
 model.eval()
-guidance_scale = 0.7
-conditioning = torch.cat([-1 * torch.ones(1, 1, 1, 1).float(), torch.ones(1, 1, 1, 1).float()], dim=0).to(device)
+guidance_scale = 7.0
+conditioning = torch.cat([-1 * torch.ones(1, 1, 1).float(), torch.ones(1, 1, 1).float()], dim=0).to(device)
 
 noise = torch.randn((1, 1, 64, 64))
 noise = noise.to(device)
@@ -302,12 +316,10 @@ for t in progress_bar:
     with autocast(enabled=True):
         with torch.no_grad():
             noise_input = torch.cat([noise] * 2)
-
             model_output = model(noise_input, timesteps=torch.Tensor((t,)).to(noise.device), context=conditioning)
             noise_pred_uncond, noise_pred_text = model_output.chunk(2)
             noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
 
-    # 2. compute previous image: x_t -> x_t-1
     noise, _ = scheduler.step(noise_pred, t, noise)
 
 plt.style.use("default")
