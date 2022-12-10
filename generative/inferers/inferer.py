@@ -39,6 +39,7 @@ class DiffusionInferer(Inferer):
         inputs: torch.Tensor,
         diffusion_model: Callable[..., torch.Tensor],
         noise: torch.Tensor,
+        timesteps: torch.Tensor,
         condition: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
@@ -50,8 +51,6 @@ class DiffusionInferer(Inferer):
             noise: random noise, of the same shape as the input.
             condition: Conditioning for network input.
         """
-        num_timesteps = self.scheduler.num_train_timesteps
-        timesteps = torch.randint(0, num_timesteps, (inputs.shape[0],), device=inputs.device).long()
         noisy_image = self.scheduler.add_noise(original_samples=inputs, noise=noise, timesteps=timesteps)
         prediction = diffusion_model(x=noisy_image, timesteps=timesteps, context=condition)
 
