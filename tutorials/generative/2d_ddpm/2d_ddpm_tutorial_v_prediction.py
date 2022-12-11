@@ -176,10 +176,13 @@ model = DiffusionModelUNet(
 model.to(device)
 
 scheduler = DDPMScheduler(
+    prediction_type="v_prediction",
     num_train_timesteps=1000,
+    beta_start=0.00085,
+    beta_end=0.0120,
 )
 
-optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
+optimizer = torch.optim.Adam(params=model.parameters(), lr=1.0e-4)
 
 inferer = DiffusionInferer(scheduler)
 # %% [markdown]
