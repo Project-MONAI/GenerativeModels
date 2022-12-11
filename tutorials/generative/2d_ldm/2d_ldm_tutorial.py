@@ -320,7 +320,8 @@ for epoch in range(n_epochs):
         z = autoencoderkl.sampling(z_mu, z_sigma)
 
         noise = torch.randn_like(z).to(device)
-        noise_pred = inferer(inputs=z, diffusion_model=unet, noise=noise)
+        timesteps = torch.randint(0, inferer.scheduler.num_train_timesteps, (z.shape[0],), device=z.device).long()
+        noise_pred = inferer(inputs=z, diffusion_model=unet, noise=noise, timesteps=timesteps)
         loss = F.mse_loss(noise_pred.float(), noise.float())
 
         loss.backward()
@@ -346,7 +347,10 @@ for epoch in range(n_epochs):
                 z = autoencoderkl.sampling(z_mu, z_sigma)
 
                 noise = torch.randn_like(z).to(device)
-                noise_pred = inferer(inputs=z, diffusion_model=unet, noise=noise)
+                timesteps = torch.randint(
+                    0, inferer.scheduler.num_train_timesteps, (z.shape[0],), device=z.device
+                ).long()
+                noise_pred = inferer(inputs=z, diffusion_model=unet, noise=noise, timesteps=timesteps)
 
                 loss = F.mse_loss(noise_pred.float(), noise.float())
 

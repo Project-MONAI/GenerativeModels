@@ -49,6 +49,7 @@ class DiffusionInferer(Inferer):
             inputs: Input image to which noise is added.
             diffusion_model: diffusion model.
             noise: random noise, of the same shape as the input.
+            timesteps: random timesteps.
             condition: Conditioning for network input.
         """
         noisy_image = self.scheduler.add_noise(original_samples=inputs, noise=noise, timesteps=timesteps)
@@ -122,6 +123,7 @@ class LatentDiffusionInferer(DiffusionInferer):
         autoencoder_model: Callable[..., torch.Tensor],
         diffusion_model: Callable[..., torch.Tensor],
         noise: torch.Tensor,
+        timesteps: torch.Tensor,
         condition: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
@@ -132,6 +134,7 @@ class LatentDiffusionInferer(DiffusionInferer):
             autoencoder_model: first stage model.
             diffusion_model: diffusion model.
             noise: random noise, of the same shape as the latent representation.
+            timesteps: random timesteps.
             condition: conditioning for network input.
         """
         with torch.no_grad():
@@ -141,6 +144,7 @@ class LatentDiffusionInferer(DiffusionInferer):
             inputs=latent,
             diffusion_model=diffusion_model,
             noise=noise,
+            timesteps=timesteps,
             condition=condition,
         )
 

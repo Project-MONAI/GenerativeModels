@@ -98,7 +98,10 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         )
         inferer = LatentDiffusionInferer(scheduler=scheduler, scale_factor=1.0)
         scheduler.set_timesteps(num_inference_steps=10)
-        prediction = inferer(inputs=input, autoencoder_model=autoencoder_model, diffusion_model=stage_2, noise=noise)
+        timesteps = torch.randint(0, scheduler.num_train_timesteps, (input_shape[0],), device=input.device).long()
+        prediction = inferer(
+            inputs=input, autoencoder_model=autoencoder_model, diffusion_model=stage_2, noise=noise, timesteps=timesteps
+        )
         self.assertEqual(prediction.shape, latent_shape)
 
     @parameterized.expand(TEST_CASES)

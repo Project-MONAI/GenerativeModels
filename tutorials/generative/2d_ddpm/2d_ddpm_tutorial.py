@@ -207,8 +207,13 @@ for epoch in range(n_epochs):
             # Generate random noise
             noise = torch.randn_like(images).to(device)
 
+            # Create timesteps
+            timesteps = torch.randint(
+                0, inferer.scheduler.num_train_timesteps, (images.shape[0],), device=images.device
+            ).long()
+
             # Get model prediction
-            noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise)
+            noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
 
             loss = F.mse_loss(noise_pred.float(), noise.float())
 
@@ -233,7 +238,10 @@ for epoch in range(n_epochs):
             with torch.no_grad():
                 with autocast(enabled=True):
                     noise = torch.randn_like(images).to(device)
-                    noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise)
+                    timesteps = torch.randint(
+                        0, inferer.scheduler.num_train_timesteps, (images.shape[0],), device=images.device
+                    ).long()
+                    noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
                     val_loss = F.mse_loss(noise_pred.float(), noise.float())
 
             val_epoch_loss += val_loss.item()

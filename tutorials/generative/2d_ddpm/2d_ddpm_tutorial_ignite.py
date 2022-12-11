@@ -177,8 +177,9 @@ model = DiffusionModelUNet(
 )
 model.to(device)
 
+num_train_timesteps = 1000
 scheduler = DDPMScheduler(
-    num_train_timesteps=1000,
+    num_train_timesteps=num_train_timesteps,
 )
 
 optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
@@ -203,12 +204,16 @@ class DiffusionPrepareBatch(PrepareBatch):
 
     """
 
-    def __init__(self, condition_name: Optional[str] = None):
+    def __init__(self, num_train_timesteps: int, condition_name: Optional[str] = None):
         self.condition_name = condition_name
+        self.num_train_timesteps = num_train_timesteps
 
     def get_noise(self, images):
         """Returns the noise tensor for input tensor `images`, override this for different noise distributions."""
         return torch.randn_like(images)
+
+    def get_timesteps(self, images):
+        return torch.randint(0, self.num_train_timesteps, (images.shape[0],), device=images.device).long()
 
     def __call__(
         self,
@@ -219,8 +224,9 @@ class DiffusionPrepareBatch(PrepareBatch):
     ):
         images, _ = default_prepare_batch(batchdata, device, non_blocking, **kwargs)
         noise = self.get_noise(images).to(device, non_blocking=non_blocking, **kwargs)
+        timesteps = self.get_timesteps(images).to(device, non_blocking=non_blocking, **kwargs)
 
-        kwargs = {"noise": noise}
+        kwargs = {"noise": noise, "timesteps": timesteps}
 
         if self.condition_name is not None and isinstance(batchdata, Mapping):
             kwargs["conditioning"] = batchdata[self.condition_name].to(device, non_blocking=non_blocking, **kwargs)
@@ -244,7 +250,7 @@ evaluator = SupervisedEvaluator(
     val_data_loader=val_loader,
     network=model,
     inferer=inferer,
-    prepare_batch=DiffusionPrepareBatch(),
+    prepare_batch=DiffusionPrepareBatch(num_train_timesteps=num_train_timesteps),
     key_val_metric={"val_mean_abs_error": MeanAbsoluteError(output_transform=from_engine(["pred", "label"]))},
     val_handlers=val_handlers,
 )
@@ -263,7 +269,7 @@ trainer = SupervisedTrainer(
     optimizer=optimizer,
     loss_function=torch.nn.MSELoss(),
     inferer=inferer,
-    prepare_batch=DiffusionPrepareBatch(),
+    prepare_batch=DiffusionPrepareBatch(num_train_timesteps=num_train_timesteps),
     key_train_metric={"train_acc": MeanSquaredError(output_transform=from_engine(["pred", "label"]))},
     train_handlers=train_handlers,
 )

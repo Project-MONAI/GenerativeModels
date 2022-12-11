@@ -63,7 +63,8 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         )
         inferer = DiffusionInferer(scheduler=scheduler)
         scheduler.set_timesteps(num_inference_steps=10)
-        sample = inferer(inputs=input, noise=noise, diffusion_model=model)
+        timesteps = torch.randint(0, scheduler.num_train_timesteps, (input_shape[0],), device=input.device).long()
+        sample = inferer(inputs=input, noise=noise, diffusion_model=model, timesteps=timesteps)
         self.assertEqual(sample.shape, input_shape)
 
     @parameterized.expand(TEST_CASES)
