@@ -1,10 +1,24 @@
-# %% [markdown]
+# ---
+# jupyter:
+#   jupytext:
+#     cell_metadata_filter: -all
+#     formats: ipynb,py
+#     text_representation:
+#       extension: .py
+#       format_name: light
+#       format_version: '1.5'
+#       jupytext_version: 1.14.1
+#   kernelspec:
+#     display_name: Python 3
+#     language: python
+#     name: python3
+# ---
+
 # # 3D Latent Diffusion Model
 
-# %% [markdown]
 # ## Set up imports
 
-# %%
+# +
 import os
 import shutil
 import tempfile
@@ -28,24 +42,21 @@ from generative.networks.nets import AutoencoderKL, DiffusionModelUNet, PatchDis
 from generative.schedulers import DDPMScheduler
 
 print_config()
+# -
 
-# %%
 # for reproducibility purposes set a seed
 set_determinism(42)
 
-# %% [markdown]
 # ## Setup a data directory and download dataset
 # Specify a MONAI_DATA_DIRECTORY variable, where the data will be downloaded. If not specified a temporary directory will be used.
 
-# %%
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
 root_dir = tempfile.mkdtemp() if directory is None else directory
 print(root_dir)
 
-# %% [markdown]
 # ## Download the training set
 
-# %%
+# +
 batch_size = 2
 channel = 0  # 0 = Flair
 assert channel in [0, 1, 2, 3], "Choose a valid channel"
@@ -79,11 +90,11 @@ train_ds = DecathlonDataset(
 )
 train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=4)
 print(f'Image shape {train_ds[0]["image"].shape}')
+# -
 
-# %% [markdown]
 # ## Visualise examples from the training set
 
-# %%
+# +
 # Plot axial, coronal and sagittal slices of a training sample
 check_data = first(train_loader)
 idx = 0
@@ -99,15 +110,14 @@ ax.imshow(img[:, img.shape[1] // 2, ...], cmap="gray")
 ax = axs[2]
 ax.imshow(img[img.shape[0] // 2, ...], cmap="gray")
 # plt.savefig("training_examples.png")
+# -
 
-# %% [markdown]
 # ## Define Networks
 
-# %%
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using {device}")
 
-# %%
+# +
 autoencoder = AutoencoderKL(
     spatial_dims=3,
     in_channels=1,
@@ -155,11 +165,11 @@ scheduler = DDPMScheduler(
 )
 
 inferer = LatentDiffusionInferer(scheduler)
+# -
 
-# %% [markdown]
 # ## Define Losses
 
-# %%
+# +
 l1_loss = L1Loss()
 adv_loss = PatchAdversarialLoss(criterion="least_squares")
 loss_perceptual = PerceptualLoss(spatial_dims=3, network_type="squeeze", is_fake_3d=True, fake_3d_ratio=0.2)
@@ -174,15 +184,14 @@ def KL_loss(z_mu, z_sigma):
 adv_weight = 0.01
 perceptual_weight = 0.001
 kl_weight = 1e-6
+# -
 
-# %%
 optimizer_g = torch.optim.Adam(params=autoencoder.parameters(), lr=1e-4)
 optimizer_d = torch.optim.Adam(params=discriminator.parameters(), lr=1e-4)
 
-# %% [markdown]
 # ## Train AutoEncoder
 
-# %%
+# +
 n_epochs = 100
 autoencoder_warm_up_n_epochs = 5
 val_interval = 10
@@ -250,8 +259,8 @@ for epoch in range(n_epochs):
     epoch_recon_loss_list.append(epoch_loss / (step + 1))
     epoch_gen_loss_list.append(gen_epoch_loss / (step + 1))
     epoch_disc_loss_list.append(disc_epoch_loss / (step + 1))
+# -
 
-# %%
 plt.style.use("ggplot")
 plt.title("Learning Curves", fontsize=20)
 plt.plot(epoch_recon_loss_list)
@@ -262,7 +271,6 @@ plt.ylabel("Loss", fontsize=16)
 plt.legend(prop={"size": 14})
 plt.show()
 
-# %%
 plt.title("Adversarial Training Curves", fontsize=20)
 plt.plot(epoch_gen_loss_list, color="C0", linewidth=2.0, label="Generator")
 plt.plot(epoch_disc_loss_list, color="C1", linewidth=2.0, label="Discriminator")
@@ -273,10 +281,8 @@ plt.ylabel("Loss", fontsize=16)
 plt.legend(prop={"size": 14})
 plt.show()
 
-# %% [markdown]
 # ### Visualise reconstructions
 
-# %%
 # Plot axial, coronal and sagittal slices of a training sample
 idx = 0
 img = reconstruction[idx, channel].detach().cpu().numpy()
@@ -290,13 +296,11 @@ ax.imshow(img[:, img.shape[1] // 2, ...], cmap="gray")
 ax = axs[2]
 ax.imshow(img[img.shape[0] // 2, ...], cmap="gray")
 
-# %% [markdown]
 # ## Train Diffusion Model
 
-# %%
 optimizer_diff = torch.optim.Adam(params=unet.parameters(), lr=1e-4)
 
-# %%
+# +
 n_epochs = 50
 epoch_loss_list = []
 autoencoder.eval()
@@ -317,8 +321,16 @@ for epoch in range(n_epochs):
         with autocast(enabled=True):
             # Generate random noise
             noise = torch.randn_like(z).to(device)
+
+            # Create timesteps
+            timesteps = torch.randint(
+                0, inferer.scheduler.num_train_timesteps, (images.shape[0],), device=images.device
+            ).long()
+
             # Get model prediction
-            noise_pred = inferer(inputs=images, autoencoder_model=autoencoder, diffusion_model=unet, noise=noise)
+            noise_pred = inferer(
+                inputs=images, autoencoder_model=autoencoder, diffusion_model=unet, noise=noise, timesteps=timesteps
+            )
 
             loss = F.mse_loss(noise_pred.float(), noise.float())
 
@@ -334,8 +346,8 @@ for epoch in range(n_epochs):
             }
         )
     epoch_loss_list.append(epoch_loss / (step + 1))
+# -
 
-# %%
 plt.plot(epoch_loss_list)
 plt.title("Learning Curves", fontsize=20)
 plt.plot(epoch_loss_list)
@@ -346,10 +358,9 @@ plt.ylabel("Loss", fontsize=16)
 plt.legend(prop={"size": 14})
 plt.show()
 
-# %% [markdown]
 # ## Image generation
 
-# %%
+# +
 autoencoder.eval()
 unet.eval()
 
@@ -359,11 +370,10 @@ scheduler.set_timesteps(num_inference_steps=1000)
 synthetic_images = inferer.sample(
     input_noise=noise, autoencoder_model=autoencoder, diffusion_model=unet, scheduler=scheduler
 )
+# -
 
-# %% [markdown]
 # ### Visualise Synthetic
 
-# %%
 idx = 0
 img = synthetic_images[idx, channel].detach().cpu().numpy()  # images
 fig, axs = plt.subplots(nrows=1, ncols=3)
@@ -376,9 +386,7 @@ ax.imshow(img[:, img.shape[1] // 2, ...], cmap="gray")
 ax = axs[2]
 ax.imshow(img[img.shape[0] // 2, ...], cmap="gray")
 
-# %% [markdown]
 # ## Clean-up data
 
-# %%
 if directory is None:
     shutil.rmtree(root_dir)
