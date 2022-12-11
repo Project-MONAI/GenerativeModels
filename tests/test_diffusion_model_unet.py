@@ -168,6 +168,24 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
                 norm_num_groups=8,
             )
 
+    def test_conditioned_models_no_class_labels(self):
+        with self.assertRaises(ValueError):
+            net = DiffusionModelUNet(
+                spatial_dims=2,
+                in_channels=1,
+                out_channels=1,
+                num_res_blocks=1,
+                num_channels=(8, 8, 8),
+                attention_levels=(False, False, True),
+                norm_num_groups=8,
+                num_head_channels=8,
+                num_class_embeds=2,
+            )
+            net.forward(
+                x=torch.rand((1, 1, 16, 32)),
+                timesteps=torch.randint(0, 1000, (1,)).long(),
+            )
+
     def test_script_unconditioned_2d_models(self):
         net = DiffusionModelUNet(
             spatial_dims=2,

@@ -1439,6 +1439,8 @@ class DiffusionModelUNet(nn.Module):
         with_conditioning: if True add spatial transformers to perform conditioning.
         transformer_num_layers: number of layers of Transformer blocks to use.
         cross_attention_dim: number of context dimensions to use.
+        num_class_embeds: if specified (as an int), then this model will be class-conditional with `num_class_embeds`
+        classes.
     """
 
     def __init__(
@@ -1455,6 +1457,7 @@ class DiffusionModelUNet(nn.Module):
         with_conditioning: bool = False,
         transformer_num_layers: int = 1,
         cross_attention_dim: Optional[int] = None,
+        num_class_embeds: Optional[int] = None,
     ) -> None:
         super().__init__()
         if with_conditioning is True and cross_attention_dim is None:
@@ -1498,6 +1501,11 @@ class DiffusionModelUNet(nn.Module):
             nn.SiLU(),
             nn.Linear(time_embed_dim, time_embed_dim),
         )
+
+        # class embedding
+        self.num_class_embeds = num_class_embeds
+        if num_class_embeds is not None:
+            self.class_embedding = nn.Embedding(num_class_embeds, time_embed_dim)
 
         # down
         self.down_blocks = nn.ModuleList([])
@@ -1591,37 +1599,46 @@ class DiffusionModelUNet(nn.Module):
         x: torch.Tensor,
         timesteps: torch.Tensor,
         context: Optional[torch.Tensor] = None,
+        class_labels: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Args:
             x: input tensor (N, C, SpatialDims).
             timesteps: timestep tensor (N,).
             context: context tensor (N, 1, ContextDim).
+            class_labels: context tensor (N, ).
         """
         # 1. time
         t_emb = get_timestep_embedding(timesteps, self.block_out_channels[0])
         emb = self.time_embed(t_emb)
 
-        # 2. initial convolution
+        # 2. class
+        if self.num_class_embeds is not None:
+            if class_labels is None:
+                raise ValueError("class_labels should be provided when num_class_embeds > 0")
+            class_emb = self.class_embedding(class_labels)
+            emb = emb + class_emb
+
+        # 3. initial convolution
         h = self.conv_in(x)
 
-        # 3. down
+        # 4. down
         down_block_res_samples: List[torch.Tensor] = [h]
         for downsample_block in self.down_blocks:
             h, res_samples = downsample_block(hidden_states=h, temb=emb, context=context)
             for residual in res_samples:
                 down_block_res_samples.append(residual)
 
-        # 4. mid
+        # 5. mid
         h = self.middle_block(hidden_states=h, temb=emb, context=context)
 
-        # 5. up
+        # 6. up
         for upsample_block in self.up_blocks:
             res_samples = down_block_res_samples[-len(upsample_block.resnets) :]
             down_block_res_samples = down_block_res_samples[: -len(upsample_block.resnets)]
             h = upsample_block(hidden_states=h, res_hidden_states_list=res_samples, temb=emb, context=context)
 
-        # 6. output block
+        # 7. output block
         h = self.out(h)
 
         return h
