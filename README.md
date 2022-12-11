@@ -1,8 +1,9 @@
-# GenerativeModels
-Prototyping repo for generative models to be integrated into MONAI
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Project-MONAI/MONAI/dev/docs/images/MONAI-logo-color.png" width="50%" alt='project-monai'>
+</p>
 
-* Target: alpha for November
-* Priority: develop general purpose components and trial PR process into MONAI
+# MONAI Generative Toooling
+Prototyping repo for generative models to be integrated into MONAI core.
 
 ## Objectives
 * Develop models to reproduce instances of data on the same distribution as the training data but differentiated enough to preserve privacy/data protection
@@ -19,3 +20,17 @@ Prototyping repo for generative models to be integrated into MONAI
 * Inpainting
 * Anomaly detection
 * MRI recon both in image and k space
+
+## Installation
+To install MONAI Generative Tooling, it is recommended to clone the codebase directly:
+```
+git clone https://github.com/Project-MONAI/GenerativeModels.git
+```
+This command will create a GenerativeModels/ folder in your current directory. You can install it by running:
+```
+cd GenerativeModels/
+python setup.py install
+```
+
+## Contributing
+For guidance on making a contribution to MONAI, see the [contributing guidelines](https://github.com/Project-MONAI/GenerativeModels/blob/main/CONTRIBUTING.md).
