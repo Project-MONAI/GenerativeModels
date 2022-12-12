@@ -39,7 +39,7 @@ from generative.inferers import LatentDiffusionInferer
 from generative.losses.adversarial_loss import PatchAdversarialLoss
 from generative.losses.perceptual import PerceptualLoss
 from generative.networks.nets import AutoencoderKL, DiffusionModelUNet, PatchDiscriminator
-from generative.schedulers import DDPMScheduler
+from generative.networks.schedulers import DDPMScheduler
 
 print_config()
 # -
