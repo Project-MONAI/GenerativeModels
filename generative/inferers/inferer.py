@@ -110,6 +110,8 @@ class DiffusionInferer(Inferer):
         predict_epsilon: bool = True,
         save_intermediates: Optional[bool] = False,
         conditioning: Optional[torch.Tensor] = None,
+        original_input_range: Optional[Tuple] = [0, 255],
+        scaled_input_range: Optional[Tuple] = [0, 1],
         verbose: Optional[bool] = True,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
         """
@@ -122,7 +124,9 @@ class DiffusionInferer(Inferer):
                         predict_epsilon: flag to use when model predicts the samples directly instead of the noise, epsilon.
 
             save_intermediates: save the intermediate spatial KL maps
-            conditioning:
+            conditioning: Conditioning for network input.
+            original_input_range: the [min,max] intensity range of the input data before any scaling was applied.
+            scaled_input_range: the [min,max] intensity range of the input data after scaling.
             verbose: if true, prints the progression bar of the sampling process.
         """
 
@@ -358,3 +362,46 @@ class LatentDiffusionInferer(DiffusionInferer):
 
         else:
             return image
+
+    def get_likelihood(
+        self,
+        inputs: torch.Tensor,
+        autoencoder_model: Callable[..., torch.Tensor],
+        diffusion_model: Callable[..., torch.Tensor],
+        scheduler: Optional[Callable[..., torch.Tensor]] = None,
+        predict_epsilon: bool = True,
+        save_intermediates: Optional[bool] = False,
+        conditioning: Optional[torch.Tensor] = None,
+        original_input_range: Optional[Tuple] = [0, 255],
+        scaled_input_range: Optional[Tuple] = [0, 1],
+        verbose: Optional[bool] = True,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
+        """
+        Computes the likelihoods for an input.
+
+        Args:
+            inputs: input images, NxCxHxW[xD]
+            autoencoder_model: first stage model.
+            diffusion_model: model to compute likelihood from
+            scheduler: diffusion scheduler. If none provided will use the class attribute scheduler
+                        predict_epsilon: flag to use when model predicts the samples directly instead of the noise, epsilon.
+
+            save_intermediates: save the intermediate spatial KL maps
+            conditioning: Conditioning for network input.
+            original_input_range: the [min,max] intensity range of the input data before any scaling was applied.
+            scaled_input_range: the [min,max] intensity range of the input data after scaling.
+            verbose: if true, prints the progression bar of the sampling process.
+        """
+
+        with torch.no_grad():
+            latents = autoencoder_model.encode_stage_2_outputs(inputs) * self.scale_factor
+            outputs = super().get_likelihood(
+                inputs=latents,
+                diffusion_model=diffusion_model,
+                scheduler=scheduler,
+                predict_epsilon=predict_epsilon,
+                save_intermediates=save_intermediates,
+                conditioning=conditioning,
+                verbose=verbose,
+            )
+        return outputs
