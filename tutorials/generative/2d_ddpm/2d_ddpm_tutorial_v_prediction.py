@@ -1,7 +1,7 @@
 # ---
 # jupyter:
 #   jupytext:
-#     formats: ipynb,py:percent
+#     formats: py:percent,ipynb
 #     text_representation:
 #       extension: .py
 #       format_name: percent
@@ -14,12 +14,12 @@
 # ---
 
 # %% [markdown]
-# # Denoising Diffusion Probabilistic Models with MedNIST Dataset
+# # Denoising Diffusion Probabilistic Models using v-prediction parameterization
 #
-# This tutorial illustrates how to use MONAI for training a denoising diffusion probabilistic model (DDPM)[1] to create
-# synthetic 2D images.
+# This tutorial illustrates how to use MONAI for training a denoising diffusion probabilistic model (DDPM)[1] to create synthetic 2D images using v-prediction parameterization (Section 2.4 from [2]).
 #
 # [1] - Ho et al. "Denoising Diffusion Probabilistic Models" https://arxiv.org/abs/2006.11239
+# [2] - Ho et al. "Imagen Video: High Definition Video Generation with Diffusion Models" https://arxiv.org/abs/2210.02303
 #
 # TODO: Add Open in Colab
 #
@@ -28,8 +28,6 @@
 # %%
 # !python -c "import monai" || pip install -q "monai-weekly[pillow, tqdm, einops]"
 # !python -c "import matplotlib" || pip install -q matplotlib
-# !python -c "import ignite" || pip install -q pytorch-ignite
-
 # %matplotlib inline
 
 # %% [markdown]
@@ -49,19 +47,19 @@
 import os
 import shutil
 import tempfile
-from typing import Dict, Mapping, Optional, Union
+import time
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from ignite.contrib.handlers import ProgressBar
+import torch.nn.functional as F
 from monai import transforms
 from monai.apps import MedNISTDataset
 from monai.config import print_config
 from monai.data import CacheDataset, DataLoader
-from monai.engines import PrepareBatch, SupervisedEvaluator, SupervisedTrainer, default_prepare_batch
-from monai.handlers import MeanAbsoluteError, MeanSquaredError, StatsHandler, ValidationHandler, from_engine
 from monai.utils import first, set_determinism
+from torch.cuda.amp import GradScaler, autocast
+from tqdm import tqdm
 
 from generative.inferers import DiffusionInferer
 
@@ -89,7 +87,7 @@ print(root_dir)
 # ## Set deterministic training for reproducibility
 
 # %% jupyter={"outputs_hidden": false}
-set_determinism(0)
+set_determinism(42)
 
 # %% [markdown]
 # ## Setup MedNIST Dataset and training and validation dataloaders
@@ -127,7 +125,7 @@ train_transforms = transforms.Compose(
     ]
 )
 train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
-train_loader = DataLoader(train_ds, batch_size=8, shuffle=True, num_workers=4, persistent_workers=True)
+train_loader = DataLoader(train_ds, batch_size=96, shuffle=True, num_workers=4, persistent_workers=True)
 
 # %% jupyter={"outputs_hidden": false}
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, progress=False, seed=0)
@@ -140,7 +138,7 @@ val_transforms = transforms.Compose(
     ]
 )
 val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
-val_loader = DataLoader(val_ds, batch_size=8, shuffle=False, num_workers=4, persistent_workers=True)
+val_loader = DataLoader(val_ds, batch_size=96, shuffle=False, num_workers=4, persistent_workers=True)
 
 # %% [markdown]
 # ### Visualisation of the training images
@@ -170,71 +168,23 @@ model = DiffusionModelUNet(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
-    num_channels=(64, 128, 128),
+    num_channels=(128, 256, 256),
     attention_levels=(False, True, True),
     num_res_blocks=1,
-    num_head_channels=128,
+    num_head_channels=256,
 )
 model.to(device)
 
-num_train_timesteps = 1000
 scheduler = DDPMScheduler(
-    num_train_timesteps=num_train_timesteps,
+    prediction_type="v_prediction",
+    num_train_timesteps=1000,
+    beta_start=0.00085,
+    beta_end=0.0120,
 )
 
-optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
+optimizer = torch.optim.Adam(params=model.parameters(), lr=1.0e-4)
 
 inferer = DiffusionInferer(scheduler)
-# %% [markdown]
-# ### Define a class for preparing batches
-
-# %%
-
-
-class DiffusionPrepareBatch(PrepareBatch):
-    """
-    This class is used as a callable for the `prepare_batch` parameter of engine classes for diffusion training.
-
-    Assuming a supervised training process, it will generate a noise field using `get_noise` for an input image, and
-    return the image and noise field as the image/target pair plus the noise field the kwargs under the key "noise".
-    This assumes the inferer being used in conjunction with this class expects a "noise" parameter to be provided.
-
-    If the `condition_name` is provided, this must refer to a key in the input dictionary containing the condition
-    field to be passed to the inferer. This will appear in the keyword arguments under the key "condition".
-
-    """
-
-    def __init__(self, num_train_timesteps: int, condition_name: Optional[str] = None):
-        self.condition_name = condition_name
-        self.num_train_timesteps = num_train_timesteps
-
-    def get_noise(self, images):
-        """Returns the noise tensor for input tensor `images`, override this for different noise distributions."""
-        return torch.randn_like(images)
-
-    def get_timesteps(self, images):
-        return torch.randint(0, self.num_train_timesteps, (images.shape[0],), device=images.device).long()
-
-    def __call__(
-        self,
-        batchdata: Dict[str, torch.Tensor],
-        device: Optional[Union[str, torch.device]] = None,
-        non_blocking: bool = False,
-        **kwargs,
-    ):
-        images, _ = default_prepare_batch(batchdata, device, non_blocking, **kwargs)
-        noise = self.get_noise(images).to(device, non_blocking=non_blocking, **kwargs)
-        timesteps = self.get_timesteps(images).to(device, non_blocking=non_blocking, **kwargs)
-
-        kwargs = {"noise": noise, "timesteps": timesteps}
-
-        if self.condition_name is not None and isinstance(batchdata, Mapping):
-            kwargs["conditioning"] = batchdata[self.condition_name].to(device, non_blocking=non_blocking, **kwargs)
-
-        # return input, target, arguments, and keyword arguments where noise is the target and also a keyword value
-        return images, noise, (), kwargs
-
-
 # %% [markdown]
 # ### Model training
 # Here, we are training our model for 75 epochs (training time: ~50 minutes).
@@ -242,47 +192,107 @@ class DiffusionPrepareBatch(PrepareBatch):
 # %% jupyter={"outputs_hidden": false}
 n_epochs = 75
 val_interval = 5
+epoch_loss_list = []
+val_epoch_loss_list = []
 
-val_handlers = [StatsHandler(name="train_log", output_transform=lambda x: None)]
+scaler = GradScaler()
+total_start = time.time()
+for epoch in range(n_epochs):
+    model.train()
+    epoch_loss = 0
+    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=70)
+    progress_bar.set_description(f"Epoch {epoch}")
+    for step, batch in progress_bar:
+        images = batch["image"].to(device)
+        optimizer.zero_grad(set_to_none=True)
 
-evaluator = SupervisedEvaluator(
-    device=device,
-    val_data_loader=val_loader,
-    network=model,
-    inferer=inferer,
-    prepare_batch=DiffusionPrepareBatch(num_train_timesteps=num_train_timesteps),
-    key_val_metric={"val_mean_abs_error": MeanAbsoluteError(output_transform=from_engine(["pred", "label"]))},
-    val_handlers=val_handlers,
+        with autocast(enabled=True):
+            # Generate random noise
+            noise = torch.randn_like(images).to(device)
+            timesteps = torch.randint(
+                0, inferer.scheduler.num_train_timesteps, (images.shape[0],), device=images.device
+            ).long()
+
+            # Get target for the v-prediction parameterization
+            target = inferer.scheduler.get_velocity(images, noise, timesteps)
+
+            # Get model prediction
+            noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
+
+            loss = F.mse_loss(noise_pred.float(), target.float())
+
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+
+        epoch_loss += loss.item()
+
+        progress_bar.set_postfix(
+            {
+                "loss": epoch_loss / (step + 1),
+            }
+        )
+    epoch_loss_list.append(epoch_loss / (step + 1))
+
+    if (epoch + 1) % val_interval == 0:
+        model.eval()
+        val_epoch_loss = 0
+        for step, batch in enumerate(val_loader):
+            images = batch["image"].to(device)
+            with torch.no_grad():
+                with autocast(enabled=True):
+                    noise = torch.randn_like(images).to(device)
+                    timesteps = torch.randint(
+                        0, inferer.scheduler.num_train_timesteps, (images.shape[0],), device=images.device
+                    ).long()
+                    target = inferer.scheduler.get_velocity(images, noise, timesteps)
+                    noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
+                    val_loss = F.mse_loss(noise_pred.float(), target.float())
+
+            val_epoch_loss += val_loss.item()
+            progress_bar.set_postfix(
+                {
+                    "val_loss": val_epoch_loss / (step + 1),
+                }
+            )
+        val_epoch_loss_list.append(val_epoch_loss / (step + 1))
+
+        # Sampling image during training
+        noise = torch.randn((1, 1, 64, 64))
+        noise = noise.to(device)
+        scheduler.set_timesteps(num_inference_steps=1000)
+        with autocast(enabled=True):
+            image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=scheduler)
+
+        plt.figure(figsize=(2, 2))
+        plt.imshow(image[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
+        plt.tight_layout()
+        plt.axis("off")
+        plt.show()
+
+total_time = time.time() - total_start
+print(f"train completed, total time: {total_time}.")
+# %% [markdown]
+# ### Learning curves
+
+# %% jupyter={"outputs_hidden": false}
+plt.style.use("seaborn-v0_8")
+plt.title("Learning Curves", fontsize=20)
+plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, color="C0", linewidth=2.0, label="Train")
+plt.plot(
+    np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
+    val_epoch_loss_list,
+    color="C1",
+    linewidth=2.0,
+    label="Validation",
 )
+plt.yticks(fontsize=12)
+plt.xticks(fontsize=12)
+plt.xlabel("Epochs", fontsize=16)
+plt.ylabel("Loss", fontsize=16)
+plt.legend(prop={"size": 14})
+plt.show()
 
-
-train_handlers = [
-    ValidationHandler(validator=evaluator, interval=val_interval, epoch_level=True),
-    # StatsHandler(name="train_log", tag_name="train_loss", output_transform=from_engine(["loss"], first=True)),
-]
-
-trainer = SupervisedTrainer(
-    device=device,
-    max_epochs=n_epochs,
-    train_data_loader=train_loader,
-    network=model,
-    optimizer=optimizer,
-    loss_function=torch.nn.MSELoss(),
-    inferer=inferer,
-    prepare_batch=DiffusionPrepareBatch(num_train_timesteps=num_train_timesteps),
-    key_train_metric={"train_acc": MeanSquaredError(output_transform=from_engine(["pred", "label"]))},
-    train_handlers=train_handlers,
-)
-ProgressBar(
-    persist=True,
-    bar_format="[{n_fmt}/{total_fmt}] {percentage:3.0f}%|{postfix} [{elapsed}<{remaining}]",
-).attach(
-    trainer,
-    output_transform=from_engine(["loss"]),
-)
-
-
-trainer.run()
 # %% [markdown]
 # ### Plotting sampling process along DDPM's Markov chain
 
@@ -291,9 +301,10 @@ model.eval()
 noise = torch.randn((1, 1, 64, 64))
 noise = noise.to(device)
 scheduler.set_timesteps(num_inference_steps=1000)
-image, intermediates = inferer.sample(
-    input_noise=noise, diffusion_model=model, scheduler=scheduler, save_intermediates=True, intermediate_steps=100
-)
+with autocast(enabled=True):
+    image, intermediates = inferer.sample(
+        input_noise=noise, diffusion_model=model, scheduler=scheduler, save_intermediates=True, intermediate_steps=100
+    )
 
 chain = torch.cat(intermediates, dim=-1)
 
@@ -308,6 +319,6 @@ plt.show()
 #
 # Remove directory if a temporary was used.
 
-# %% tags=[]
+# %%
 if directory is None:
     shutil.rmtree(root_dir)
