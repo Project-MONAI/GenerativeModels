@@ -200,7 +200,6 @@ class DiffusionInferer(Inferer):
                     + torch.exp(log_posterior_variance - log_predicted_variance)
                     + ((posterior_mean - predicted_mean) ** 2) * torch.exp(-log_predicted_variance)
                 )
-
             total_kl += kl.view(kl.shape[0], -1).mean(axis=1)
             if save_intermediates:
                 intermediates.append(kl.cpu())
