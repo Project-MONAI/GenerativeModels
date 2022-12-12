@@ -10,6 +10,7 @@
 # limitations under the License.
 
 
+import math
 from typing import Callable, List, Optional, Tuple, Union
 
 import torch
@@ -140,6 +141,7 @@ class DiffusionInferer(Inferer):
         noise = torch.randn_like(inputs).to(inputs.device)
         total_kl = torch.zeros((inputs.shape[0])).to(inputs.device)
         for t in progress_bar:
+
             timesteps = torch.full(inputs.shape[:1], t, device=inputs.device).long()
             noisy_image = self.scheduler.add_noise(original_samples=inputs, noise=noise, timesteps=timesteps)
             model_output = diffusion_model(x=noisy_image, timesteps=timesteps, context=conditioning)
@@ -184,14 +186,18 @@ class DiffusionInferer(Inferer):
             log_posterior_variance = torch.log(posterior_variance)
             log_predicted_variance = torch.log(predicted_variance) if predicted_variance else log_posterior_variance
 
-            # compute kl between two normals
-            kl = 0.5 * (
-                -1.0
-                + log_predicted_variance
-                - log_posterior_variance
-                + torch.exp(log_posterior_variance - log_predicted_variance)
-                + ((posterior_mean - predicted_mean) ** 2) * torch.exp(-log_predicted_variance)
-            )
+            if t == 0:
+                # compute -log p(x_0|x_1)
+                kl = -self._get_decoder_log_likelihood(inputs, predicted_mean, 0.5 * log_predicted_variance)
+            else:
+                # compute kl between two normals
+                kl = 0.5 * (
+                    -1.0
+                    + log_predicted_variance
+                    - log_posterior_variance
+                    + torch.exp(log_posterior_variance - log_predicted_variance)
+                    + ((posterior_mean - predicted_mean) ** 2) * torch.exp(-log_predicted_variance)
+                )
             total_kl += kl.view(kl.shape[0], -1).mean(axis=1)
             if save_intermediates:
                 intermediates.append(kl.cpu())
@@ -200,6 +206,57 @@ class DiffusionInferer(Inferer):
             return total_kl, intermediates
         else:
             return total_kl
+
+    def _approx_standard_normal_cdf(self, x):
+        """
+        A fast approximation of the cumulative distribution function of the
+        standard normal. Code adapted from https://github.com/openai/improved-diffusion.
+        """
+
+        return 0.5 * (
+            1.0 + torch.tanh(torch.sqrt(torch.Tensor([2.0 / math.pi]).to(x.device)) * (x + 0.044715 * torch.pow(x, 3)))
+        )
+
+    def _get_decoder_log_likelihood(
+        self,
+        inputs: torch.Tensor,
+        means: torch.Tensor,
+        log_scales: torch.Tensor,
+        original_input_range: Optional[Tuple] = [0, 255],
+        scaled_input_range: Optional[Tuple] = [0, 1],
+    ) -> torch.Tensor:
+        """
+        Compute the log-likelihood of a Gaussian distribution discretizing to a
+        given image. Code adapted from https://github.com/openai/improved-diffusion.
+
+        Args:
+            input: the target images. It is assumed that this was uint8 values,
+                      rescaled to the range [-1, 1].
+            means: the Gaussian mean Tensor.
+            log_scales: the Gaussian log stddev Tensor.
+            original_input_range: the [min,max] intensity range of the input data before any scaling was applied.
+            scaled_input_range: the [min,max] intensity range of the input data after scaling.
+        """
+        assert inputs.shape == means.shape
+        bin_width = (scaled_input_range[1] - scaled_input_range[0]) / (
+            original_input_range[1] - original_input_range[0]
+        )
+        centered_x = inputs - means
+        inv_stdv = torch.exp(-log_scales)
+        plus_in = inv_stdv * (centered_x + bin_width / 2)
+        cdf_plus = self._approx_standard_normal_cdf(plus_in)
+        min_in = inv_stdv * (centered_x - bin_width / 2)
+        cdf_min = self._approx_standard_normal_cdf(min_in)
+        log_cdf_plus = torch.log(cdf_plus.clamp(min=1e-12))
+        log_one_minus_cdf_min = torch.log((1.0 - cdf_min).clamp(min=1e-12))
+        cdf_delta = cdf_plus - cdf_min
+        log_probs = torch.where(
+            inputs < -0.999,
+            log_cdf_plus,
+            torch.where(inputs > 0.999, log_one_minus_cdf_min, torch.log(cdf_delta.clamp(min=1e-12))),
+        )
+        assert log_probs.shape == inputs.shape
+        return log_probs
 
 
 class LatentDiffusionInferer(DiffusionInferer):
