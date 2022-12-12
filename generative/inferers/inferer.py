@@ -391,7 +391,7 @@ class LatentDiffusionInferer(DiffusionInferer):
         """
 
         with torch.no_grad():
-            latents = autoencoder_model.encode_stage_2_outputs(inputs) * self.scale_factor
+            latents = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
             outputs = super().get_likelihood(
                 inputs=latents,
                 diffusion_model=diffusion_model,
