@@ -110,8 +110,8 @@ class DiffusionInferer(Inferer):
         predict_epsilon: bool = True,
         save_intermediates: Optional[bool] = False,
         conditioning: Optional[torch.Tensor] = None,
-        original_input_range: Optional[Tuple] = [0, 255],
-        scaled_input_range: Optional[Tuple] = [0, 1],
+        original_input_range: Optional[Tuple] = (0, 255),
+        scaled_input_range: Optional[Tuple] = (0, 1),
         verbose: Optional[bool] = True,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
         """
@@ -120,7 +120,8 @@ class DiffusionInferer(Inferer):
         Args:
             inputs: input images, NxCxHxW[xD]
             diffusion_model: model to compute likelihood from
-            scheduler: diffusion scheduler. If none provided will use the class attribute scheduler
+            scheduler: diffusion scheduler. If none provided will use the class attribute scheduler.
+            predict_epsilon: flag to use when model predicts the samples directly instead of the noise, epsilon.
             save_intermediates: save the intermediate spatial KL maps
             conditioning: Conditioning for network input.
             original_input_range: the [min,max] intensity range of the input data before any scaling was applied.
@@ -143,7 +144,6 @@ class DiffusionInferer(Inferer):
         noise = torch.randn_like(inputs).to(inputs.device)
         total_kl = torch.zeros((inputs.shape[0])).to(inputs.device)
         for t in progress_bar:
-
             timesteps = torch.full(inputs.shape[:1], t, device=inputs.device).long()
             noisy_image = self.scheduler.add_noise(original_samples=inputs, noise=noise, timesteps=timesteps)
             model_output = diffusion_model(x=noisy_image, timesteps=timesteps, context=conditioning)
@@ -373,8 +373,8 @@ class LatentDiffusionInferer(DiffusionInferer):
         predict_epsilon: bool = True,
         save_intermediates: Optional[bool] = False,
         conditioning: Optional[torch.Tensor] = None,
-        original_input_range: Optional[Tuple] = [0, 255],
-        scaled_input_range: Optional[Tuple] = [0, 1],
+        original_input_range: Optional[Tuple] = (0, 255),
+        scaled_input_range: Optional[Tuple] = (0, 1),
         verbose: Optional[bool] = True,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
         """
@@ -385,13 +385,12 @@ class LatentDiffusionInferer(DiffusionInferer):
             autoencoder_model: first stage model.
             diffusion_model: model to compute likelihood from
             scheduler: diffusion scheduler. If none provided will use the class attribute scheduler
-                        predict_epsilon: flag to use when model predicts the samples directly instead of the noise, epsilon.
-
+            predict_epsilon: flag to use when model predicts the samples directly instead of the noise, epsilon.
             save_intermediates: save the intermediate spatial KL maps
             conditioning: Conditioning for network input.
             original_input_range: the [min,max] intensity range of the input data before any scaling was applied.
             scaled_input_range: the [min,max] intensity range of the input data after scaling.
-            verbose: if true, prints the progression bar of the sampling process.
+            verbose: if tguarue, prints the progression bar of the sampling process.
         """
 
         with torch.no_grad():
