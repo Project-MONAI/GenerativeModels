@@ -107,7 +107,6 @@ class DiffusionInferer(Inferer):
         inputs: torch.Tensor,
         diffusion_model: Callable[..., torch.Tensor],
         scheduler: Optional[Callable[..., torch.Tensor]] = None,
-        predict_epsilon: bool = True,
         save_intermediates: Optional[bool] = False,
         conditioning: Optional[torch.Tensor] = None,
         original_input_range: Optional[Tuple] = (0, 255),
@@ -121,7 +120,6 @@ class DiffusionInferer(Inferer):
             inputs: input images, NxCxHxW[xD]
             diffusion_model: model to compute likelihood from
             scheduler: diffusion scheduler. If none provided will use the class attribute scheduler.
-            predict_epsilon: flag to use when model predicts the samples directly instead of the noise, epsilon.
             save_intermediates: save the intermediate spatial KL maps
             conditioning: Conditioning for network input.
             original_input_range: the [min,max] intensity range of the input data before any scaling was applied.
@@ -161,11 +159,12 @@ class DiffusionInferer(Inferer):
 
             # 2. compute predicted original sample from predicted noise also called
             # "predicted x_0" of formula (15) from https://arxiv.org/pdf/2006.11239.pdf
-            if predict_epsilon:
+            if scheduler.prediction_type == "epsilon":
                 pred_original_sample = (noisy_image - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
-            else:
+            elif scheduler.prediction_type == "sample":
                 pred_original_sample = model_output
-
+            elif scheduler.prediction_type == "v_prediction":
+                pred_original_sample = (alpha_prod_t**0.5) * noisy_image - (beta_prod_t**0.5) * model_output
             # 3. Clip "predicted x_0"
             if scheduler.clip_sample:
                 pred_original_sample = torch.clamp(pred_original_sample, -1, 1)
@@ -263,6 +262,7 @@ class DiffusionInferer(Inferer):
         )
         assert log_probs.shape == inputs.shape
         return log_probs
+
 
 class LatentDiffusionInferer(DiffusionInferer):
     """
@@ -370,7 +370,6 @@ class LatentDiffusionInferer(DiffusionInferer):
         autoencoder_model: Callable[..., torch.Tensor],
         diffusion_model: Callable[..., torch.Tensor],
         scheduler: Optional[Callable[..., torch.Tensor]] = None,
-        predict_epsilon: bool = True,
         save_intermediates: Optional[bool] = False,
         conditioning: Optional[torch.Tensor] = None,
         original_input_range: Optional[Tuple] = (0, 255),
@@ -385,7 +384,6 @@ class LatentDiffusionInferer(DiffusionInferer):
             autoencoder_model: first stage model.
             diffusion_model: model to compute likelihood from
             scheduler: diffusion scheduler. If none provided will use the class attribute scheduler
-            predict_epsilon: flag to use when model predicts the samples directly instead of the noise, epsilon.
             save_intermediates: save the intermediate spatial KL maps
             conditioning: Conditioning for network input.
             original_input_range: the [min,max] intensity range of the input data before any scaling was applied.
@@ -399,7 +397,6 @@ class LatentDiffusionInferer(DiffusionInferer):
                 inputs=latents,
                 diffusion_model=diffusion_model,
                 scheduler=scheduler,
-                predict_epsilon=predict_epsilon,
                 save_intermediates=save_intermediates,
                 conditioning=conditioning,
                 verbose=verbose,
