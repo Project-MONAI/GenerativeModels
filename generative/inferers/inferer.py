@@ -182,15 +182,19 @@ class DiffusionInferer(Inferer):
             # get the posterior mean and variance
             posterior_mean = scheduler._get_mean(timestep=t, x_0=inputs, x_t=noisy_image)
             posterior_variance = scheduler._get_variance(timestep=t, predicted_variance=predicted_variance)
-            # at t=0 variance is 0 and the log-variance blows up, fix this
-            if t == 0:
-                posterior_variance = torch.Tensor([1]).to(posterior_mean.device)
+
             log_posterior_variance = torch.log(posterior_variance)
             log_predicted_variance = torch.log(predicted_variance) if predicted_variance else log_posterior_variance
 
             if t == 0:
                 # compute -log p(x_0|x_1)
-                kl = -self._get_decoder_log_likelihood(inputs, predicted_mean, 0.5 * log_predicted_variance)
+                kl = -self._get_decoder_log_likelihood(
+                    inputs=inputs,
+                    means=predicted_mean,
+                    log_scales=0.5 * log_predicted_variance,
+                    original_input_range=original_input_range,
+                    scaled_input_range=scaled_input_range,
+                )
             else:
                 # compute kl between two normals
                 kl = 0.5 * (
