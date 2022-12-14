@@ -388,7 +388,7 @@ class LatentDiffusionInferer(DiffusionInferer):
             conditioning: Conditioning for network input.
             original_input_range: the [min,max] intensity range of the input data before any scaling was applied.
             scaled_input_range: the [min,max] intensity range of the input data after scaling.
-            verbose: if tguarue, prints the progression bar of the sampling process.
+            verbose: if true, prints the progression bar of the sampling process.
         """
 
         with torch.no_grad():
