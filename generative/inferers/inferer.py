@@ -377,6 +377,8 @@ class LatentDiffusionInferer(DiffusionInferer):
         original_input_range: Optional[Tuple] = (0, 255),
         scaled_input_range: Optional[Tuple] = (0, 1),
         verbose: Optional[bool] = True,
+        resample_latent_likelihoods: Optional[bool] = False,
+        resample_interpolation_mode: Optional[str] = "bilinear",
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
         """
         Computes the likelihoods for an input.
@@ -391,6 +393,9 @@ class LatentDiffusionInferer(DiffusionInferer):
             original_input_range: the [min,max] intensity range of the input data before any scaling was applied.
             scaled_input_range: the [min,max] intensity range of the input data after scaling.
             verbose: if true, prints the progression bar of the sampling process.
+            resample_latent_likelihoods: if true, resamples the intermediate likelihood maps to have the same spatial
+                dimension as the input images.
+            resample_interpolation_mode: if use resample_latent_likelihoods, select interpolation 'nearest' or 'bilinear'
         """
 
         latents = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
@@ -402,4 +407,16 @@ class LatentDiffusionInferer(DiffusionInferer):
             conditioning=conditioning,
             verbose=verbose,
         )
+        if save_intermediates and resample_latent_likelihoods:
+            intermediates = outputs[1]
+            from torchvision.transforms import Resize
+
+            interpolation_modes = {"nearest": 0, "bilinear": 2}
+            if resample_interpolation_mode not in interpolation_modes.keys():
+                raise ValueError(
+                    f"resample_interpolation mode should be either nearest or bilinear, not {resample_interpolation_mode}"
+                )
+            resizer = Resize(size=inputs.shape[2:], interpolation=interpolation_modes[resample_interpolation_mode])
+            intermediates = [resizer(x) for x in intermediates]
+            outputs = (outputs[0], intermediates)
         return outputs
