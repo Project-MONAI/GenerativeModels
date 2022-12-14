@@ -381,7 +381,7 @@ class LatentDiffusionInferer(DiffusionInferer):
         resample_interpolation_mode: Optional[str] = "bilinear",
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
         """
-        Computes the likelihoods for an input.
+        Computes the likelihoods of the latent representations of the input.
 
         Args:
             inputs: input images, NxCxHxW[xD]
