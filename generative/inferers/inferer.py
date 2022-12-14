@@ -102,6 +102,7 @@ class DiffusionInferer(Inferer):
         else:
             return image
 
+    @torch.no_grad()
     def get_likelihood(
         self,
         inputs: torch.Tensor,
@@ -364,6 +365,7 @@ class LatentDiffusionInferer(DiffusionInferer):
         else:
             return image
 
+    @torch.no_grad()
     def get_likelihood(
         self,
         inputs: torch.Tensor,
@@ -391,14 +393,13 @@ class LatentDiffusionInferer(DiffusionInferer):
             verbose: if true, prints the progression bar of the sampling process.
         """
 
-        with torch.no_grad():
-            latents = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
-            outputs = super().get_likelihood(
-                inputs=latents,
-                diffusion_model=diffusion_model,
-                scheduler=scheduler,
-                save_intermediates=save_intermediates,
-                conditioning=conditioning,
-                verbose=verbose,
-            )
+        latents = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
+        outputs = super().get_likelihood(
+            inputs=latents,
+            diffusion_model=diffusion_model,
+            scheduler=scheduler,
+            save_intermediates=save_intermediates,
+            conditioning=conditioning,
+            verbose=verbose,
+        )
         return outputs
