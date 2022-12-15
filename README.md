@@ -2,7 +2,7 @@
   <img src="https://raw.githubusercontent.com/Project-MONAI/MONAI/dev/docs/images/MONAI-logo-color.png" width="50%" alt='project-monai'>
 </p>
 
-# MONAI Generative Toooling
+# MONAI Generative Models
 Prototyping repo for generative models to be integrated into MONAI core.
 
 ## Objectives
