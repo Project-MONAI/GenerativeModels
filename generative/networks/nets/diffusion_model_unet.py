@@ -138,7 +138,7 @@ class CrossAttention(nn.Module):
         return x
 
     def _attention(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor) -> torch.Tensor:
-        attention_scores = torch.matmul(query, key.transpose(-1, -2))
+        attention_scores = torch.matmul(query, key.transpose(-1, -2)) * self.scale
         attention_probs = attention_scores.softmax(dim=-1)
         # compute attention output
         hidden_states = torch.matmul(attention_probs, value)
