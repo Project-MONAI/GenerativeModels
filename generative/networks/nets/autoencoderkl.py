@@ -9,12 +9,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 from typing import Optional, Sequence, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import xformers.ops
 from monai.networks.blocks import Convolution
+
+has_xformers = True
+
+# TODO: Make optional import work
+# from monai.utils import optional_import
+# xformers, has_xformers = optional_import("xformers.ops", name="xformers")
 
 __all__ = ["AutoencoderKL"]
 
@@ -177,8 +185,11 @@ class AttnBlock(nn.Module):
         self.spatial_dims = spatial_dims
         self.in_channels = in_channels
 
+        self.num_heads = 1
+        self.scale = 1 / math.sqrt(in_channels / self.num_heads)
+
         self.norm = nn.GroupNorm(num_groups=norm_num_groups, num_channels=in_channels, eps=norm_eps, affine=True)
-        self.q = Convolution(
+        self.to_q = Convolution(
             spatial_dims=spatial_dims,
             in_channels=in_channels,
             out_channels=in_channels,
@@ -187,7 +198,7 @@ class AttnBlock(nn.Module):
             padding=0,
             conv_only=True,
         )
-        self.k = Convolution(
+        self.to_k = Convolution(
             spatial_dims=spatial_dims,
             in_channels=in_channels,
             out_channels=in_channels,
@@ -196,7 +207,7 @@ class AttnBlock(nn.Module):
             padding=0,
             conv_only=True,
         )
-        self.v = Convolution(
+        self.to_v = Convolution(
             spatial_dims=spatial_dims,
             in_channels=in_channels,
             out_channels=in_channels,
@@ -215,45 +226,90 @@ class AttnBlock(nn.Module):
             conv_only=True,
         )
 
+    def reshape_heads_to_batch_dim(self, x: torch.Tensor) -> torch.Tensor:
+        batch_size, seq_len, dim = x.shape
+        x = x.reshape(batch_size, seq_len, self.num_heads, dim // self.num_heads)
+        x = x.permute(0, 2, 1, 3).reshape(batch_size * self.num_heads, seq_len, dim // self.num_heads)
+        return x
+
+    def reshape_batch_dim_to_heads(self, x: torch.Tensor) -> torch.Tensor:
+        batch_size, seq_len, dim = x.shape
+        x = x.reshape(batch_size // self.num_heads, self.num_heads, seq_len, dim)
+        x = x.permute(0, 2, 1, 3).reshape(batch_size // self.num_heads, seq_len, dim * self.num_heads)
+        return x
+
+    def _memory_efficient_attention_xformers(
+        self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
+    ) -> torch.Tensor:
+        query = query.contiguous()
+        key = key.contiguous()
+        value = value.contiguous()
+        x = xformers.ops.memory_efficient_attention(query, key, value, attn_bias=None)
+        return x
+
+    def _attention(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor) -> torch.Tensor:
+        attention_scores = torch.baddbmm(
+            torch.empty(query.shape[0], query.shape[1], key.shape[1], dtype=query.dtype, device=query.device),
+            query,
+            key.transpose(-1, -2),
+            beta=0,
+            alpha=self.scale,
+        )
+        attention_probs = attention_scores.softmax(dim=-1)
+        x = torch.bmm(attention_probs, value)
+        return x
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        h_ = x
-        h_ = self.norm(h_)
-        q = self.q(h_)
-        k = self.k(h_)
-        v = self.v(h_)
+        residual = x
 
-        # Compute attention
-        b = q.shape[0]
-        c = q.shape[1]
-        h = q.shape[2]
-        w = q.shape[3]
-        # in order to Torchscript work, we initialise d = 1
-        d = 1
+        # Norm
+        x = self.norm(x)
 
+        # Project to query, key, and value vectors
+        query = self.to_q(x)
+        key = self.to_k(x)
+        value = self.to_v(x)
+
+        # Reshape to B, C, SPATIAL_DIMS
+        batch = query.shape[0]
+        channel = query.shape[1]
+        height = query.shape[2]
+        width = query.shape[3]
+
+        # Note: in order to make Torchscript's tests work, we initialise depth = 1
+        depth = 1
         if self.spatial_dims == 3:
-            d = q.shape[4]
-        n_spatial_elements = h * w * d
+            depth = query.shape[4]
 
-        q = q.reshape(b, c, n_spatial_elements)
-        q = q.permute(0, 2, 1)
-        k = k.reshape(b, c, n_spatial_elements)
-        w_ = torch.bmm(q, k)
-        w_ = w_ * (int(c) ** (-0.5))
-        w_ = F.softmax(w_, dim=2)
+        n_spatial_elements = height * width * depth
 
-        # Attend to values
-        v = v.reshape(b, c, n_spatial_elements)
-        w_ = w_.permute(0, 2, 1)
-        h_ = torch.bmm(v, w_)
+        query = query.reshape(batch, channel, n_spatial_elements)
+        key = key.reshape(batch, channel, n_spatial_elements)
+        value = value.reshape(batch, channel, n_spatial_elements)
 
+        # Multi-Head Attention
+        query = self.reshape_heads_to_batch_dim(query)
+        key = self.reshape_heads_to_batch_dim(key)
+        value = self.reshape_heads_to_batch_dim(value)
+
+        if has_xformers:
+            x = self._memory_efficient_attention_xformers(query, key, value)
+        else:
+            x = self._attention(query, key, value)
+
+        x = self.reshape_batch_dim_to_heads(x)
+        x = x.to(query.dtype)
+
+        # Reshape to B, C, H, W [, D]
         if self.spatial_dims == 2:
-            h_ = h_.reshape(b, c, h, w)
+            x = x.reshape(batch, channel, height, width)
         if self.spatial_dims == 3:
-            h_ = h_.reshape(b, c, h, w, d)
+            x = x.reshape(batch, channel, height, width, depth)
 
-        h_ = self.proj_out(h_)
+        # Proj out
+        x = self.proj_out(x)
 
-        return x + h_
+        return x + residual
 
 
 class Encoder(nn.Module):
