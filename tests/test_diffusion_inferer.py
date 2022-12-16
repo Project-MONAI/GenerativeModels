@@ -141,6 +141,37 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         )
         self.assertEqual(len(intermediates), 10)
 
+    @parameterized.expand(TEST_CASES)
+    def test_get_likelihood(self, model_params, input_shape):
+        model = DiffusionModelUNet(**model_params)
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        model.to(device)
+        model.eval()
+        input = torch.randn(input_shape).to(device)
+        scheduler = DDPMScheduler(
+            num_train_timesteps=10,
+        )
+        inferer = DiffusionInferer(scheduler=scheduler)
+        scheduler.set_timesteps(num_inference_steps=10)
+        likelihood, intermediates = inferer.get_likelihood(
+            inputs=input, diffusion_model=model, scheduler=scheduler, save_intermediates=True
+        )
+        self.assertEqual(intermediates[0].shape, input.shape)
+        self.assertEqual(likelihood.shape[0], input.shape[0])
+
+    def test_normal_cdf(self):
+        from scipy.stats import norm
+
+        scheduler = DDPMScheduler(
+            num_train_timesteps=10,
+        )
+        inferer = DiffusionInferer(scheduler=scheduler)
+
+        x = torch.linspace(-10, 10, 20)
+        cdf_approx = inferer._approx_standard_normal_cdf(x)
+        cdf_true = norm.cdf(x)
+        torch.testing.assert_allclose(cdf_approx, cdf_true, atol=1e-3, rtol=1e-5)
+
 
 if __name__ == "__main__":
     unittest.main()
