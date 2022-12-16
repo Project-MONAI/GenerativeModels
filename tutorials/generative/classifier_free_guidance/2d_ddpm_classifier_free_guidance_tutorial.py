@@ -299,7 +299,7 @@ plt.legend(prop={"size": 14})
 plt.show()
 
 # %% [markdown]
-# ### Sapling process with classifier-free guidance
+# ### Sampling process with classifier-free guidance
 # In order to sample using classifier-free guidance, for each step of the process we need to have 2 elements, one generated conditioned in the desired class (here we want to condition on Hands `=1`) and one using the unconditional class (`=-1`).
 # Instead using directly the predicted class in every step, we use the unconditional plus the direction vector pointing to the condition that we want (`noise_pred_text - noise_pred_uncond`). The effect of the condition is defined by the `guidance_scale` defining the influence of our direction vector.
 
