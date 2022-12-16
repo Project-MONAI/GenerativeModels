@@ -39,7 +39,7 @@ from monai.networks.blocks import Convolution
 from monai.networks.layers.factories import Pool
 from torch import nn
 
-has_xformers = True
+has_xformers = False
 
 # TODO: Make optional import work
 # from monai.utils import optional_import
@@ -152,9 +152,15 @@ class CrossAttention(nn.Module):
         return x
 
     def _attention(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor) -> torch.Tensor:
-        attention_scores = torch.matmul(query, key.transpose(-1, -2)) * self.scale
+        attention_scores = torch.baddbmm(
+            torch.empty(query.shape[0], query.shape[1], key.shape[1], dtype=query.dtype, device=query.device),
+            query,
+            key.transpose(-1, -2),
+            beta=0,
+            alpha=self.scale,
+        )
         attention_probs = attention_scores.softmax(dim=-1)
-        x = torch.matmul(attention_probs, value)
+        x = torch.bmm(attention_probs, value)
         return x
 
     def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
