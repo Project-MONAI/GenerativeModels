@@ -34,9 +34,16 @@ from typing import List, Optional, Sequence, Tuple
 
 import torch
 import torch.nn.functional as F
+import xformers.ops
 from monai.networks.blocks import Convolution
 from monai.networks.layers.factories import Pool
 from torch import nn
+
+has_xformers = True
+
+# TODO: Make optional import work
+# from monai.utils import optional_import
+# xformers, has_xformers = optional_import("xformers.ops", name="xformers")
 
 __all__ = ["DiffusionModelUNet"]
 
@@ -114,8 +121,8 @@ class CrossAttention(nn.Module):
         inner_dim = num_head_channels * num_attention_heads
         cross_attention_dim = cross_attention_dim if cross_attention_dim is not None else query_dim
 
-        self.scale = num_head_channels**-0.5
-        self.heads = num_attention_heads
+        self.scale = math.sqrt(num_head_channels)
+        self.num_heads = num_attention_heads
 
         self.to_q = nn.Linear(query_dim, inner_dim, bias=False)
         self.to_k = nn.Linear(cross_attention_dim, inner_dim, bias=False)
@@ -125,27 +132,30 @@ class CrossAttention(nn.Module):
 
     def reshape_heads_to_batch_dim(self, x: torch.Tensor) -> torch.Tensor:
         batch_size, seq_len, dim = x.shape
-        head_size = self.heads
-        x = x.reshape(batch_size, seq_len, head_size, dim // head_size)
-        x = x.permute(0, 2, 1, 3).reshape(batch_size * head_size, seq_len, dim // head_size)
+        x = x.reshape(batch_size, seq_len, self.num_heads, dim // self.num_heads)
+        x = x.permute(0, 2, 1, 3).reshape(batch_size * self.num_heads, seq_len, dim // self.num_heads)
         return x
 
     def reshape_batch_dim_to_heads(self, x: torch.Tensor) -> torch.Tensor:
         batch_size, seq_len, dim = x.shape
-        head_size = self.heads
-        x = x.reshape(batch_size // head_size, head_size, seq_len, dim)
-        x = x.permute(0, 2, 1, 3).reshape(batch_size // head_size, seq_len, dim * head_size)
+        x = x.reshape(batch_size // self.num_heads, self.num_heads, seq_len, dim)
+        x = x.permute(0, 2, 1, 3).reshape(batch_size // self.num_heads, seq_len, dim * self.num_heads)
+        return x
+
+    def _memory_efficient_attention_xformers(
+        self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
+    ) -> torch.Tensor:
+        query = query.contiguous()
+        key = key.contiguous()
+        value = value.contiguous()
+        x = xformers.ops.memory_efficient_attention(query, key, value, attn_bias=None)
         return x
 
     def _attention(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor) -> torch.Tensor:
         attention_scores = torch.matmul(query, key.transpose(-1, -2)) * self.scale
         attention_probs = attention_scores.softmax(dim=-1)
-        # compute attention output
-        hidden_states = torch.matmul(attention_probs, value)
-
-        # reshape hidden_states
-        hidden_states = self.reshape_batch_dim_to_heads(hidden_states)
-        return hidden_states
+        x = torch.matmul(attention_probs, value)
+        return x
 
     def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
         query = self.to_q(x)
@@ -153,11 +163,18 @@ class CrossAttention(nn.Module):
         key = self.to_k(context)
         value = self.to_v(context)
 
+        # Multi-Head Attention
         query = self.reshape_heads_to_batch_dim(query)
         key = self.reshape_heads_to_batch_dim(key)
         value = self.reshape_heads_to_batch_dim(value)
 
-        x = self._attention(query, key, value)
+        if has_xformers:
+            x = self._memory_efficient_attention_xformers(query, key, value)
+        else:
+            x = self._attention(query, key, value)
+
+        x = self.reshape_batch_dim_to_heads(x)
+        x = x.to(query.dtype)
 
         return self.to_out(x)
 
