@@ -44,6 +44,7 @@ from monai.config import print_config
 from monai.data import CacheDataset, DataLoader
 from monai.networks.layers import Act
 from monai.utils import first, set_determinism
+from torch import nn
 from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
@@ -99,15 +100,17 @@ train_loader = DataLoader(train_ds, batch_size=32, shuffle=True, num_workers=4, 
 # Plot 3 examples from the training set
 check_data = first(train_loader)
 fig, ax = plt.subplots(nrows=1, ncols=3)
-for image_n in range(3):
-    ax[image_n].imshow(check_data["image"][image_n, 0, :, :], cmap="gray")
-    ax[image_n].axis("off")
+for i in range(3):
+    ax[i].imshow(check_data["image"][i, 0, :, :], cmap="gray")
+    ax[i].axis("off")
 
 # Plot 3 examples from the training set in low resolution
 fig, ax = plt.subplots(nrows=1, ncols=3)
-for image_n in range(3):
-    ax[image_n].imshow(check_data["low_res_image"][image_n, 0, :, :], cmap="gray")
-    ax[image_n].axis("off")
+for i in range(3):
+    ax[i].imshow(check_data["low_res_image"][i, 0, :, :], cmap="gray")
+    ax[i].axis("off")
+
+plt.show()
 
 # ## Download the validation set
 
@@ -179,7 +182,7 @@ scaler_d = GradScaler()
 
 # +
 kl_weight = 1e-6
-n_epochs = 1
+n_epochs = 100
 val_interval = 5
 autoencoder_warm_up_n_epochs = 10
 
@@ -360,51 +363,81 @@ for epoch in range(n_epochs):
             }
         )
     epoch_loss_list.append(epoch_loss / (step + 1))
-    #
-    # if (epoch + 1) % val_interval == 0:
-    #     unet.eval()
-    #     val_loss = 0
-    #     with torch.no_grad():
-    #         for val_step, batch in enumerate(val_loader, start=1):
-    #             images = batch["image"].to(device)
-    #             optimizer.zero_grad(set_to_none=True)
-    #
-    #             z_mu, z_sigma = autoencoderkl.encode(images)
-    #             z = autoencoderkl.sampling(z_mu, z_sigma)
-    #
-    #             noise = torch.randn_like(z).to(device)
-    #             timesteps = torch.randint(
-    #                 0, inferer.scheduler.num_train_timesteps, (z.shape[0],), device=z.device
-    #             ).long()
-    #             noise_pred = inferer(inputs=z, diffusion_model=unet, noise=noise, timesteps=timesteps)
-    #
-    #             loss = F.mse_loss(noise_pred.float(), noise.float())
-    #
-    #             val_loss += loss.item()
-    #     val_loss /= val_step
-    #     val_epoch_loss_list.append(val_loss)
-    #     print(f"Epoch {epoch} val loss: {val_loss:.4f}")
-    #
-    #     # Sampling image during training
-    #     z = torch.randn((1, 3, 16, 16))
-    #     z = z.to(device)
-    #     scheduler.set_timesteps(num_inference_steps=1000)
-    #     for t in tqdm(scheduler.timesteps, ncols=70):
-    #         # 1. predict noise model_output
-    #         with torch.no_grad():
-    #             model_output = unet(z, torch.Tensor((t,)).to(device))
-    #
-    #             # 2. compute previous image: x_t -> x_t-1
-    #             z, _ = scheduler.step(model_output, t, z)
-    #
-    #     with torch.no_grad():
-    #         decoded = autoencoderkl.decode(z)
-    #     plt.figure(figsize=(2, 2))
-    #     plt.style.use("default")
-    #     plt.imshow(decoded[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
-    #     plt.tight_layout()
-    #     plt.axis("off")
-    #     plt.show()
+
+    if (epoch + 1) % val_interval == 0:
+        unet.eval()
+        val_loss = 0
+        for val_step, batch in enumerate(val_loader, start=1):
+            images = batch["image"].to(device)
+            low_res_image = batch["low_res_image"].to(device)
+
+            with torch.no_grad():
+                with autocast(enabled=True):
+                    latent = autoencoderkl.encode_stage_2_inputs(images) * scale_factor
+                    # Noise augmentation
+                    noise = torch.randn_like(latent).to(device)
+                    low_res_noise = torch.randn_like(low_res_image).to(device)
+                    timesteps = torch.randint(
+                        0, scheduler.num_train_timesteps, (latent.shape[0],), device=latent.device
+                    ).long()
+                    low_res_timesteps = torch.randint(
+                        0, max_noise_level, (low_res_image.shape[0],), device=low_res_image.device
+                    ).long()
+
+                    noisy_latent = scheduler.add_noise(original_samples=latent, noise=noise, timesteps=timesteps)
+                    noisy_low_res_image = scheduler.add_noise(
+                        original_samples=low_res_image, noise=low_res_noise, timesteps=low_res_timesteps
+                    )
+
+                    latent_model_input = torch.cat([noisy_latent, noisy_low_res_image], dim=1)
+                    noise_pred = unet(x=latent_model_input, timesteps=timesteps, class_labels=low_res_timesteps)
+                    loss = F.mse_loss(noise_pred.float(), noise.float())
+
+            val_loss += loss.item()
+        val_loss /= val_step
+        val_epoch_loss_list.append(val_loss)
+        print(f"Epoch {epoch} val loss: {val_loss:.4f}")
+
+        # Sampling image during training
+        sampling_image = low_res_image[0].unsqueeze(0)
+        latents = torch.randn((1, 3, 16, 16)).to(device)
+        low_res_noise = torch.randn((1, 1, 16, 16)).to(device)
+        noise_level = 20
+        noise_level = torch.Tensor((noise_level,)).long().to(device)
+        noisy_low_res_image = scheduler.add_noise(
+            original_samples=sampling_image,
+            noise=low_res_noise,
+            timesteps=torch.Tensor((noise_level,)).long().to(device),
+        )
+
+        scheduler.set_timesteps(num_inference_steps=1000)
+        for t in tqdm(scheduler.timesteps, ncols=110):
+            # 1. predict noise model_output
+            with torch.no_grad():
+                with autocast(enabled=True):
+                    latent_model_input = torch.cat([latents, noisy_low_res_image], dim=1)
+                    noise_pred = unet(
+                        x=latent_model_input, timesteps=torch.Tensor((t,)).to(device), class_labels=noise_level
+                    )
+
+                # 2. compute previous image: x_t -> x_t-1
+                latents, _ = scheduler.step(noise_pred, t, latents)
+
+        with torch.no_grad():
+            decoded = autoencoderkl.decode_stage_2_outputs(latents)
+
+        low_res_bicubic = nn.functional.interpolate(sampling_image, (64, 64), mode="bicubic")
+        plt.figure(figsize=(2, 2))
+        plt.style.use("default")
+        plt.imshow(
+            torch.cat([images[0, 0].cpu(), low_res_bicubic[0, 0].cpu(), decoded[0, 0].cpu()], dim=1),
+            vmin=0,
+            vmax=1,
+            cmap="gray",
+        )
+        plt.tight_layout()
+        plt.axis("off")
+        plt.show()
 # progress_bar.close()
 #
 # # -
