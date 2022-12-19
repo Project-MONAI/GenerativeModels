@@ -9,4 +9,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .enums import AdversarialIterationEvents, AdversarialKeys
+from .vector_quantizer import EMAQuantizer, VectorQuantizer

@@ -14,7 +14,7 @@ import unittest
 import torch
 from parameterized import parameterized
 
-from generative.networks.schedulers import DDIMScheduler
+from generative.networks.schedulers import PNDMScheduler
 
 TEST_2D_CASE = []
 for beta_schedule in ["linear", "scaled_linear"]:
@@ -30,32 +30,42 @@ TEST_CASES = TEST_2D_CASE + TEST_3D_CASE
 class TestDDPMScheduler(unittest.TestCase):
     @parameterized.expand(TEST_CASES)
     def test_add_noise_2d_shape(self, input_param, input_shape, expected_shape):
-        scheduler = DDIMScheduler(**input_param)
-        scheduler.set_timesteps(num_inference_steps=100)
+        scheduler = PNDMScheduler(**input_param)
         original_sample = torch.zeros(input_shape)
         noise = torch.randn_like(original_sample)
         timesteps = torch.randint(0, scheduler.num_train_timesteps, (original_sample.shape[0],)).long()
-
         noisy = scheduler.add_noise(original_samples=original_sample, noise=noise, timesteps=timesteps)
         self.assertEqual(noisy.shape, expected_shape)
 
     @parameterized.expand(TEST_CASES)
+    def test_error_if_timesteps_not_set(self, input_param, input_shape, expected_shape):
+        scheduler = PNDMScheduler(**input_param)
+        with self.assertRaises(ValueError):
+            model_output = torch.randn(input_shape)
+            sample = torch.randn(input_shape)
+            output_step = scheduler.step(model_output=model_output, timestep=500, sample=sample)
+
+    @parameterized.expand(TEST_CASES)
     def test_step_shape(self, input_param, input_shape, expected_shape):
-        scheduler = DDIMScheduler(**input_param)
-        scheduler.set_timesteps(num_inference_steps=100)
+        scheduler = PNDMScheduler(**input_param)
+        scheduler.set_timesteps(600)
         model_output = torch.randn(input_shape)
         sample = torch.randn(input_shape)
         output_step = scheduler.step(model_output=model_output, timestep=500, sample=sample)
         self.assertEqual(output_step[0].shape, expected_shape)
-        self.assertEqual(output_step[1].shape, expected_shape)
+        self.assertEqual(output_step[1], None)
 
     def test_set_timesteps(self):
-        scheduler = DDIMScheduler(
-            num_train_timesteps=1000,
-        )
+        scheduler = PNDMScheduler(num_train_timesteps=1000, skip_prk_steps=True)
         scheduler.set_timesteps(num_inference_steps=100)
         self.assertEqual(scheduler.num_inference_steps, 100)
         self.assertEqual(len(scheduler.timesteps), 100)
+
+    def test_set_timesteps_prk(self):
+        scheduler = PNDMScheduler(num_train_timesteps=1000, skip_prk_steps=False)
+        scheduler.set_timesteps(num_inference_steps=100)
+        self.assertEqual(scheduler.num_inference_steps, 109)
+        self.assertEqual(len(scheduler.timesteps), 109)
 
 
 if __name__ == "__main__":

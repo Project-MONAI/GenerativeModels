@@ -55,6 +55,9 @@ class DDIMScheduler(nn.Module):
         steps_offset: an offset added to the inference steps. You can use a combination of `steps_offset=1` and
             `set_alpha_to_one=False`, to make the last step use step 0 for the previous alpha product, as done in
             stable diffusion.
+        prediction_type: prediction type of the scheduler function, one of `epsilon` (predicting the noise of the
+            diffusion process), `sample` (directly predicting the noisy sample`) or `v_prediction` (see section 2.4
+            https://imagen.research.google/video/paper.pdf)
     """
 
     def __init__(
@@ -66,6 +69,7 @@ class DDIMScheduler(nn.Module):
         clip_sample: bool = True,
         set_alpha_to_one: bool = True,
         steps_offset: int = 0,
+        prediction_type: str = "epsilon",
     ) -> None:
         super().__init__()
         self.beta_schedule = beta_schedule
@@ -79,6 +83,12 @@ class DDIMScheduler(nn.Module):
         else:
             raise NotImplementedError(f"{beta_schedule} does is not implemented for {self.__class__}")
 
+        if prediction_type.lower() not in ["epsilon", "sample", "v_prediction"]:
+            raise ValueError(
+                f"prediction_type given as {prediction_type} must be one of `epsilon`, `sample`, or" " `v_prediction`"
+            )
+
+        self.prediction_type = prediction_type
         self.num_train_timesteps = num_train_timesteps
         self.alphas = 1.0 - self.betas
         self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
@@ -99,7 +109,7 @@ class DDIMScheduler(nn.Module):
         self.clip_sample = clip_sample
         self.steps_offset = steps_offset
 
-    def set_timesteps(self, num_inference_steps: int, device: Union[str, torch.device] = None) -> None:
+    def set_timesteps(self, num_inference_steps: int, device: Optional[Union[str, torch.device]] = None) -> None:
         """
         Sets the discrete timesteps used for the diffusion chain. Supporting function to be run before inference.
 
@@ -171,7 +181,14 @@ class DDIMScheduler(nn.Module):
 
         # 3. compute predicted original sample from predicted noise also called
         # "predicted x_0" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
-        pred_original_sample = (sample - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
+        if self.prediction_type == "epsilon":
+            pred_original_sample = (sample - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
+        elif self.prediction_type == "sample":
+            pred_original_sample = model_output
+        elif self.prediction_type == "v_prediction":
+            pred_original_sample = (alpha_prod_t**0.5) * sample - (beta_prod_t**0.5) * model_output
+            # predict V
+            model_output = (alpha_prod_t**0.5) * model_output + (beta_prod_t**0.5) * sample
 
         # 4. Clip "predicted x_0"
         if self.clip_sample:
@@ -231,3 +248,21 @@ class DDIMScheduler(nn.Module):
 
         noisy_samples = sqrt_alpha_cumprod * original_samples + sqrt_one_minus_alpha_prod * noise
         return noisy_samples
+
+    def get_velocity(self, sample: torch.Tensor, noise: torch.Tensor, timesteps: torch.Tensor) -> torch.Tensor:
+        # Make sure alphas_cumprod and timestep have same device and dtype as sample
+        self.alphas_cumprod = self.alphas_cumprod.to(device=sample.device, dtype=sample.dtype)
+        timesteps = timesteps.to(sample.device)
+
+        sqrt_alpha_prod = self.alphas_cumprod[timesteps] ** 0.5
+        sqrt_alpha_prod = sqrt_alpha_prod.flatten()
+        while len(sqrt_alpha_prod.shape) < len(sample.shape):
+            sqrt_alpha_prod = sqrt_alpha_prod.unsqueeze(-1)
+
+        sqrt_one_minus_alpha_prod = (1 - self.alphas_cumprod[timesteps]) ** 0.5
+        sqrt_one_minus_alpha_prod = sqrt_one_minus_alpha_prod.flatten()
+        while len(sqrt_one_minus_alpha_prod.shape) < len(sample.shape):
+            sqrt_one_minus_alpha_prod = sqrt_one_minus_alpha_prod.unsqueeze(-1)
+
+        velocity = sqrt_alpha_prod * noise - sqrt_one_minus_alpha_prod * sample
+        return velocity
