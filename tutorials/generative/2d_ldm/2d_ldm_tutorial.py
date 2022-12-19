@@ -13,8 +13,6 @@
 
 # ## Set up imports
 
-# %cd /mnt_homes/home4T7/jdafflon/GenerativeModels
-
 # +
 import os
 import shutil
