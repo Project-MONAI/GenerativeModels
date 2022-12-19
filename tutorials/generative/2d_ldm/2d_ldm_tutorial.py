@@ -1,19 +1,3 @@
-# ---
-# jupyter:
-#   jupytext:
-#     cell_metadata_filter: -all
-#     formats: ipynb,py
-#     text_representation:
-#       extension: .py
-#       format_name: light
-#       format_version: '1.5'
-#       jupytext_version: 1.14.1
-#   kernelspec:
-#     display_name: Python 3
-#     language: python
-#     name: python3
-# ---
-
 # # 2D Latent Diffusion Model
 
 # +
@@ -44,6 +28,7 @@ from monai.config import print_config
 from monai.data import DataLoader, Dataset
 from monai.networks.layers import Act
 from monai.utils import first, set_determinism
+from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
 from generative.inferers import DiffusionInferer
@@ -183,7 +168,7 @@ scaler_d = torch.cuda.amp.GradScaler()
 
 # ## Train AutoencoderKL
 
-# It takes about ~60 min to train the model.
+# It takes about ~55 min to train the model.
 
 # +
 kl_weight = 1e-6
@@ -210,35 +195,39 @@ for epoch in range(n_epochs):
         images = batch["image"].to(device)
         optimizer_g.zero_grad(set_to_none=True)
 
-        reconstruction, z_mu, z_sigma = autoencoderkl(images)
+        with autocast(enabled=True):
+            reconstruction, z_mu, z_sigma = autoencoderkl(images)
 
-        recons_loss = F.l1_loss(reconstruction.float(), images.float())
-        p_loss = perceptual_loss(reconstruction.float(), images.float())
-        kl_loss = 0.5 * torch.sum(z_mu.pow(2) + z_sigma.pow(2) - torch.log(z_sigma.pow(2)) - 1, dim=[1, 2, 3])
-        kl_loss = torch.sum(kl_loss) / kl_loss.shape[0]
-        loss_g = recons_loss + (kl_weight * kl_loss) + (perceptual_weight * p_loss)
+            recons_loss = F.l1_loss(reconstruction.float(), images.float())
+            p_loss = perceptual_loss(reconstruction.float(), images.float())
+            kl_loss = 0.5 * torch.sum(z_mu.pow(2) + z_sigma.pow(2) - torch.log(z_sigma.pow(2)) - 1, dim=[1, 2, 3])
+            kl_loss = torch.sum(kl_loss) / kl_loss.shape[0]
+            loss_g = recons_loss + (kl_weight * kl_loss) + (perceptual_weight * p_loss)
+
+            if epoch > autoencoder_warm_up_n_epochs:
+                logits_fake = discriminator(reconstruction.contiguous().float())[-1]
+                generator_loss = adv_loss(logits_fake, target_is_real=True, for_discriminator=False)
+                loss_g += adv_weight * generator_loss
+
+        scaler_g.scale(loss_g).backward()
+        scaler_g.step(optimizer_g)
+        scaler_g.update()
 
         if epoch > autoencoder_warm_up_n_epochs:
-            logits_fake = discriminator(reconstruction.contiguous().float())[-1]
-            generator_loss = adv_loss(logits_fake, target_is_real=True, for_discriminator=False)
-            loss_g += adv_weight * generator_loss
+            with autocast(enabled=True):
+                optimizer_d.zero_grad(set_to_none=True)
 
-        loss_g.backward()
-        optimizer_g.step()
+                logits_fake = discriminator(reconstruction.contiguous().detach())[-1]
+                loss_d_fake = adv_loss(logits_fake, target_is_real=False, for_discriminator=True)
+                logits_real = discriminator(images.contiguous().detach())[-1]
+                loss_d_real = adv_loss(logits_real, target_is_real=True, for_discriminator=True)
+                discriminator_loss = (loss_d_fake + loss_d_real) * 0.5
 
-        if epoch > autoencoder_warm_up_n_epochs:
-            optimizer_d.zero_grad(set_to_none=True)
+                loss_d = adv_weight * discriminator_loss
 
-            logits_fake = discriminator(reconstruction.contiguous().detach())[-1]
-            loss_d_fake = adv_loss(logits_fake, target_is_real=False, for_discriminator=True)
-            logits_real = discriminator(images.contiguous().detach())[-1]
-            loss_d_real = adv_loss(logits_real, target_is_real=True, for_discriminator=True)
-            discriminator_loss = (loss_d_fake + loss_d_real) * 0.5
-
-            loss_d = adv_weight * discriminator_loss
-
-            loss_d.backward()
-            optimizer_d.step()
+            scaler_d.scale(loss_d).backward()
+            scaler_d.step(optimizer_d)
+            scaler_d.update()
 
         epoch_loss += recons_loss.item()
         if epoch > autoencoder_warm_up_n_epochs:
@@ -262,15 +251,15 @@ for epoch in range(n_epochs):
         with torch.no_grad():
             for val_step, batch in enumerate(val_loader, start=1):
                 images = batch["image"].to(device)
-                optimizer_g.zero_grad(set_to_none=True)
 
-                reconstruction, z_mu, z_sigma = autoencoderkl(images)
-                # Get the first sammple from the first validation batch for visualisation
-                # purposes
-                if val_step == 1:
-                    intermediary_images.append(reconstruction[:n_example_images, 0])
+                with autocast(enabled=True):
+                    reconstruction, z_mu, z_sigma = autoencoderkl(images)
+                    # Get the first sammple from the first validation batch for visualisation
+                    # purposes
+                    if val_step == 1:
+                        intermediary_images.append(reconstruction[:n_example_images, 0])
 
-                recons_loss = F.l1_loss(images.float(), reconstruction.float())
+                    recons_loss = F.l1_loss(images.float(), reconstruction.float())
 
                 val_loss += recons_loss.item()
 
@@ -305,6 +294,7 @@ n_epochs = 200
 val_interval = 40
 epoch_loss_list = []
 val_epoch_loss_list = []
+scaler = GradScaler()
 
 for epoch in range(n_epochs):
     unet.train()
@@ -316,16 +306,19 @@ for epoch in range(n_epochs):
         images = batch["image"].to(device)
         optimizer.zero_grad(set_to_none=True)
 
-        z_mu, z_sigma = autoencoderkl.encode(images)
-        z = autoencoderkl.sampling(z_mu, z_sigma)
+        with autocast(enabled=True):
+            z_mu, z_sigma = autoencoderkl.encode(images)
+            z = autoencoderkl.sampling(z_mu, z_sigma)
 
-        noise = torch.randn_like(z).to(device)
-        timesteps = torch.randint(0, inferer.scheduler.num_train_timesteps, (z.shape[0],), device=z.device).long()
-        noise_pred = inferer(inputs=z, diffusion_model=unet, noise=noise, timesteps=timesteps)
-        loss = F.mse_loss(noise_pred.float(), noise.float())
+            noise = torch.randn_like(z).to(device)
+            timesteps = torch.randint(0, inferer.scheduler.num_train_timesteps, (z.shape[0],), device=z.device).long()
+            noise_pred = inferer(inputs=z, diffusion_model=unet, noise=noise, timesteps=timesteps)
+            loss = F.mse_loss(noise_pred.float(), noise.float())
 
-        loss.backward()
-        optimizer.step()
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+
         epoch_loss += loss.item()
 
         progress_bar.set_postfix(
@@ -341,18 +334,18 @@ for epoch in range(n_epochs):
         with torch.no_grad():
             for val_step, batch in enumerate(val_loader, start=1):
                 images = batch["image"].to(device)
-                optimizer.zero_grad(set_to_none=True)
 
-                z_mu, z_sigma = autoencoderkl.encode(images)
-                z = autoencoderkl.sampling(z_mu, z_sigma)
+                with autocast(enabled=True):
+                    z_mu, z_sigma = autoencoderkl.encode(images)
+                    z = autoencoderkl.sampling(z_mu, z_sigma)
 
-                noise = torch.randn_like(z).to(device)
-                timesteps = torch.randint(
-                    0, inferer.scheduler.num_train_timesteps, (z.shape[0],), device=z.device
-                ).long()
-                noise_pred = inferer(inputs=z, diffusion_model=unet, noise=noise, timesteps=timesteps)
+                    noise = torch.randn_like(z).to(device)
+                    timesteps = torch.randint(
+                        0, inferer.scheduler.num_train_timesteps, (z.shape[0],), device=z.device
+                    ).long()
+                    noise_pred = inferer(inputs=z, diffusion_model=unet, noise=noise, timesteps=timesteps)
 
-                loss = F.mse_loss(noise_pred.float(), noise.float())
+                    loss = F.mse_loss(noise_pred.float(), noise.float())
 
                 val_loss += loss.item()
         val_loss /= val_step
@@ -363,19 +356,13 @@ for epoch in range(n_epochs):
         z = torch.randn((1, 3, 16, 16))
         z = z.to(device)
         scheduler.set_timesteps(num_inference_steps=1000)
-        for t in tqdm(scheduler.timesteps, ncols=70):
-            # 1. predict noise model_output
-            with torch.no_grad():
-                model_output = unet(z, torch.Tensor((t,)).to(device))
-
-                # 2. compute previous image: x_t -> x_t-1
-                z, _ = scheduler.step(model_output, t, z)
-
-        with torch.no_grad():
+        with autocast(enabled=True):
+            z = inferer.sample(input_noise=z, diffusion_model=unet, scheduler=scheduler)
             decoded = autoencoderkl.decode(z)
+
         plt.figure(figsize=(2, 2))
         plt.style.use("default")
-        plt.imshow(decoded[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
+        plt.imshow(decoded[0, 0].detach().cpu(), vmin=0, vmax=1, cmap="gray")
         plt.tight_layout()
         plt.axis("off")
         plt.show()
