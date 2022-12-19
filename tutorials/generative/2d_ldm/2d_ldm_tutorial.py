@@ -11,6 +11,8 @@
 # !python -c "import matplotlib" || pip install -q matplotlib
 # %matplotlib inline
 
+# %cd /mnt_homes/home4T7/jdafflon/GenerativeModels
+
 # ## Set up imports
 
 # +
@@ -252,13 +254,14 @@ for epoch in range(n_epochs):
             for val_step, batch in enumerate(val_loader, start=1):
                 images = batch["image"].to(device)
 
-                reconstruction, z_mu, z_sigma = autoencoderkl(images)
-                # Get the first sammple from the first validation batch for visualisation
-                # purposes
-                if val_step == 1:
-                    intermediary_images.append(reconstruction[:n_example_images, 0])
+                with autocast(enabled=True):
+                    reconstruction, z_mu, z_sigma = autoencoderkl(images)
+                    # Get the first sammple from the first validation batch for visualisation
+                    # purposes
+                    if val_step == 1:
+                        intermediary_images.append(reconstruction[:n_example_images, 0])
 
-                recons_loss = F.l1_loss(images.float(), reconstruction.float())
+                    recons_loss = F.l1_loss(images.float(), reconstruction.float())
 
                 val_loss += recons_loss.item()
 
@@ -334,16 +337,17 @@ for epoch in range(n_epochs):
             for val_step, batch in enumerate(val_loader, start=1):
                 images = batch["image"].to(device)
 
-                z_mu, z_sigma = autoencoderkl.encode(images)
-                z = autoencoderkl.sampling(z_mu, z_sigma)
+                with autocast(enabled=True):
+                    z_mu, z_sigma = autoencoderkl.encode(images)
+                    z = autoencoderkl.sampling(z_mu, z_sigma)
 
-                noise = torch.randn_like(z).to(device)
-                timesteps = torch.randint(
-                    0, inferer.scheduler.num_train_timesteps, (z.shape[0],), device=z.device
-                ).long()
-                noise_pred = inferer(inputs=z, diffusion_model=unet, noise=noise, timesteps=timesteps)
+                    noise = torch.randn_like(z).to(device)
+                    timesteps = torch.randint(
+                        0, inferer.scheduler.num_train_timesteps, (z.shape[0],), device=z.device
+                    ).long()
+                    noise_pred = inferer(inputs=z, diffusion_model=unet, noise=noise, timesteps=timesteps)
 
-                loss = F.mse_loss(noise_pred.float(), noise.float())
+                    loss = F.mse_loss(noise_pred.float(), noise.float())
 
                 val_loss += loss.item()
         val_loss /= val_step
@@ -354,19 +358,13 @@ for epoch in range(n_epochs):
         z = torch.randn((1, 3, 16, 16))
         z = z.to(device)
         scheduler.set_timesteps(num_inference_steps=1000)
-        for t in tqdm(scheduler.timesteps, ncols=70):
-            # 1. predict noise model_output
-            with torch.no_grad():
-                model_output = unet(z, torch.Tensor((t,)).to(device))
-
-                # 2. compute previous image: x_t -> x_t-1
-                z, _ = scheduler.step(model_output, t, z)
-
-        with torch.no_grad():
+        with autocast(enabled=True):
+            z = inferer.sample(input_noise=z, diffusion_model=unet, scheduler=scheduler)
             decoded = autoencoderkl.decode(z)
+
         plt.figure(figsize=(2, 2))
         plt.style.use("default")
-        plt.imshow(decoded[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
+        plt.imshow(decoded[0, 0].detach().cpu(), vmin=0, vmax=1, cmap="gray")
         plt.tight_layout()
         plt.axis("off")
         plt.show()
