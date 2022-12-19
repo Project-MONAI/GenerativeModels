@@ -11,8 +11,6 @@
 # !python -c "import matplotlib" || pip install -q matplotlib
 # %matplotlib inline
 
-# %cd /mnt_homes/home4T7/jdafflon/GenerativeModels
-
 # ## Set up imports
 
 # +
@@ -286,7 +284,7 @@ for image_n in range(5):
 
 # ## Train Diffusion Model
 
-# It takes about ~66 min to train the model.
+# It takes about ~80 min to train the model.
 
 # +
 optimizer = torch.optim.Adam(unet.parameters(), lr=1e-4)
