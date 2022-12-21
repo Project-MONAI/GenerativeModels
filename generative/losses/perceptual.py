@@ -18,8 +18,6 @@ from lpips import LPIPS
 
 # TODO: Define model_path for lpips networks.
 # TODO: Add MedicalNet for true 3D computation (https://github.com/Tencent/MedicalNet)
-# TODO: Add RadImageNet for 2D computation with networks pretrained using radiological images
-#  (https://github.com/BMEII-AI/RadImageNet)
 class PerceptualLoss(nn.Module):
     """
     Perceptual loss using features from pretrained deep neural networks trained. The function supports networks
@@ -52,11 +50,14 @@ class PerceptualLoss(nn.Module):
             raise NotImplementedError("True 3D perceptual loss is not implemented. Try setting is_fake_3d=False")
 
         self.spatial_dims = spatial_dims
-        self.perceptual_function = LPIPS(
-            pretrained=True,
-            net=network_type,
-            verbose=False,
-        )
+        if "radimagenet_" in network_type:
+            self.perceptual_function = RadimagenetPerceptualComponent(net=network_type, verbose=False)
+        else:
+            self.perceptual_function = LPIPS(
+                pretrained=True,
+                net=network_type,
+                verbose=False,
+            )
         self.is_fake_3d = is_fake_3d
         self.fake_3d_ratio = fake_3d_ratio
 
@@ -129,3 +130,63 @@ class PerceptualLoss(nn.Module):
             loss = loss_sagittal + loss_axial + loss_coronal
 
         return torch.mean(loss)
+
+
+class RadimagenetPerceptualComponent(nn.Module):
+    def __init__(
+        self,
+        net: str = "radimagenet_resnet50",
+        verbose: bool = False,
+    ):
+        super().__init__()
+        self.model = torch.hub.load("Warvito/radimagenet-models", model=net, verbose=verbose)
+        self.eval()
+
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        We expect that the input is normalised between [0, 1]. Given the preprocessing performed during the training at
+        https://github.com/BMEII-AI/RadImageNet/blob/ec1f78cd57909399f9b6c39a412281027cd12a07/breast/breast_train.py#L154
+        we remove the mean components of each input data channel.
+        """
+        # If input has just 1 channel, repeat channel to have 3 channels
+        if input.shape[1] == 1 and target.shape[1] == 1:
+            input.repeat(1, 3, 1, 1)
+            target.repeat(1, 3, 1, 1)
+
+        # Change order from 'RGB' to 'BGR'
+        input = input[:, [2, 1, 0], ...]
+        target = target[:, [2, 1, 0], ...]
+
+        # Subtract mean used during training
+        input = subtract_mean(input)
+        target = subtract_mean(target)
+
+        # Get model outputs
+        outs_input = self.model.forward(input)
+        outs_target = self.model.forward(target)
+
+        # Normalise through the channels
+        feats_input = normalize_tensor(outs_input)
+        feats_target = normalize_tensor(outs_target)
+
+        results = (feats_input - feats_target) ** 2
+        results = spatial_average(results.sum(dim=1, keepdim=True), keepdim=True)
+
+        return results
+
+
+def spatial_average(x: torch.Tensor, keepdim: bool = True) -> torch.Tensor:
+    return x.mean([2, 3], keepdim=keepdim)
+
+
+def subtract_mean(x: torch.Tensor) -> torch.Tensor:
+    mean = [0.406, 0.456, 0.485]
+    x[:, 0, :, :] -= mean[0]
+    x[:, 1, :, :] -= mean[1]
+    x[:, 2, :, :] -= mean[2]
+    return x
+
+
+def normalize_tensor(x: torch.Tensor, eps: float = 1e-10) -> torch.Tensor:
+    norm_factor = torch.sqrt(torch.sum(x**2, dim=1, keepdim=True))
+    return x / (norm_factor + eps)
