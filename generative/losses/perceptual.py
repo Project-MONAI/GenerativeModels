@@ -21,14 +21,16 @@ from lpips import LPIPS
 class PerceptualLoss(nn.Module):
     """
     Perceptual loss using features from pretrained deep neural networks trained. The function supports networks
-    pretrained on ImageNet that use the LPIPS approach from: Zhang, et al. "The unreasonable effectiveness of deep
-    features as a perceptual metric." https://arxiv.org/abs/1801.03924
+    pretrained on: ImageNet that use the LPIPS approach from Zhang, et al. "The unreasonable effectiveness of deep
+    features as a perceptual metric." https://arxiv.org/abs/1801.03924 ; RadImagenet from Mei, et al. "RadImageNet: An
+    Open Radiologic Deep Learning Research Dataset for Effective Transfer Learning" .
+
     The fake 3D implementation is based on a 2.5D approach where we calculate the 2D perceptual on slices from the
     three axis.
 
     Args:
         spatial_dims: number of spatial dimensions.
-        network_type: {``"alex"``, ``"vgg"``, ``"squeeze"``}
+        network_type: {``"alex"``, ``"vgg"``, ``"squeeze"``, ``"radimagenet_resnet50"``}
             Specifies the network architecture to use. Defaults to ``"alex"``.
         is_fake_3d: if True use 2.5D approach for a 3D perceptual loss.
         fake_3d_ratio: ratio of how many slices per axis are used in the 2.5D approach.
@@ -51,7 +53,7 @@ class PerceptualLoss(nn.Module):
 
         self.spatial_dims = spatial_dims
         if "radimagenet_" in network_type:
-            self.perceptual_function = RadimagenetPerceptualComponent(net=network_type, verbose=False)
+            self.perceptual_function = RadImageNetPerceptualComponent(net=network_type, verbose=False)
         else:
             self.perceptual_function = LPIPS(
                 pretrained=True,
@@ -132,12 +134,23 @@ class PerceptualLoss(nn.Module):
         return torch.mean(loss)
 
 
-class RadimagenetPerceptualComponent(nn.Module):
+class RadImageNetPerceptualComponent(nn.Module):
+    """
+    Component to perform the perceptual evaluation with the networks pretrained on RadImagenet (pretrained by Mei, et
+    al. "RadImageNet: An Open Radiologic Deep Learning Research Dataset for Effective Transfer Learning"). This class
+    uses torch Hub to download the networks from "Warvito/radimagenet-models".
+
+    Args:
+        net: {``"radimagenet_resnet50"``}
+            Specifies the network architecture to use. Defaults to ``"radimagenet_resnet50"``.
+        verbose: if false, mute messages from torch Hub load function.
+    """
+
     def __init__(
         self,
         net: str = "radimagenet_resnet50",
         verbose: bool = False,
-    ):
+    ) -> None:
         super().__init__()
         self.model = torch.hub.load("Warvito/radimagenet-models", model=net, verbose=verbose)
         self.eval()
@@ -145,13 +158,14 @@ class RadimagenetPerceptualComponent(nn.Module):
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """
         We expect that the input is normalised between [0, 1]. Given the preprocessing performed during the training at
-        https://github.com/BMEII-AI/RadImageNet/blob/ec1f78cd57909399f9b6c39a412281027cd12a07/breast/breast_train.py#L154
-        we remove the mean components of each input data channel.
+        https://github.com/BMEII-AI/RadImageNet, we make sure that the input and target have 3 channels, reorder it from
+         'RGB' to 'BGR', and then remove the mean components of each input data channel. The outputs are normalised
+        across the channels, and we obtain the mean from the spatial dimensions (similar approach to the lpips package).
         """
         # If input has just 1 channel, repeat channel to have 3 channels
         if input.shape[1] == 1 and target.shape[1] == 1:
-            input.repeat(1, 3, 1, 1)
-            target.repeat(1, 3, 1, 1)
+            input = input.repeat(1, 3, 1, 1)
+            target = target.repeat(1, 3, 1, 1)
 
         # Change order from 'RGB' to 'BGR'
         input = input[:, [2, 1, 0], ...]
