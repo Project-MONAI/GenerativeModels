@@ -29,6 +29,7 @@
 # limitations under the License.
 # =========================================================================
 
+import importlib.util
 import math
 from typing import List, Optional, Sequence, Tuple
 
@@ -39,9 +40,17 @@ from monai.networks.blocks import Convolution
 from monai.networks.layers.factories import Pool
 from torch import nn
 
-has_xformers = False
+if importlib.util.find_spec("xformers") is not None:
+    import xformers
+    import xformers.ops
 
-# TODO: Make optional import work
+    has_xformers = True
+else:
+    xformers = None
+    has_xformers = False
+
+
+# TODO: Use MONAI's optional_import
 # from monai.utils import optional_import
 # xformers, has_xformers = optional_import("xformers.ops", name="xformers")
 
