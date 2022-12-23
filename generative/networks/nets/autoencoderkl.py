@@ -9,6 +9,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib.util
 import math
 from typing import Optional, Sequence, Tuple
 
@@ -18,7 +19,14 @@ import torch.nn.functional as F
 import xformers.ops
 from monai.networks.blocks import Convolution
 
-has_xformers = True
+if importlib.util.find_spec("xformers") is not None:
+    import xformers
+    import xformers.ops
+
+    has_xformers = True
+else:
+    xformers = None
+    has_xformers = False
 
 # TODO: Make optional import work
 # from monai.utils import optional_import
@@ -162,69 +170,41 @@ class ResBlock(nn.Module):
         return x + h
 
 
-class AttnBlock(nn.Module):
+class AttentionBlock(nn.Module):
     """
     Attention block.
 
     Args:
         spatial_dims: number of spatial dimensions (1D, 2D, 3D).
-        in_channels: number of input channels.
+        num_channels: number of input channels.
+        num_head_channels: number of channels in each attention head.
         norm_num_groups: number of groups involved for the group normalisation layer. Ensure that your number of
             channels is divisible by this number.
-        norm_eps: epsilon for the normalisation.
+        norm_eps: epsilon value to use for the normalisation.
     """
 
     def __init__(
         self,
         spatial_dims: int,
-        in_channels: int,
-        norm_num_groups: int,
-        norm_eps: float,
+        num_channels: int,
+        num_head_channels: Optional[int] = None,
+        norm_num_groups: int = 32,
+        norm_eps: float = 1e-6,
     ) -> None:
         super().__init__()
         self.spatial_dims = spatial_dims
-        self.in_channels = in_channels
+        self.num_channels = num_channels
 
-        self.num_heads = 1
-        self.scale = 1 / math.sqrt(in_channels / self.num_heads)
+        self.num_heads = num_channels // num_head_channels if num_head_channels is not None else 1
+        self.scale = 1 / math.sqrt(num_channels / self.num_heads)
 
-        self.norm = nn.GroupNorm(num_groups=norm_num_groups, num_channels=in_channels, eps=norm_eps, affine=True)
-        self.to_q = Convolution(
-            spatial_dims=spatial_dims,
-            in_channels=in_channels,
-            out_channels=in_channels,
-            strides=1,
-            kernel_size=1,
-            padding=0,
-            conv_only=True,
-        )
-        self.to_k = Convolution(
-            spatial_dims=spatial_dims,
-            in_channels=in_channels,
-            out_channels=in_channels,
-            strides=1,
-            kernel_size=1,
-            padding=0,
-            conv_only=True,
-        )
-        self.to_v = Convolution(
-            spatial_dims=spatial_dims,
-            in_channels=in_channels,
-            out_channels=in_channels,
-            strides=1,
-            kernel_size=1,
-            padding=0,
-            conv_only=True,
-        )
-        self.proj_out = Convolution(
-            spatial_dims=spatial_dims,
-            in_channels=in_channels,
-            out_channels=in_channels,
-            strides=1,
-            kernel_size=1,
-            padding=0,
-            conv_only=True,
-        )
+        self.norm = nn.GroupNorm(num_groups=norm_num_groups, num_channels=num_channels, eps=norm_eps, affine=True)
+
+        self.to_q = nn.Linear(num_channels, num_channels)
+        self.to_k = nn.Linear(num_channels, num_channels)
+        self.to_v = nn.Linear(num_channels, num_channels)
+
+        self.proj_attn = nn.Linear(num_channels, num_channels)
 
     def reshape_heads_to_batch_dim(self, x: torch.Tensor) -> torch.Tensor:
         batch_size, seq_len, dim = x.shape
@@ -262,30 +242,24 @@ class AttnBlock(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         residual = x
 
-        # Norm
+        batch = channel = height = width = depth = -1
+        if self.spatial_dims == 2:
+            batch, channel, height, width = x.shape
+        if self.spatial_dims == 3:
+            batch, channel, height, width, depth = x.shape
+
+        # norm
         x = self.norm(x)
 
-        # Project to query, key, and value vectors
+        if self.spatial_dims == 2:
+            x = x.view(batch, channel, height * width).transpose(1, 2)
+        if self.spatial_dims == 3:
+            x = x.view(batch, channel, height * width * depth).transpose(1, 2)
+
+        # proj to q, k, v
         query = self.to_q(x)
         key = self.to_k(x)
         value = self.to_v(x)
-
-        # Reshape to B, C, SPATIAL_DIMS
-        batch = query.shape[0]
-        channel = query.shape[1]
-        height = query.shape[2]
-        width = query.shape[3]
-
-        # Note: in order to make Torchscript's tests work, we initialise depth = 1
-        depth = 1
-        if self.spatial_dims == 3:
-            depth = query.shape[4]
-
-        n_spatial_elements = height * width * depth
-
-        query = query.reshape(batch, channel, n_spatial_elements)
-        key = key.reshape(batch, channel, n_spatial_elements)
-        value = value.reshape(batch, channel, n_spatial_elements)
 
         # Multi-Head Attention
         query = self.reshape_heads_to_batch_dim(query)
@@ -300,14 +274,10 @@ class AttnBlock(nn.Module):
         x = self.reshape_batch_dim_to_heads(x)
         x = x.to(query.dtype)
 
-        # Reshape to B, C, H, W [, D]
         if self.spatial_dims == 2:
-            x = x.reshape(batch, channel, height, width)
+            x = x.transpose(-1, -2).reshape(batch, channel, height, width)
         if self.spatial_dims == 3:
-            x = x.reshape(batch, channel, height, width, depth)
-
-        # Proj out
-        x = self.proj_out(x)
+            x = x.transpose(-1, -2).reshape(batch, channel, height, width, depth)
 
         return x + residual
 
@@ -391,7 +361,14 @@ class Encoder(nn.Module):
                 )
                 block_in_ch = block_out_ch
                 if attention_levels[i]:
-                    blocks.append(AttnBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps))
+                    blocks.append(
+                        AttentionBlock(
+                            spatial_dims=spatial_dims,
+                            num_channels=block_in_ch,
+                            norm_num_groups=norm_num_groups,
+                            norm_eps=norm_eps,
+                        )
+                    )
 
             if i != len(ch_mult) - 1:
                 blocks.append(Downsample(spatial_dims, block_in_ch))
@@ -399,7 +376,14 @@ class Encoder(nn.Module):
         # Non-local attention block
         if with_nonlocal_attn is True:
             blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_in_ch))
-            blocks.append(AttnBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps))
+            blocks.append(
+                AttentionBlock(
+                    spatial_dims=spatial_dims,
+                    num_channels=block_in_ch,
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                )
+            )
             blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_in_ch))
 
         # Normalise and convert to latent size
@@ -490,7 +474,14 @@ class Decoder(nn.Module):
         # Non-local attention block
         if with_nonlocal_attn is True:
             blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_in_ch))
-            blocks.append(AttnBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps))
+            blocks.append(
+                AttentionBlock(
+                    spatial_dims=spatial_dims,
+                    num_channels=block_in_ch,
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                )
+            )
             blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_in_ch))
 
         for i in reversed(range(len(ch_mult))):
@@ -501,7 +492,14 @@ class Decoder(nn.Module):
                 block_in_ch = block_out_ch
 
                 if attention_levels[i]:
-                    blocks.append(AttnBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps))
+                    blocks.append(
+                        AttentionBlock(
+                            spatial_dims=spatial_dims,
+                            num_channels=block_in_ch,
+                            norm_num_groups=norm_num_groups,
+                            norm_eps=norm_eps,
+                        )
+                    )
 
             if i != 0:
                 blocks.append(Upsample(spatial_dims, block_in_ch))
