@@ -515,7 +515,19 @@ class Upsample(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         assert x.shape[1] == self.num_channels
+
+        # Cast to float32 to as 'upsample_nearest2d_out_frame' op does not support bfloat16
+        # https://github.com/pytorch/pytorch/issues/86679
+        dtype = x.dtype
+        if dtype == torch.bfloat16:
+            x = x.to(torch.float32)
+
         x = F.interpolate(x, scale_factor=2.0, mode="nearest")
+
+        # If the input is bfloat16, we cast back to bfloat16
+        if dtype == torch.bfloat16:
+            x = x.to(dtype)
+
         if self.use_conv:
             x = self.conv(x)
         return x
