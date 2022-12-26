@@ -1626,7 +1626,7 @@ class DiffusionModelUNet(nn.Module):
         # timesteps does not contain any weights and will always return f32 tensors
         # but time_embedding might actually be running in fp16. so we need to cast here.
         # there might be better ways to encapsulate this.
-        t_emb = t_emb.to(dtype=self.dtype)
+        t_emb = t_emb.to(dtype=x.dtype)
         emb = self.time_embed(t_emb)
 
         # 2. class
@@ -1634,7 +1634,7 @@ class DiffusionModelUNet(nn.Module):
             if class_labels is None:
                 raise ValueError("class_labels should be provided when num_class_embeds > 0")
             class_emb = self.class_embedding(class_labels)
-            class_emb = class_emb.to(dtype=self.dtype)
+            class_emb = class_emb.to(dtype=x.dtype)
             emb = emb + class_emb
 
         # 3. initial convolution
