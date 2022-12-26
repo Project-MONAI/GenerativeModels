@@ -16,7 +16,6 @@ from typing import Optional, Sequence, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import xformers.ops
 from monai.networks.blocks import Convolution
 
 if importlib.util.find_spec("xformers") is not None:

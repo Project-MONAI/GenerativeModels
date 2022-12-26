@@ -35,7 +35,6 @@ from typing import List, Optional, Sequence, Tuple
 
 import torch
 import torch.nn.functional as F
-import xformers.ops
 from monai.networks.blocks import Convolution
 from monai.networks.layers.factories import Pool
 from torch import nn
