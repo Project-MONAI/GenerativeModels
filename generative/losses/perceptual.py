@@ -154,9 +154,14 @@ class MedicalNetPerceptualComponent(nn.Module):
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """
-        Compute perceptual loss using MedicalNet 3D networks.
-        The outputs are normalised across the channels, and we obtain the mean from the spatial dimensions (similar
-        approach to the lpips package).
+        Compute perceptual loss using MedicalNet 3D networks. The input and target tensors are inputted in the
+        pre-trained MedicalNet that is used for feature extraction. Then, these extracted features are normalised across
+        the channels. Finally, we compute the difference between the input and target features and calculate the mean
+        value from the spatial dimensions to obtain the perceptual loss.
+
+        Args:
+            input: 3D input tensor with shape BCDHW.
+            target: 3D target tensor with shape BCDHW.
         """
         input = medicalnet_intensity_normalisation(input)
         target = medicalnet_intensity_normalisation(target)
