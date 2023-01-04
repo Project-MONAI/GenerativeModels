@@ -158,8 +158,8 @@ class MedicalNetPerceptualComponent(nn.Module):
         The outputs are normalised across the channels, and we obtain the mean from the spatial dimensions (similar
         approach to the lpips package).
         """
-        input = medicalnet_intensty_normalisation(input)
-        target = medicalnet_intensty_normalisation(target)
+        input = medicalnet_intensity_normalisation(input)
+        target = medicalnet_intensity_normalisation(target)
 
         # Get model outputs
         outs_input = self.model.forward(input)
@@ -184,7 +184,7 @@ def normalize_tensor(x: torch.Tensor, eps: float = 1e-10) -> torch.Tensor:
     return x / (norm_factor + eps)
 
 
-def medicalnet_intensty_normalisation(volume):
+def medicalnet_intensity_normalisation(volume):
     """Based on https://github.com/Tencent/MedicalNet/blob/18c8bb6cd564eb1b964bffef1f4c2283f1ae6e7b/datasets/brains18.py#L133"""
     mean = volume.mean()
     std = volume.std()
