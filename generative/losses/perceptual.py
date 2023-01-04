@@ -148,6 +148,7 @@ class MedicalNetPerceptualComponent(nn.Module):
         verbose: bool = False,
     ) -> None:
         super().__init__()
+        torch.hub._validate_not_a_forked_repo = lambda a, b, c: True
         self.model = torch.hub.load("Warvito/MedicalNet-models", model=net, verbose=verbose)
         self.eval()
 
