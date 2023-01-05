@@ -12,7 +12,7 @@ Prototyping repo for generative models to be integrated into MONAI core.
 * Diffusion Models and Latent Diffusion Models Inferers classes (compatible with MONAI style) containing methods to train, sample synthetic images, and obtain the likelihood of inputted data.
 * MONAI-compatible trainer engine (based on Ignite) to train models with reconstruction and adversarial components.
 * Tutorials including:
-  * How to train VQ-VAEs, VQ-GANs, AutoencoderKLs, Diffusion Models and Latent Diffusion MOdels on 2D and 3D data.
+  * How to train VQ-VAEs, VQ-GANs, AutoencoderKLs, Diffusion Models and Latent Diffusion Models on 2D and 3D data.
   * Train diffusion model to perform conditional image generation with classifier-free guidance.
   * Comparison of different diffusion model schedulers.
   * Diffusion models with different parametrisations (e.g. v prediction and epsilon parametrisation).
@@ -25,7 +25,7 @@ In the longer term, we aim to integrate the generative models into the MONAI cor
 image synthesis, anomaly detection, MRI reconstruction, domain transfer)
 
 ## Installation
-To install MONAI Generative Tooling, it is recommended to clone the codebase directly:
+To install MONAI Generative Models, it is recommended to clone the codebase directly:
 ```
 git clone https://github.com/Project-MONAI/GenerativeModels.git
 ```
