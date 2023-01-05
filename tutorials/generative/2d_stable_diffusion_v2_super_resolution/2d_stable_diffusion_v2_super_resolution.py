@@ -2,34 +2,43 @@
 # jupyter:
 #   jupytext:
 #     cell_metadata_filter: -all
-#     formats: ipynb,py
+#     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
-#       format_name: light
-#       format_version: '1.5'
-#       jupytext_version: 1.14.1
+#       format_name: percent
+#       format_version: '1.3'
+#       jupytext_version: 1.14.4
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: Python 3 (ipykernel)
 #     language: python
 #     name: python3
 # ---
 
+# %% [markdown]
 # # Super-resolution using Stable Diffusion v2 Upscalers
+#
+# Tutorial to illustrate the task of super-resolution on medical images using Latent Diffusion Models (LDMs) [1] with models conditioned based on the signal-to-noise ratio (introduced on [2] and used in [Stable Diffusion v2.0](https://stability.ai/blog/stable-diffusion-v2-release) and Imagen Video [3]).
+#
+# [1] - Rombach et al. "High-Resolution Image Synthesis with Latent Diffusion Models" https://arxiv.org/abs/2112.10752
+# [2] - Ho et al. "Cascaded diffusion models for high fidelity image generation" https://arxiv.org/abs/2106.15282
+# [3] - Ho et al. "High Definition Video Generation with Diffusion Models" https://arxiv.org/abs/2210.02303
 
-# +
+# %%
 # TODO: Add buttom with "Open with Colab"
-# -
 
+# %% [markdown]
 # ## Set up environment using Colab
 #
 
+# %%
 # !python -c "import monai" || pip install -q "monai-weekly[tqdm]"
 # !python -c "import matplotlib" || pip install -q matplotlib
 # %matplotlib inline
 
+# %% [markdown]
 # ## Set up imports
 
-# +
+# %%
 import os
 import shutil
 import tempfile
@@ -54,25 +63,33 @@ from generative.networks.nets import AutoencoderKL, DiffusionModelUNet, PatchDis
 from generative.networks.schedulers import DDPMScheduler
 
 print_config()
-# -
 
+# %%
 # for reproducibility purposes set a seed
 set_determinism(42)
 
+# %% [markdown]
 # ## Setup a data directory and download dataset
 # Specify a MONAI_DATA_DIRECTORY variable, where the data will be downloaded. If not specified a temporary directory will be used.
 
+# %%
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
 root_dir = tempfile.mkdtemp() if directory is None else directory
 print(root_dir)
 
+# %% [markdown]
 # ## Download the training set
 
+# %%
 train_data = MedNISTDataset(root_dir=root_dir, section="training", download=True, seed=0)
 train_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "HeadCT"]
 
-# ## Use noise augmentation
+# %% [markdown]
+# ## Create data loader for training set
+#
+# Here, we create the data loader that we will use to train our models. We will use data augmentation and create low-resolution images using MONAI's transformations.
 
+# %%
 image_size = 64
 train_transforms = transforms.Compose(
     [
@@ -95,8 +112,10 @@ train_transforms = transforms.Compose(
 train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
 train_loader = DataLoader(train_ds, batch_size=32, shuffle=True, num_workers=4, persistent_workers=True)
 
+# %% [markdown]
 # ## Visualise examples from the training set
 
+# %%
 # Plot 3 examples from the training set
 check_data = first(train_loader)
 fig, ax = plt.subplots(nrows=1, ncols=3)
@@ -104,16 +123,17 @@ for i in range(3):
     ax[i].imshow(check_data["image"][i, 0, :, :], cmap="gray")
     ax[i].axis("off")
 
+# %%
 # Plot 3 examples from the training set in low resolution
 fig, ax = plt.subplots(nrows=1, ncols=3)
 for i in range(3):
     ax[i].imshow(check_data["low_res_image"][i, 0, :, :], cmap="gray")
     ax[i].axis("off")
 
-plt.show()
+# %% [markdown]
+# ## Create data loader for validation set
 
-# ## Download the validation set
-
+# %%
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, seed=0)
 val_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "HeadCT"]
 val_transforms = transforms.Compose(
@@ -128,16 +148,19 @@ val_transforms = transforms.Compose(
 val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
 val_loader = DataLoader(val_ds, batch_size=32, shuffle=True, num_workers=4)
 
+# %% [markdown]
 # ## Define the network
 
+# %%
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using {device}")
 
+# %%
 autoencoderkl = AutoencoderKL(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
-    num_channels=128,
+    num_channels=256,
     latent_channels=3,
     ch_mult=(1, 2, 2),
     num_res_blocks=2,
@@ -147,6 +170,7 @@ autoencoderkl = AutoencoderKL(
 autoencoderkl = autoencoderkl.to(device)
 
 
+# %%
 discriminator = PatchDiscriminator(
     spatial_dims=2,
     num_layers_d=3,
@@ -161,28 +185,27 @@ discriminator = PatchDiscriminator(
 )
 discriminator.to(device)
 
-# +
+# %%
 perceptual_loss = PerceptualLoss(spatial_dims=2, network_type="alex")
 perceptual_loss.to(device)
-perceptual_weight = 0.001
+perceptual_weight = 0.002
 
 adv_loss = PatchAdversarialLoss(criterion="least_squares")
-adv_weight = 0.01
+adv_weight = 0.005
 
-optimizer_g = torch.optim.Adam(autoencoderkl.parameters(), lr=1e-4)
-optimizer_d = torch.optim.Adam(discriminator.parameters(), lr=5e-4)
-# -
+optimizer_g = torch.optim.Adam(autoencoderkl.parameters(), lr=5e-5)
+optimizer_d = torch.optim.Adam(discriminator.parameters(), lr=1e-4)
 
+# %%
 scaler_g = GradScaler()
 scaler_d = GradScaler()
 
+# %% [markdown]
 # ## Train AutoencoderKL
 
-# It takes about ~60 min to train the model.
-
-# +
+# %%
 kl_weight = 1e-6
-n_epochs = 50
+n_epochs = 75
 val_interval = 10
 autoencoder_warm_up_n_epochs = 10
 
@@ -270,18 +293,26 @@ progress_bar.close()
 del discriminator
 del perceptual_loss
 torch.cuda.empty_cache()
-# -
 
-# ### Visualise the results from the autoencoderKL
+# %% [markdown]
+# ## Rescaling factor
+#
+# As mentioned in Rombach et al. [1] Section 4.3.2 and D.1, the signal-to-noise ratio (induced by the scale of the latent space) became crucial in image-to-image translation models (such as the ones used for super-resolution). For this reason, we will compute the component-wise standard deviation to be used as scaling factor.
 
+# %%
+with torch.no_grad():
+    with autocast(enabled=True):
+        z = autoencoderkl.encode_stage_2_inputs(check_data["image"].to(device))
+
+print(f"Scaling factor set to {1/torch.std(z)}")
+scale_factor = 1 / torch.std(z)
+
+# %% [markdown]
 # ## Train Diffusion Model
+#
+# In order to train the super-resolution, we used the conditioned augmentation (introduced in [2] section 3 and used on Stable Diffusion Upscalers and Imagen Video [3] Section 2.5) as it has been shown critical for cascaded diffusion models, as well for super-resolution task. For this, we apply Gaussian noise augmentation given by a low_res_scheduler component, with the t step defining the signal-to-noise ratio and used to condition the diffusion model (inputted using class_labels argument).
 
-# It takes about ~80 min to train the model.
-
-# TODO: Check scale_factor value (use the standard deviation)
-scale_factor = 1
-
-# +
+# %%
 unet = DiffusionModelUNet(
     spatial_dims=2,
     in_channels=4,
@@ -309,8 +340,8 @@ max_noise_level = 350
 
 scaler_diffusion = GradScaler()
 
-# +
-optimizer = torch.optim.Adam(unet.parameters(), lr=1e-4)
+# %%
+optimizer = torch.optim.Adam(unet.parameters(), lr=5e-5)
 
 unet = unet.to(device)
 n_epochs = 200
@@ -436,24 +467,29 @@ for epoch in range(n_epochs):
         plt.axis("off")
         plt.show()
 
-# -
 
+# %% [markdown]
 # ### Plotting sampling example
 
+# %%
 # Sampling image during training
 unet.eval()
 num_samples = 3
-sampling_image = low_res_image[:num_samples]
+validation_batch = first(val_loader)
+
+images = validation_batch["image"].to(device)
+sampling_image = validation_batch["low_res_image"].to(device)[:num_samples]
+
+# %%
 latents = torch.randn((num_samples, 3, 16, 16)).to(device)
 low_res_noise = torch.randn((num_samples, 1, 16, 16)).to(device)
-noise_level = 20
+noise_level = 10
 noise_level = torch.Tensor((noise_level,)).long().to(device)
 noisy_low_res_image = scheduler.add_noise(
     original_samples=sampling_image,
     noise=low_res_noise,
     timesteps=torch.Tensor((noise_level,)).long().to(device),
 )
-
 scheduler.set_timesteps(num_inference_steps=1000)
 for t in tqdm(scheduler.timesteps, ncols=110):
     with torch.no_grad():
@@ -467,15 +503,15 @@ for t in tqdm(scheduler.timesteps, ncols=110):
 with torch.no_grad():
     decoded = autoencoderkl.decode_stage_2_outputs(latents / scale_factor)
 
+# %%
 low_res_bicubic = nn.functional.interpolate(sampling_image, (64, 64), mode="bicubic")
-plt.figure(figsize=(6, 6))
+plt.figure(figsize=(8, 8))
 plt.style.use("default")
 image_display = torch.cat([images[0, 0].cpu(), low_res_bicubic[0, 0].cpu(), decoded[0, 0].cpu()], dim=1)
 for i in range(1, num_samples):
     image_display = torch.cat(
         [image_display, torch.cat([images[i, 0].cpu(), low_res_bicubic[i, 0].cpu(), decoded[i, 0].cpu()], dim=1)], dim=0
     )
-
 plt.imshow(
     image_display,
     vmin=0,
@@ -484,12 +520,10 @@ plt.imshow(
 )
 plt.tight_layout()
 plt.axis("off")
-plt.show()
 
+# %% [markdown]
+# ### Clean-up data directory
 
-# +
-### Clean-up data directory
-# -
-
+# %%
 if directory is None:
     shutil.rmtree(root_dir)
