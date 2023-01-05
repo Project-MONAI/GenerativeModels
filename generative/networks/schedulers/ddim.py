@@ -104,7 +104,7 @@ class DDIMScheduler(nn.Module):
 
         # setable values
         self.num_inference_steps = None
-        self.timesteps = torch.from_numpy(np.arange(0, num_train_timesteps)[::-1].copy().astype(np.int64))
+        self.timesteps = torch.from_numpy(np.arange(0, num_train_timesteps)[::-1].astype(np.int64))
 
         self.clip_sample = clip_sample
         self.steps_offset = steps_offset
