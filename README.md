@@ -4,7 +4,7 @@
 
 # MONAI Generative Models
 Prototyping repo for generative models to be integrated into MONAI core.
-## Current features
+## Features
 * Network architectures: Diffusion Model, Autoencoder-KL, VQ-VAE, (Multi-scale) Patch-GAN discriminator.
 * Diffusion Model Schedulers: DDPM, DDIM, and PNDM.
 * Losses: Adversarial losses, Spectral losses, and Perceptual losses (for 2D and 3D data using LPIPS, RadImageNet, and 3DMedicalNet pre-trained models).
