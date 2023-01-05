@@ -185,7 +185,7 @@ optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
 inferer = DiffusionInferer(scheduler)
 # %% [markdown]
 # ### Model training
-# Here, we are training our model for 75 epochs (training time: ~50 minutes).
+# Here, we are training our model for 50 epochs (training time: ~33 minutes).
 
 # %% tags=[]
 n_epochs = 50
@@ -305,40 +305,46 @@ plt.show()
 # %% tags=[]
 model.eval()
 mask = mask.to(device)
-noise = torch.randn((1, 1, 64, 64))
-noise = noise.to(device)
 val_image_masked = val_image_masked.to(device)
 timesteps = torch.Tensor((999,)).to(noise.device).long()
-val_image_inpainted = scheduler.add_noise(original_samples=val_image_masked, noise=noise, timesteps=timesteps)
+val_image_inpainted = torch.randn((1, 1, 64, 64)).to(device)
 
 scheduler.set_timesteps(num_inference_steps=1000)
 progress_bar = tqdm(scheduler.timesteps)
 
-num_resample_steps = 1
+num_resample_steps = 4
 with torch.no_grad():
     with autocast(enabled=True):
         for t in progress_bar:
             for u in range(num_resample_steps):
-                # perform a denoising step to get x_{t-1}
-                timesteps = torch.Tensor((t,)).to(noise.device).long()
-                model_output = model(val_image_inpainted, timesteps=timesteps)
-                val_image_inpainted, _ = scheduler.step(model_output, t, val_image_inpainted)
-
-                # replace the regions we are not inpainting with the true noised version of x_{t-1}
+                # get the known portion at t-1
                 if t > 0:
+                    noise = torch.randn((1, 1, 64, 64)).to(device)
                     timesteps_prev = torch.Tensor((t - 1,)).to(noise.device).long()
-                    noisy_image_prev = scheduler.add_noise(
+                    val_image_inpainted_prev_known = scheduler.add_noise(
                         original_samples=val_image_masked, noise=noise, timesteps=timesteps_prev
                     )
                 else:
-                    noisy_image_prev = val_image_masked
-                val_image_inpainted = torch.where(mask == 1, noisy_image_prev, val_image_inpainted)
+                    val_image_inpainted_prev_known = val_image_masked
+
+                # perform a denoising step to get the unknown portion at t-1
+                if t > 0:
+                    timesteps = torch.Tensor((t,)).to(noise.device).long()
+                    model_output = model(val_image_inpainted, timesteps=timesteps)
+                    val_image_inpainted_prev_unknown, _ = scheduler.step(model_output, t, val_image_inpainted)
+
+                # combine known and unknown using the mask
+                val_image_inpainted = torch.where(
+                    mask == 1, val_image_inpainted_prev_known, val_image_inpainted_prev_unknown
+                )
 
                 # perform resampling
-                if t > 0:
+                if t > 0 and u < (num_resample_steps - 1):
                     # sample x_t from x_t-1
+                    noise = torch.randn((1, 1, 64, 64)).to(device)
                     val_image_inpainted = (
-                        torch.sqrt(1 - scheduler.betas[t - 1]) * val_image_inpainted + scheduler.betas[t - 1] * noise
+                        torch.sqrt(1 - scheduler.betas[t - 1]) * val_image_inpainted
+                        + torch.sqrt(scheduler.betas[t - 1]) * noise
                     )
 
 
