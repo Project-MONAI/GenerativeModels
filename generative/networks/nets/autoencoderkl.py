@@ -18,6 +18,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from monai.networks.blocks import Convolution
 
+# To install xformers, use pip install xformers==0.0.16rc401
 if importlib.util.find_spec("xformers") is not None:
     import xformers
     import xformers.ops
@@ -27,7 +28,7 @@ else:
     xformers = None
     has_xformers = False
 
-# TODO: Make optional import work
+# TODO: Use MONAI's optional_import
 # from monai.utils import optional_import
 # xformers, has_xformers = optional_import("xformers.ops", name="xformers")
 

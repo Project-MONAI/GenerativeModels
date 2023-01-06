@@ -39,6 +39,7 @@ from monai.networks.blocks import Convolution
 from monai.networks.layers.factories import Pool
 from torch import nn
 
+# To install xformers, use pip install xformers==0.0.16rc401
 if importlib.util.find_spec("xformers") is not None:
     import xformers
     import xformers.ops
