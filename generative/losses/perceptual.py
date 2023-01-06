@@ -16,21 +16,21 @@ import torch.nn as nn
 from lpips import LPIPS
 
 
-# TODO: Define model_path for lpips networks.
-# TODO: Add MedicalNet for true 3D computation (https://github.com/Tencent/MedicalNet)
 class PerceptualLoss(nn.Module):
     """
     Perceptual loss using features from pretrained deep neural networks trained. The function supports networks
     pretrained on: ImageNet that use the LPIPS approach from Zhang, et al. "The unreasonable effectiveness of deep
     features as a perceptual metric." https://arxiv.org/abs/1801.03924 ; RadImagenet from Mei, et al. "RadImageNet: An
-    Open Radiologic Deep Learning Research Dataset for Effective Transfer Learning" .
+    Open Radiologic Deep Learning Research Dataset for Effective Transfer Learning"; and MedicalNet from Chen et al.
+    "Med3D: Transfer Learning for 3D Medical Image Analysis" .
 
     The fake 3D implementation is based on a 2.5D approach where we calculate the 2D perceptual on slices from the
     three axis.
 
     Args:
         spatial_dims: number of spatial dimensions.
-        network_type: {``"alex"``, ``"vgg"``, ``"squeeze"``, ``"radimagenet_resnet50"``}
+        network_type: {``"alex"``, ``"vgg"``, ``"squeeze"``, ``"radimagenet_resnet50"``,
+        ``"medicalnet_resnet10_23datasets"``, ``"medicalnet_resnet50_23datasets"``}
             Specifies the network architecture to use. Defaults to ``"alex"``.
         is_fake_3d: if True use 2.5D approach for a 3D perceptual loss.
         fake_3d_ratio: ratio of how many slices per axis are used in the 2.5D approach.
@@ -48,11 +48,10 @@ class PerceptualLoss(nn.Module):
         if spatial_dims not in [2, 3]:
             raise NotImplementedError("Perceptual loss is implemented only in 2D and 3D.")
 
-        if spatial_dims == 3 and is_fake_3d is False:
-            raise NotImplementedError("True 3D perceptual loss is not implemented. Try setting is_fake_3d=False")
-
         self.spatial_dims = spatial_dims
-        if "radimagenet_" in network_type:
+        if spatial_dims == 3 and is_fake_3d is False:
+            self.perceptual_function = MedicalNetPerceptualComponent(net=network_type, verbose=False)
+        elif "radimagenet_" in network_type:
             self.perceptual_function = RadImageNetPerceptualComponent(net=network_type, verbose=False)
         else:
             self.perceptual_function = LPIPS(
@@ -122,16 +121,83 @@ class PerceptualLoss(nn.Module):
         if target.shape != input.shape:
             raise ValueError(f"ground truth has differing shape ({target.shape}) from input ({input.shape})")
 
-        if self.spatial_dims == 2:
-            loss = self.perceptual_function(input, target)
-        elif self.spatial_dims == 3 and self.is_fake_3d:
+        if self.spatial_dims == 3 and self.is_fake_3d:
             # Compute 2.5D approach
             loss_sagittal = self._calculate_axis_loss(input, target, spatial_axis=2)
             loss_coronal = self._calculate_axis_loss(input, target, spatial_axis=3)
             loss_axial = self._calculate_axis_loss(input, target, spatial_axis=4)
             loss = loss_sagittal + loss_axial + loss_coronal
+        else:
+            # 2D and real 3D cases
+            loss = self.perceptual_function(input, target)
 
         return torch.mean(loss)
+
+
+class MedicalNetPerceptualComponent(nn.Module):
+    """
+    Component to perform the perceptual evaluation with the networks pretrained by Chen, et al. "Med3D: Transfer
+    Learning for 3D Medical Image Analysis". This class uses torch Hub to download the networks from
+    "Warvito/MedicalNet-models".
+
+    Args:
+        net: {``"medicalnet_resnet10_23datasets"``, ``"medicalnet_resnet50_23datasets"``}
+            Specifies the network architecture to use. Defaults to ``"medicalnet_resnet10_23datasets"``.
+        verbose: if false, mute messages from torch Hub load function.
+    """
+
+    def __init__(
+        self,
+        net: str = "medicalnet_resnet10_23datasets",
+        verbose: bool = False,
+    ) -> None:
+        super().__init__()
+        torch.hub._validate_not_a_forked_repo = lambda a, b, c: True
+        self.model = torch.hub.load("Warvito/MedicalNet-models", model=net, verbose=verbose)
+        self.eval()
+
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        Compute perceptual loss using MedicalNet 3D networks. The input and target tensors are inputted in the
+        pre-trained MedicalNet that is used for feature extraction. Then, these extracted features are normalised across
+        the channels. Finally, we compute the difference between the input and target features and calculate the mean
+        value from the spatial dimensions to obtain the perceptual loss.
+
+        Args:
+            input: 3D input tensor with shape BCDHW.
+            target: 3D target tensor with shape BCDHW.
+        """
+        input = medicalnet_intensity_normalisation(input)
+        target = medicalnet_intensity_normalisation(target)
+
+        # Get model outputs
+        outs_input = self.model.forward(input)
+        outs_target = self.model.forward(target)
+
+        # Normalise through the channels
+        feats_input = normalize_tensor(outs_input)
+        feats_target = normalize_tensor(outs_target)
+
+        results = (feats_input - feats_target) ** 2
+        results = spatial_average_3d(results.sum(dim=1, keepdim=True), keepdim=True)
+
+        return results
+
+
+def spatial_average_3d(x: torch.Tensor, keepdim: bool = True) -> torch.Tensor:
+    return x.mean([2, 3, 4], keepdim=keepdim)
+
+
+def normalize_tensor(x: torch.Tensor, eps: float = 1e-10) -> torch.Tensor:
+    norm_factor = torch.sqrt(torch.sum(x**2, dim=1, keepdim=True))
+    return x / (norm_factor + eps)
+
+
+def medicalnet_intensity_normalisation(volume):
+    """Based on https://github.com/Tencent/MedicalNet/blob/18c8bb6cd564eb1b964bffef1f4c2283f1ae6e7b/datasets/brains18.py#L133"""
+    mean = volume.mean()
+    std = volume.std()
+    return (volume - mean) / std
 
 
 class RadImageNetPerceptualComponent(nn.Module):
@@ -199,8 +265,3 @@ def subtract_mean(x: torch.Tensor) -> torch.Tensor:
     x[:, 1, :, :] -= mean[1]
     x[:, 2, :, :] -= mean[2]
     return x
-
-
-def normalize_tensor(x: torch.Tensor, eps: float = 1e-10) -> torch.Tensor:
-    norm_factor = torch.sqrt(torch.sum(x**2, dim=1, keepdim=True))
-    return x / (norm_factor + eps)

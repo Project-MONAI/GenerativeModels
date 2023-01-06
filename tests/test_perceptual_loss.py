@@ -43,6 +43,11 @@ TEST_CASES = [
         (2, 1, 64, 64, 64),
         (2, 1, 64, 64, 64),
     ],
+    [
+        {"spatial_dims": 3, "network_type": "medicalnet_resnet10_23datasets", "is_fake_3d": False},
+        (2, 1, 64, 64, 64),
+        (2, 1, 64, 64, 64),
+    ],
 ]
 
 
@@ -66,10 +71,6 @@ class TestPerceptualLoss(unittest.TestCase):
         target = torch.randn(2, 1, 32, 32)
         with self.assertRaises(ValueError):
             loss(tensor, target)
-
-    def test_true_3d(self):
-        with self.assertRaises(NotImplementedError):
-            PerceptualLoss(spatial_dims=3, is_fake_3d=False)
 
     def test_1d(self):
         with self.assertRaises(NotImplementedError):

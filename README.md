@@ -4,25 +4,28 @@
 
 # MONAI Generative Models
 Prototyping repo for generative models to be integrated into MONAI core.
+## Features
+* Network architectures: Diffusion Model, Autoencoder-KL, VQ-VAE, (Multi-scale) Patch-GAN discriminator.
+* Diffusion Model Schedulers: DDPM, DDIM, and PNDM.
+* Losses: Adversarial losses, Spectral losses, and Perceptual losses (for 2D and 3D data using LPIPS, RadImageNet, and 3DMedicalNet pre-trained models).
+* Metrics: Multi-Scale Structural Similarity Index Measure (MS-SSIM) and Maximum Mean Discrepancy (MMD).
+* Diffusion Models and Latent Diffusion Models Inferers classes (compatible with MONAI style) containing methods to train, sample synthetic images, and obtain the likelihood of inputted data.
+* MONAI-compatible trainer engine (based on Ignite) to train models with reconstruction and adversarial components.
+* Tutorials including:
+  * How to train VQ-VAEs, VQ-GANs, AutoencoderKLs, Diffusion Models and Latent Diffusion Models on 2D and 3D data.
+  * Train diffusion model to perform conditional image generation with classifier-free guidance.
+  * Comparison of different diffusion model schedulers.
+  * Diffusion models with different parametrisations (e.g. v prediction and epsilon parametrisation).
 
-## Objectives
-* Develop models to reproduce instances of data on the same distribution as the training data but differentiated enough to preserve privacy/data protection
-* The outputs should be valid inputs for training further models without bias and with robust results
-* Develop new architectures, loss functions, layers and blocks, inferers, and other components to be integrated into MONAI, in particular focus on general purpose pieces first
-* Develop specific networks train for tasks and distribute as bundles
-* Develop the tutorials and other documentation to describe how to use and develop these classes of models
-* Focus on modular components and network definitions for others to extend and use in different situations
-* Reference implementations for generative models (VQVAE, diffusion) to demonstrate how to configure and use MONAI with these model types which vary from existing supervised model training schemes
-* Provide examples on possibly shrunken decathlon data and using patch-based models
-* Superresolution networks? In time and space?
-* Unconditional and conditional networks using input images/text/other values as conditions
-* Models for generating images and related reports
-* Inpainting
-* Anomaly detection
-* MRI recon both in image and k space
+## Roadmap
+Our short-term goals are available in the [Milestones](https://github.com/Project-MONAI/GenerativeModels/milestones)
+section of the repository and this [document](https://docs.google.com/document/d/1vEjrr6dSWUnzmP-Nfc7Y6NpnWdT6fUBK/edit?usp=sharing&ouid=118224691516664207451&rtpof=true&sd=true).
+
+In the longer term, we aim to integrate the generative models into the MONAI core library (supporting tasks such as,
+image synthesis, anomaly detection, MRI reconstruction, domain transfer)
 
 ## Installation
-To install MONAI Generative Tooling, it is recommended to clone the codebase directly:
+To install MONAI Generative Models, it is recommended to clone the codebase directly:
 ```
 git clone https://github.com/Project-MONAI/GenerativeModels.git
 ```

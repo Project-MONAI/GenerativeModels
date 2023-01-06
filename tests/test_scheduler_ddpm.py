@@ -72,6 +72,13 @@ class TestDDPMScheduler(unittest.TestCase):
         self.assertEqual(scheduler.num_inference_steps, 100)
         self.assertEqual(len(scheduler.timesteps), 100)
 
+    def test_set_timesteps_with_num_inference_steps_bigger_than_num_train_timesteps(self):
+        scheduler = DDPMScheduler(
+            num_train_timesteps=1000,
+        )
+        with self.assertRaises(ValueError):
+            scheduler.set_timesteps(num_inference_steps=2000)
+
 
 if __name__ == "__main__":
     unittest.main()

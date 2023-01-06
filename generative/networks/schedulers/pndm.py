@@ -121,11 +121,18 @@ class PNDMScheduler(nn.Module):
             num_inference_steps: number of diffusion steps used when generating samples with a pre-trained model.
             device: target device to put the data.
         """
+        if num_inference_steps > self.num_train_timesteps:
+            raise ValueError(
+                f"`num_inference_steps`: {num_inference_steps} cannot be larger than `self.num_train_timesteps`:"
+                f" {self.num_train_timesteps} as the unet model trained with this scheduler can only handle"
+                f" maximal {self.num_train_timesteps} timesteps."
+            )
+
         self.num_inference_steps = num_inference_steps
         step_ratio = self.num_train_timesteps // self.num_inference_steps
         # creates integer timesteps by multiplying by ratio
         # casting to int to avoid issues when num_inference_step is power of 3
-        self._timesteps = (np.arange(0, num_inference_steps) * step_ratio).round()
+        self._timesteps = (np.arange(0, num_inference_steps) * step_ratio).round().astype(np.int64)
         self._timesteps += self.steps_offset
 
         if self.skip_prk_steps:
