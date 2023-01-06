@@ -3,4 +3,3 @@ monai-weekly==1.1.dev2248
 numpy>=1.17
 torch>=1.8
 tqdm
-xformers==0.0.16
