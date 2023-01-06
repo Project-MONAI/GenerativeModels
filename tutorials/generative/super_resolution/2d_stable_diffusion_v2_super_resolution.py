@@ -17,10 +17,15 @@
 # %% [markdown]
 # # Super-resolution using Stable Diffusion v2 Upscalers
 #
-# Tutorial to illustrate the task of super-resolution on medical images using Latent Diffusion Models (LDMs) [1] with models conditioned based on the signal-to-noise ratio (introduced on [2] and used in [Stable Diffusion v2.0](https://stability.ai/blog/stable-diffusion-v2-release) and Imagen Video [3]).
+# Tutorial to illustrate the super-resolution task on medical images using Latent Diffusion Models (LDMs) [1]. For that, we will use an autoencoder to obtain a latent representation of the high-resolution images. Then, we train a diffusion model to infer this latent representation when conditioned on a low-resolution image.
+#
+# To improve the performance of our models, we will use a method called "noise conditioning augmentation" (introduced in [2] and used in Stable Diffusion v2.0 and Imagen Video [3]). During the training, we add noise to the low-resolution images using a random signal-to-noise ratio, and we condition the diffusion models on the amount of noise added. At sampling time, we use a fixed signal-to-noise ratio, representing a small amount of augmentation that aids in removing artefacts in the samples.
+#
 #
 # [1] - Rombach et al. "High-Resolution Image Synthesis with Latent Diffusion Models" https://arxiv.org/abs/2112.10752
+#
 # [2] - Ho et al. "Cascaded diffusion models for high fidelity image generation" https://arxiv.org/abs/2106.15282
+#
 # [3] - Ho et al. "High Definition Video Generation with Diffusion Models" https://arxiv.org/abs/2210.02303
 
 # %%
@@ -149,7 +154,7 @@ val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
 val_loader = DataLoader(val_ds, batch_size=32, shuffle=True, num_workers=4)
 
 # %% [markdown]
-# ## Define the network
+# ## Define the autoencoder network and training components
 
 # %%
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -169,8 +174,6 @@ autoencoderkl = AutoencoderKL(
 )
 autoencoderkl = autoencoderkl.to(device)
 
-
-# %%
 discriminator = PatchDiscriminator(
     spatial_dims=2,
     num_layers_d=3,
@@ -183,7 +186,8 @@ discriminator = PatchDiscriminator(
     bias=False,
     padding=1,
 )
-discriminator.to(device)
+discriminator = discriminator.to(device)
+
 
 # %%
 perceptual_loss = PerceptualLoss(spatial_dims=2, network_type="alex")
@@ -201,7 +205,7 @@ scaler_g = GradScaler()
 scaler_d = GradScaler()
 
 # %% [markdown]
-# ## Train AutoencoderKL
+# ## Train Autoencoder
 
 # %%
 kl_weight = 1e-6
@@ -310,7 +314,7 @@ scale_factor = 1 / torch.std(z)
 # %% [markdown]
 # ## Train Diffusion Model
 #
-# In order to train the super-resolution, we used the conditioned augmentation (introduced in [2] section 3 and used on Stable Diffusion Upscalers and Imagen Video [3] Section 2.5) as it has been shown critical for cascaded diffusion models, as well for super-resolution task. For this, we apply Gaussian noise augmentation given by a low_res_scheduler component, with the t step defining the signal-to-noise ratio and used to condition the diffusion model (inputted using class_labels argument).
+# In order to train the diffusion model to perform super-resolution, we will need to concatenate the latent representation of the high-resolution with the low-resolution image. For this, we create a Diffusion model with `in_channels=4`. Since only the outputted latent representation is interesting, we set `out_channels=3`.
 
 # %%
 unet = DiffusionModelUNet(
@@ -318,10 +322,11 @@ unet = DiffusionModelUNet(
     in_channels=4,
     out_channels=3,
     num_res_blocks=2,
-    num_channels=(256, 256, 256, 512),
-    attention_levels=(False, False, False, True),
-    num_head_channels=32,
+    num_channels=(256, 256, 512, 1024),
+    attention_levels=(False, False, True, True),
+    num_head_channels=64,
 )
+unet = unet.to(device)
 
 scheduler = DDPMScheduler(
     num_train_timesteps=1000,
@@ -329,6 +334,11 @@ scheduler = DDPMScheduler(
     beta_start=0.0015,
     beta_end=0.0195,
 )
+
+# %% [markdown]
+# As mentioned, we will use the conditioned augmentation (introduced in [2] section 3 and used on Stable Diffusion Upscalers and Imagen Video [3] Section 2.5) as it has been shown critical for cascaded diffusion models, as well for super-resolution tasks. For this, we apply Gaussian noise augmentation to the low-resolution images. We will use a scheduler `low_res_scheduler` to add this noise, with the `t` step defining the signal-to-noise ratio and use the `t` value to condition the diffusion model (inputted using `class_labels` argument).
+
+# %%
 low_res_scheduler = DDPMScheduler(
     num_train_timesteps=1000,
     beta_schedule="linear",
@@ -338,12 +348,11 @@ low_res_scheduler = DDPMScheduler(
 
 max_noise_level = 350
 
-scaler_diffusion = GradScaler()
-
 # %%
 optimizer = torch.optim.Adam(unet.parameters(), lr=5e-5)
 
-unet = unet.to(device)
+scaler_diffusion = GradScaler()
+
 n_epochs = 200
 val_interval = 20
 epoch_loss_list = []
@@ -505,21 +514,33 @@ with torch.no_grad():
 
 # %%
 low_res_bicubic = nn.functional.interpolate(sampling_image, (64, 64), mode="bicubic")
-plt.figure(figsize=(8, 8))
-plt.style.use("default")
-image_display = torch.cat([images[0, 0].cpu(), low_res_bicubic[0, 0].cpu(), decoded[0, 0].cpu()], dim=1)
-for i in range(1, num_samples):
-    image_display = torch.cat(
-        [image_display, torch.cat([images[i, 0].cpu(), low_res_bicubic[i, 0].cpu(), decoded[i, 0].cpu()], dim=1)], dim=0
+fig, axs = plt.subplots(num_samples, 3, figsize=(8, 8))
+axs[0, 0].set_title("Original image")
+axs[0, 1].set_title("Low-resolution Image")
+axs[0, 2].set_title("Outputted image")
+for i in range(0, num_samples):
+    axs[i, 0].imshow(
+        images[i, 0].cpu(),
+        vmin=0,
+        vmax=1,
+        cmap="gray",
     )
-plt.imshow(
-    image_display,
-    vmin=0,
-    vmax=1,
-    cmap="gray",
-)
+    axs[i, 0].axis("off")
+    axs[i, 1].imshow(
+        low_res_bicubic[i, 0].cpu(),
+        vmin=0,
+        vmax=1,
+        cmap="gray",
+    )
+    axs[i, 1].axis("off")
+    axs[i, 2].imshow(
+        decoded[i, 0].cpu(),
+        vmin=0,
+        vmax=1,
+        cmap="gray",
+    )
+    axs[i, 2].axis("off")
 plt.tight_layout()
-plt.axis("off")
 
 # %% [markdown]
 # ### Clean-up data directory
