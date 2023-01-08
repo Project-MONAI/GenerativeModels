@@ -12,7 +12,7 @@
 from typing import TYPE_CHECKING
 
 from monai.config import IgniteInfo
-from monai.utils import min_version, optional_import
+from monai.utils import StrEnum, min_version, optional_import
 
 if TYPE_CHECKING:
     from ignite.engine import EventEnum
@@ -22,7 +22,7 @@ else:
     )
 
 
-class AdversarialKeys:
+class AdversarialKeys(StrEnum):
     REALS = "reals"
     REAL_LOGITS = "real_logits"
     FAKES = "fakes"
@@ -44,3 +44,15 @@ class AdversarialIterationEvents(EventEnum):
     DISCRIMINATOR_LOSS_COMPLETED = "discriminator_loss_completed"
     DISCRIMINATOR_BACKWARD_COMPLETED = "discriminator_backward_completed"
     DISCRIMINATOR_MODEL_COMPLETED = "discriminator_model_completed"
+
+
+class OrderingType(StrEnum):
+    RASTER_SCAN = "raster_scan"
+    S_CURVE = "s_curve"
+    RANDOM = "random"
+
+
+class OrderingTransformations(StrEnum):
+    ROTATE_90 = "rotate_90"
+    TRANSPOSE = "transpose"
+    REFLECT = "reflect"
