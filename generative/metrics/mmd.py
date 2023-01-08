@@ -21,6 +21,8 @@ class MMD(RegressionMetric):
     distributions. It is a non-negative metric where a smaller value indicates a closer match between the two
     distributions.
 
+    Gretton, A., et al,, 2012.  A kernel two-sample test. The Journal of Machine Learning Research, 13(1), pp.723-773.
+
     Args:
         y_transform: Callable to transform the y tensor before computing the metric. It is usually a Gaussian or Laplace
             filter, but it can be any function that takes a tensor as input and returns a tensor as output such as a
@@ -34,10 +36,6 @@ class MMD(RegressionMetric):
             `not_nans` count the number of not nans for the metric, thus its shape equals to the shape of the metric.
             This parameter is ignored due to the mathematical formulation of MMD.
 
-    Ref:
-        Gretton, A., Borgwardt, K.M., Rasch, M.J., Schölkopf, B. and Smola, A., 2012.
-        A kernel two-sample test.
-        The Journal of Machine Learning Research, 13(1), pp.723-773.
     """
 
     def __init__(
@@ -57,7 +55,6 @@ class MMD(RegressionMetric):
         Args:
             y: first sample (e.g., the reference image). Its shape is (B,C,W,H) for 2D data and (B,C,W,H,D) for 3D.
             y_pred: second sample (e.g., the reconstructed image). It has similar shape as y.
-            weights: weights for each sample. It has shape (B,1) and the values should be non-negative.
         """
 
         # Beta and Gamma are not calculated since torch.mean is used at return
@@ -82,7 +79,7 @@ class MMD(RegressionMetric):
         y = y.view(y.shape[0], -1)
         y_pred = y_pred.view(y_pred.shape[0], -1)
 
-        y_y = torch.mm(y, y_pred.t())
+        y_y = torch.mm(y, y.t())
         y_pred_y_pred = torch.mm(y_pred, y_pred.t())
         y_pred_y = torch.mm(y_pred, y.t())
 
