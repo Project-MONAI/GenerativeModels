@@ -55,6 +55,10 @@ class PNDMScheduler(nn.Module):
             each diffusion step uses the value of alphas product at that step and at the previous one. For the final
             step there is no previous alpha. When this option is `True` the previous alpha product is fixed to `1`,
             otherwise it uses the value of alpha at step 0.
+        prediction_type: {``"epsilon"``, ``"v_prediction"``}
+            prediction type of the scheduler function, one of `epsilon` (predicting the noise of the diffusion
+            process) or `v_prediction` (see section 2.4
+            https://imagen.research.google/video/paper.pdf)
         steps_offset:
             an offset added to the inference steps. You can use a combination of `offset=1` and
             `set_alpha_to_one=False`, to make the last step use step 0 for the previous alpha product, as done in
@@ -69,6 +73,7 @@ class PNDMScheduler(nn.Module):
         beta_schedule: str = "linear",
         skip_prk_steps: bool = False,
         set_alpha_to_one: bool = False,
+        prediction_type: str = "epsilon",
         steps_offset: int = 0,
     ) -> None:
         super().__init__()
@@ -83,6 +88,10 @@ class PNDMScheduler(nn.Module):
         else:
             raise NotImplementedError(f"{beta_schedule} does is not implemented for {self.__class__}")
 
+        if prediction_type.lower() not in ["epsilon", "v_prediction"]:
+            raise ValueError(f"prediction_type given as {prediction_type} must be one of `epsilon` or `v_prediction`")
+
+        self.prediction_type = prediction_type
         self.num_train_timesteps = num_train_timesteps
         self.alphas = 1.0 - self.betas
         self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
@@ -300,6 +309,9 @@ class PNDMScheduler(nn.Module):
         alpha_prod_t_prev = self.alphas_cumprod[prev_timestep] if prev_timestep >= 0 else self.final_alpha_cumprod
         beta_prod_t = 1 - alpha_prod_t
         beta_prod_t_prev = 1 - alpha_prod_t_prev
+
+        if self.prediction_type == "v_prediction":
+            model_output = (alpha_prod_t**0.5) * model_output + (beta_prod_t**0.5) * sample
 
         # corresponds to (α_(t−δ) - α_t) divided by
         # denominator of x_t in formula (9) and plus 1
