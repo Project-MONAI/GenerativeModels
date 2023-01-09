@@ -30,7 +30,7 @@
 # =========================================================================
 
 import math
-from typing import List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -1453,7 +1453,7 @@ class DiffusionModelUNet(nn.Module):
         attention_levels: Sequence[bool] = (False, False, True, True),
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
-        num_head_channels: int = 8,
+        num_head_channels: Union[int, Sequence[int]] = 8,
         with_conditioning: bool = False,
         transformer_num_layers: int = 1,
         cross_attention_dim: Optional[int] = None,
@@ -1475,6 +1475,15 @@ class DiffusionModelUNet(nn.Module):
         # All number of channels should be multiple of num_groups
         if any((out_channel % norm_num_groups) != 0 for out_channel in num_channels):
             raise ValueError("DiffusionModelUNet expects all num_channels being multiple of norm_num_groups")
+
+        if isinstance(num_head_channels, int):
+            num_head_channels = (num_head_channels,) * len(attention_levels)
+
+        if len(num_head_channels) != len(attention_levels):
+            raise ValueError(
+                "num_head_channels should have the same length as attention_levels. For the i levels without attention,"
+                " i.e. `attention_level[i]=False`, the num_head_channels[i] will be ignored."
+            )
 
         self.in_channels = in_channels
         self.block_out_channels = num_channels
@@ -1526,7 +1535,7 @@ class DiffusionModelUNet(nn.Module):
                 add_downsample=not is_final_block,
                 with_attn=(attention_levels[i] and not with_conditioning),
                 with_cross_attn=(attention_levels[i] and with_conditioning),
-                num_head_channels=num_head_channels,
+                num_head_channels=num_head_channels[i],
                 transformer_num_layers=transformer_num_layers,
                 cross_attention_dim=cross_attention_dim,
             )
@@ -1541,7 +1550,7 @@ class DiffusionModelUNet(nn.Module):
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
             with_conditioning=with_conditioning,
-            num_head_channels=num_head_channels,
+            num_head_channels=num_head_channels[-1],
             transformer_num_layers=transformer_num_layers,
             cross_attention_dim=cross_attention_dim,
         )
@@ -1550,6 +1559,7 @@ class DiffusionModelUNet(nn.Module):
         self.up_blocks = nn.ModuleList([])
         reversed_block_out_channels = list(reversed(num_channels))
         reversed_attention_levels = list(reversed(attention_levels))
+        reversed_num_head_channels = list(reversed(num_head_channels))
         output_channel = reversed_block_out_channels[0]
         for i in range(len(reversed_block_out_channels)):
             prev_output_channel = output_channel
@@ -1570,7 +1580,7 @@ class DiffusionModelUNet(nn.Module):
                 add_upsample=not is_final_block,
                 with_attn=(reversed_attention_levels[i] and not with_conditioning),
                 with_cross_attn=(reversed_attention_levels[i] and with_conditioning),
-                num_head_channels=num_head_channels,
+                num_head_channels=reversed_num_head_channels[i],
                 transformer_num_layers=transformer_num_layers,
                 cross_attention_dim=cross_attention_dim,
             )

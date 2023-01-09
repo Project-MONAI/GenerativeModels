@@ -54,6 +54,18 @@ UNCOND_CASES_2D = [
             "norm_num_groups": 8,
         },
     ],
+    [
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_res_blocks": 1,
+            "num_channels": (8, 8, 8),
+            "attention_levels": (False, True, True),
+            "num_head_channels": (0, 2, 4),
+            "norm_num_groups": 8,
+        },
+    ],
 ]
 
 UNCOND_CASES_3D = [
@@ -89,6 +101,18 @@ UNCOND_CASES_3D = [
             "num_channels": (8, 8, 8),
             "attention_levels": (False, False, True),
             "num_head_channels": 4,
+            "norm_num_groups": 8,
+        },
+    ],
+    [
+        {
+            "spatial_dims": 3,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_res_blocks": 1,
+            "num_channels": (8, 8, 8),
+            "attention_levels": (False, False, True),
+            "num_head_channels": (0, 0, 4),
             "norm_num_groups": 8,
         },
     ],
@@ -128,6 +152,19 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
                 num_res_blocks=1,
                 num_channels=(8, 8, 12),
                 attention_levels=(False, False, False),
+                norm_num_groups=8,
+            )
+
+    def test_attention_levels_with_different_length_num_head_channels(self):
+        with self.assertRaises(ValueError):
+            net = DiffusionModelUNet(
+                spatial_dims=2,
+                in_channels=1,
+                out_channels=1,
+                num_res_blocks=1,
+                num_channels=(8, 8, 8),
+                attention_levels=(False, False, False),
+                num_head_channels=(0, 2),
                 norm_num_groups=8,
             )
 
