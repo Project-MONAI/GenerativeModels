@@ -1482,6 +1482,7 @@ class DiffusionModelUNet(nn.Module):
         self.num_res_blocks = num_res_blocks
         self.attention_levels = attention_levels
         self.num_head_channels = num_head_channels
+        self.with_conditioning = with_conditioning
 
         # input
         self.conv_in = Convolution(
@@ -1623,6 +1624,8 @@ class DiffusionModelUNet(nn.Module):
         h = self.conv_in(x)
 
         # 4. down
+        if context is not None and self.with_conditioning is False:
+            raise ValueError("model should have with_conditioning = True if context is provided")
         down_block_res_samples: List[torch.Tensor] = [h]
         for downsample_block in self.down_blocks:
             h, res_samples = downsample_block(hidden_states=h, temb=emb, context=context)
