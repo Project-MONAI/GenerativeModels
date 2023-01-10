@@ -207,7 +207,7 @@ def main_worker(args):
     # start a typical PyTorch training
     best_metric = 10000
     best_metric_epoch = 1000
-    print(f"time elapsed before training: {time.time() - total_start}")
+    print(f"Time elapsed before training: {time.time() - total_start}")
     train_start = time.time()
     for epoch in range(args.epochs):
         epoch_start = time.time()
@@ -223,17 +223,18 @@ def main_worker(args):
                 best_metric = metric
                 best_metric_epoch = epoch + 1
                 if dist.get_rank() == 0:
-                    torch.save(model.state_dict(), Path(args.output_dir) / "best_metric_model.pth")
+                    torch.save(model.module.state_dict(), Path(args.output_dir) / "best_metric_model.pth")
+                    print(f"Saving model at epoch {epoch+1}")
             print(
                 f"current epoch: {epoch + 1} current val loss: {metric:.4f}"
-                f"\nbest mean dice: {best_metric:.4f} at epoch: {best_metric_epoch}"
+                f"\nbest MSE loss: {best_metric:.4f} at epoch: {best_metric_epoch}"
             )
 
-        print(f"time consuming of epoch {epoch + 1} is: {(time.time() - epoch_start):.4f}")
+        print(f"Training time for epoch {epoch + 1} was: {(time.time() - epoch_start):.4f}s")
 
     print(
-        f"train completed, best_metric: {best_metric:.4f} at epoch: {best_metric_epoch},"
-        f" total train time: {(time.time() - train_start):.4f}"
+        f"Training completed, best_metric: {best_metric:.4f} at epoch: {best_metric_epoch},"
+        f"Total train time: {(time.time() - train_start):.4f}"
     )
     dist.destroy_process_group()
 
