@@ -311,7 +311,7 @@ def main():
     parser.add_argument(
         "-d", "--data_dir", default="./testdata", type=str, help="directory of downloaded MedNIST dataset"
     )
-    parser.add_argument("-d", "--output_dir", default="/project", type=str, help="directory to save outputs")
+    parser.add_argument("--output_dir", default="/project", type=str, help="directory to save outputs")
     parser.add_argument("--epochs", default=300, type=int, metavar="N", help="number of total epochs to run")
     parser.add_argument("--lr", default=1e-4, type=float, help="learning rate")
     parser.add_argument("-b", "--batch_size", default=1, type=int, help="mini-batch size of every GPU")
