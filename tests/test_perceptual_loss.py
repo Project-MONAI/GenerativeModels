@@ -76,6 +76,13 @@ class TestPerceptualLoss(unittest.TestCase):
         with self.assertRaises(NotImplementedError):
             PerceptualLoss(spatial_dims=1)
 
+    def test_medicalnet_on_2d_data(self):
+        with self.assertRaises(ValueError):
+            PerceptualLoss(spatial_dims=2, network_type="medicalnet_resnet10_23datasets")
+
+        with self.assertRaises(ValueError):
+            PerceptualLoss(spatial_dims=2, network_type="medicalnet_resnet50_23datasets")
+
 
 if __name__ == "__main__":
     unittest.main()

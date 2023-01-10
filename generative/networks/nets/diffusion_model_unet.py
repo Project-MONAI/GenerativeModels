@@ -30,7 +30,7 @@
 # =========================================================================
 
 import math
-from typing import List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -1570,7 +1570,7 @@ class DiffusionModelUNet(nn.Module):
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
         resblock_updown: bool = False,
-        num_head_channels: int = 8,
+        num_head_channels: Union[int, Sequence[int]] = 8,
         with_conditioning: bool = False,
         transformer_num_layers: int = 1,
         cross_attention_dim: Optional[int] = None,
@@ -1593,12 +1593,22 @@ class DiffusionModelUNet(nn.Module):
         if any((out_channel % norm_num_groups) != 0 for out_channel in num_channels):
             raise ValueError("DiffusionModelUNet expects all num_channels being multiple of norm_num_groups")
 
+        if isinstance(num_head_channels, int):
+            num_head_channels = (num_head_channels,) * len(attention_levels)
+
+        if len(num_head_channels) != len(attention_levels):
+            raise ValueError(
+                "num_head_channels should have the same length as attention_levels. For the i levels without attention,"
+                " i.e. `attention_level[i]=False`, the num_head_channels[i] will be ignored."
+            )
+
         self.in_channels = in_channels
         self.block_out_channels = num_channels
         self.out_channels = out_channels
         self.num_res_blocks = num_res_blocks
         self.attention_levels = attention_levels
         self.num_head_channels = num_head_channels
+        self.with_conditioning = with_conditioning
 
         # input
         self.conv_in = Convolution(
@@ -1644,7 +1654,7 @@ class DiffusionModelUNet(nn.Module):
                 resblock_updown=resblock_updown,
                 with_attn=(attention_levels[i] and not with_conditioning),
                 with_cross_attn=(attention_levels[i] and with_conditioning),
-                num_head_channels=num_head_channels,
+                num_head_channels=num_head_channels[i],
                 transformer_num_layers=transformer_num_layers,
                 cross_attention_dim=cross_attention_dim,
             )
@@ -1659,7 +1669,7 @@ class DiffusionModelUNet(nn.Module):
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
             with_conditioning=with_conditioning,
-            num_head_channels=num_head_channels,
+            num_head_channels=num_head_channels[-1],
             transformer_num_layers=transformer_num_layers,
             cross_attention_dim=cross_attention_dim,
         )
@@ -1668,6 +1678,7 @@ class DiffusionModelUNet(nn.Module):
         self.up_blocks = nn.ModuleList([])
         reversed_block_out_channels = list(reversed(num_channels))
         reversed_attention_levels = list(reversed(attention_levels))
+        reversed_num_head_channels = list(reversed(num_head_channels))
         output_channel = reversed_block_out_channels[0]
         for i in range(len(reversed_block_out_channels)):
             prev_output_channel = output_channel
@@ -1689,7 +1700,7 @@ class DiffusionModelUNet(nn.Module):
                 resblock_updown=resblock_updown,
                 with_attn=(reversed_attention_levels[i] and not with_conditioning),
                 with_cross_attn=(reversed_attention_levels[i] and with_conditioning),
-                num_head_channels=num_head_channels,
+                num_head_channels=reversed_num_head_channels[i],
                 transformer_num_layers=transformer_num_layers,
                 cross_attention_dim=cross_attention_dim,
             )
@@ -1742,6 +1753,8 @@ class DiffusionModelUNet(nn.Module):
         h = self.conv_in(x)
 
         # 4. down
+        if context is not None and self.with_conditioning is False:
+            raise ValueError("model should have with_conditioning = True if context is provided")
         down_block_res_samples: List[torch.Tensor] = [h]
         for downsample_block in self.down_blocks:
             h, res_samples = downsample_block(hidden_states=h, temb=emb, context=context)
