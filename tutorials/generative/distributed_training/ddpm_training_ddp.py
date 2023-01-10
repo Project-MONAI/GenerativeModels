@@ -223,7 +223,7 @@ def main_worker(args):
                 best_metric = metric
                 best_metric_epoch = epoch + 1
                 if dist.get_rank() == 0:
-                    torch.save(model.state_dict(), "best_metric_model.pth")
+                    torch.save(model.state_dict(), Path(args.output_dir) / "best_metric_model.pth")
             print(
                 f"current epoch: {epoch + 1} current val loss: {metric:.4f}"
                 f"\nbest mean dice: {best_metric:.4f} at epoch: {best_metric_epoch}"
@@ -311,6 +311,7 @@ def main():
     parser.add_argument(
         "-d", "--data_dir", default="./testdata", type=str, help="directory of downloaded MedNIST dataset"
     )
+    parser.add_argument("-d", "--output_dir", default="/project", type=str, help="directory to save outputs")
     parser.add_argument("--epochs", default=300, type=int, metavar="N", help="number of total epochs to run")
     parser.add_argument("--lr", default=1e-4, type=float, help="learning rate")
     parser.add_argument("-b", "--batch_size", default=1, type=int, help="mini-batch size of every GPU")
