@@ -13,10 +13,8 @@
 This example shows how to execute distributed training based on PyTorch native `DistributedDataParallel` module.
 It can run on several nodes with multiple GPU devices on every node.
 
-This example is based on the MedNIST Hand dataset
+This example is based on the MedNIST Hand dataset.
 
-Under default settings, each single GPU needs to use ~12GB memory for network training. In addition, in order to
-cache the whole dataset, ~100GB GPU memory are necessary. Therefore, at least 5 NVIDIA TESLA V100 (32G) are needed.
 If you do not have enough GPU memory, you can try to decrease the input parameter `cache_rate`.
 
 Main steps to set up the distributed training:
@@ -39,11 +37,9 @@ Note:
            --nnodes=NUM_NODES --node_rank=INDEX_CURRENT_NODE
            ddpm_training_ddp.py -d DIR_OF_TESTDATA
 
-    This example was tested with [Ubuntu 16.04/20.04], [NCCL 2.6.3].
-
 Referring to: https://pytorch.org/tutorials/intermediate/ddp_tutorial.html
 
-Some codes are taken from https://github.com/pytorch/examples/blob/master/imagenet/main.py
+This code is based on https://github.com/Project-MONAI/tutorials/blob/main/acceleration/distributed_training/brats_training_ddp.py
 
 """
 
@@ -70,7 +66,6 @@ from generative.networks.nets import DiffusionModelUNet
 from generative.networks.schedulers import DDPMScheduler
 
 
-# import matplotlib.pyplot as plt
 class MedNISTCacheDataset(MedNISTDataset):
     """
     Enhance the MedNISTDataset to support distributed data parallel.
@@ -289,25 +284,10 @@ def evaluate(model, val_loader, inferer, scaler, device):
 
             val_epoch_loss += val_loss.item()
         val_epoch_loss = val_epoch_loss / (step + 1)
-
-    # # Sampling image during training
-    # with torch.no_grad():
-    #     noise = torch.randn((1, 1, 64, 64))
-    #     noise = noise.to(device)
-    #     inferer.scheduler.set_timesteps(num_inference_steps=1000)
-    #     with autocast(enabled=True):
-    #         image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=inferer.scheduler)
-    #
-    #     plt.figure(figsize=(2, 2))
-    #     plt.imshow(image[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
-    #     plt.tight_layout()
-    #     plt.axis("off")
-    #     plt.show()
     return val_epoch_loss
 
 
 def main():
-    parser = argparse.ArgumentParser()
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-d", "--data_dir", default="./testdata", type=str, help="directory of downloaded MedNIST dataset"
@@ -334,11 +314,11 @@ def main():
     main_worker(args=args)
 
 
-# usage example(refer to https://github.com/pytorch/pytorch/blob/master/torch/distributed/launch.py):
+# usage example (refer to https://github.com/pytorch/pytorch/blob/master/torch/distributed/launch.py):
 
 # torchrun --nproc_per_node=NUM_GPUS_PER_NODE
 #        --nnodes=NUM_NODES --node_rank=INDEX_CURRENT_NODE
-#        brats_training_ddp.py -d DIR_OF_TESTDATA
+#        ddpm_training_ddp.py -d DIR_OF_TESTDATA
 
 if __name__ == "__main__":
     main()
