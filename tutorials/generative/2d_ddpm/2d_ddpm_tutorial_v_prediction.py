@@ -8,7 +8,7 @@
 #       format_version: '1.3'
 #       jupytext_version: 1.14.1
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: Python 3 (ipykernel)
 #     language: python
 #     name: python3
 # ---
@@ -188,110 +188,118 @@ inferer = DiffusionInferer(scheduler)
 # %% [markdown]
 # ### Model training
 # Here, we are training our model for 75 epochs (training time: ~50 minutes).
+#
+# If you would like to skip the training and use a pre-trained model instead, set `use_pretrained=True`. This model was trained using the code in `tutorials/generative/distributed_training/ddpm_training_ddp.py`
 
 # %% jupyter={"outputs_hidden": false}
-n_epochs = 75
-val_interval = 5
-epoch_loss_list = []
-val_epoch_loss_list = []
+use_pretrained = False
 
-scaler = GradScaler()
-total_start = time.time()
-for epoch in range(n_epochs):
-    model.train()
-    epoch_loss = 0
-    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=70)
-    progress_bar.set_description(f"Epoch {epoch}")
-    for step, batch in progress_bar:
-        images = batch["image"].to(device)
-        optimizer.zero_grad(set_to_none=True)
+if use_pretrained:
+    model = torch.hub.load("marksgraham/pretrained_generative_models", model="ddpm_2d", verbose=True).to(device)
+else:
+    n_epochs = 75
+    val_interval = 5
+    epoch_loss_list = []
+    val_epoch_loss_list = []
 
-        with autocast(enabled=True):
-            # Generate random noise
-            noise = torch.randn_like(images).to(device)
-            timesteps = torch.randint(
-                0, inferer.scheduler.num_train_timesteps, (images.shape[0],), device=images.device
-            ).long()
-
-            # Get target for the v-prediction parameterization
-            target = inferer.scheduler.get_velocity(images, noise, timesteps)
-
-            # Get model prediction
-            noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
-
-            loss = F.mse_loss(noise_pred.float(), target.float())
-
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
-
-        epoch_loss += loss.item()
-
-        progress_bar.set_postfix(
-            {
-                "loss": epoch_loss / (step + 1),
-            }
-        )
-    epoch_loss_list.append(epoch_loss / (step + 1))
-
-    if (epoch + 1) % val_interval == 0:
-        model.eval()
-        val_epoch_loss = 0
-        for step, batch in enumerate(val_loader):
+    scaler = GradScaler()
+    total_start = time.time()
+    for epoch in range(n_epochs):
+        model.train()
+        epoch_loss = 0
+        progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=70)
+        progress_bar.set_description(f"Epoch {epoch}")
+        for step, batch in progress_bar:
             images = batch["image"].to(device)
-            with torch.no_grad():
-                with autocast(enabled=True):
-                    noise = torch.randn_like(images).to(device)
-                    timesteps = torch.randint(
-                        0, inferer.scheduler.num_train_timesteps, (images.shape[0],), device=images.device
-                    ).long()
-                    target = inferer.scheduler.get_velocity(images, noise, timesteps)
-                    noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
-                    val_loss = F.mse_loss(noise_pred.float(), target.float())
+            optimizer.zero_grad(set_to_none=True)
 
-            val_epoch_loss += val_loss.item()
+            with autocast(enabled=True):
+                # Generate random noise
+                noise = torch.randn_like(images).to(device)
+                timesteps = torch.randint(
+                    0, inferer.scheduler.num_train_timesteps, (images.shape[0],), device=images.device
+                ).long()
+
+                # Get target for the v-prediction parameterization
+                target = inferer.scheduler.get_velocity(images, noise, timesteps)
+
+                # Get model prediction
+                noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
+
+                loss = F.mse_loss(noise_pred.float(), target.float())
+
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+
+            epoch_loss += loss.item()
+
             progress_bar.set_postfix(
                 {
-                    "val_loss": val_epoch_loss / (step + 1),
+                    "loss": epoch_loss / (step + 1),
                 }
             )
-        val_epoch_loss_list.append(val_epoch_loss / (step + 1))
+        epoch_loss_list.append(epoch_loss / (step + 1))
 
-        # Sampling image during training
-        noise = torch.randn((1, 1, 64, 64))
-        noise = noise.to(device)
-        scheduler.set_timesteps(num_inference_steps=1000)
-        with autocast(enabled=True):
-            image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=scheduler)
+        if (epoch + 1) % val_interval == 0:
+            model.eval()
+            val_epoch_loss = 0
+            for step, batch in enumerate(val_loader):
+                images = batch["image"].to(device)
+                with torch.no_grad():
+                    with autocast(enabled=True):
+                        noise = torch.randn_like(images).to(device)
+                        timesteps = torch.randint(
+                            0, inferer.scheduler.num_train_timesteps, (images.shape[0],), device=images.device
+                        ).long()
+                        target = inferer.scheduler.get_velocity(images, noise, timesteps)
+                        noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
+                        val_loss = F.mse_loss(noise_pred.float(), target.float())
 
-        plt.figure(figsize=(2, 2))
-        plt.imshow(image[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
-        plt.tight_layout()
-        plt.axis("off")
-        plt.show()
+                val_epoch_loss += val_loss.item()
+                progress_bar.set_postfix(
+                    {
+                        "val_loss": val_epoch_loss / (step + 1),
+                    }
+                )
+            val_epoch_loss_list.append(val_epoch_loss / (step + 1))
 
-total_time = time.time() - total_start
-print(f"train completed, total time: {total_time}.")
+            # Sampling image during training
+            noise = torch.randn((1, 1, 64, 64))
+            noise = noise.to(device)
+            scheduler.set_timesteps(num_inference_steps=1000)
+            with autocast(enabled=True):
+                image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=scheduler)
+
+            plt.figure(figsize=(2, 2))
+            plt.imshow(image[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
+            plt.tight_layout()
+            plt.axis("off")
+            plt.show()
+
+    total_time = time.time() - total_start
+    print(f"train completed, total time: {total_time}.")
 # %% [markdown]
 # ### Learning curves
 
 # %% jupyter={"outputs_hidden": false}
-plt.style.use("seaborn-v0_8")
-plt.title("Learning Curves", fontsize=20)
-plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, color="C0", linewidth=2.0, label="Train")
-plt.plot(
-    np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
-    val_epoch_loss_list,
-    color="C1",
-    linewidth=2.0,
-    label="Validation",
-)
-plt.yticks(fontsize=12)
-plt.xticks(fontsize=12)
-plt.xlabel("Epochs", fontsize=16)
-plt.ylabel("Loss", fontsize=16)
-plt.legend(prop={"size": 14})
-plt.show()
+if not use_pretrained:
+    plt.style.use("seaborn-v0_8")
+    plt.title("Learning Curves", fontsize=20)
+    plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, color="C0", linewidth=2.0, label="Train")
+    plt.plot(
+        np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
+        val_epoch_loss_list,
+        color="C1",
+        linewidth=2.0,
+        label="Validation",
+    )
+    plt.yticks(fontsize=12)
+    plt.xticks(fontsize=12)
+    plt.xlabel("Epochs", fontsize=16)
+    plt.ylabel("Loss", fontsize=16)
+    plt.legend(prop={"size": 14})
+    plt.show()
 
 # %% [markdown]
 # ### Plotting sampling process along DDPM's Markov chain
