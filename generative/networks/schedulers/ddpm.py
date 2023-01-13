@@ -183,7 +183,6 @@ class DDPMScheduler(nn.Module):
         model_output: torch.Tensor,
         timestep: int,
         sample: torch.Tensor,
-        predict_epsilon=True,
         generator: Optional[torch.Generator] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -194,7 +193,6 @@ class DDPMScheduler(nn.Module):
             model_output: direct output from learned diffusion model.
             timestep: current discrete timestep in the diffusion chain.
             sample: current instance of sample being created by diffusion process.
-            predict_epsilon: flag to use when model predicts the samples directly instead of the noise, epsilon.
             generator: random number generator.
 
         Returns:
