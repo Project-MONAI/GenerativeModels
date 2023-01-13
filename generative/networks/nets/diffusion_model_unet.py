@@ -513,6 +513,8 @@ class Upsample(nn.Module):
                 padding=padding,
                 conv_only=True,
             )
+        else:
+            self.conv = None
 
     def forward(self, x: torch.Tensor, emb: Optional[torch.Tensor] = None) -> torch.Tensor:
         del emb
