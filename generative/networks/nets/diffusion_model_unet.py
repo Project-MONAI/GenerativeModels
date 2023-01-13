@@ -718,10 +718,7 @@ class DownBlock(nn.Module):
             output_states.append(hidden_states)
 
         if self.downsampler is not None:
-            if self.resblock_updown:
-                hidden_states = self.downsampler(hidden_states, temb)
-            else:
-                hidden_states = self.downsampler(hidden_states)
+            hidden_states = self.downsampler(hidden_states, temb)
             output_states.append(hidden_states)
 
         return hidden_states, output_states
@@ -823,10 +820,7 @@ class AttnDownBlock(nn.Module):
             output_states.append(hidden_states)
 
         if self.downsampler is not None:
-            if self.resblock_updown:
-                hidden_states = self.downsampler(hidden_states, temb)
-            else:
-                hidden_states = self.downsampler(hidden_states)
+            hidden_states = self.downsampler(hidden_states, temb)
             output_states.append(hidden_states)
 
         return hidden_states, output_states
@@ -1256,10 +1250,7 @@ class AttnUpBlock(nn.Module):
             hidden_states = attn(hidden_states)
 
         if self.upsampler is not None:
-            if self.resblock_updown:
-                hidden_states = self.upsampler(hidden_states, temb)
-            else:
-                hidden_states = self.upsampler(hidden_states)
+            hidden_states = self.upsampler(hidden_states, temb)
 
         return hidden_states
 
@@ -1370,10 +1361,7 @@ class CrossAttnUpBlock(nn.Module):
             hidden_states = attn(hidden_states, context=context)
 
         if self.upsampler is not None:
-            if self.resblock_updown:
-                hidden_states = self.upsampler(hidden_states, temb)
-            else:
-                hidden_states = self.upsampler(hidden_states)
+            hidden_states = self.upsampler(hidden_states, temb)
 
         return hidden_states
 
