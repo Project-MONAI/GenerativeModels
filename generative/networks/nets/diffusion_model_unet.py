@@ -472,7 +472,8 @@ class Downsample(nn.Module):
             assert self.num_channels == self.out_channels
             self.op = Pool[Pool.AVG, spatial_dims](kernel_size=2, stride=2)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, emb: Optional[torch.Tensor] = None) -> torch.Tensor:
+        del emb
         assert x.shape[1] == self.num_channels
         return self.op(x)
 
@@ -513,7 +514,8 @@ class Upsample(nn.Module):
                 conv_only=True,
             )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, emb: Optional[torch.Tensor] = None) -> torch.Tensor:
+        del emb
         assert x.shape[1] == self.num_channels
         x = F.interpolate(x, scale_factor=2.0, mode="nearest")
         if self.use_conv:
@@ -933,10 +935,7 @@ class CrossAttnDownBlock(nn.Module):
             output_states.append(hidden_states)
 
         if self.downsampler is not None:
-            if self.resblock_updown:
-                hidden_states = self.downsampler(hidden_states, temb)
-            else:
-                hidden_states = self.downsampler(hidden_states)
+            hidden_states = self.downsampler(hidden_states, temb)
             output_states.append(hidden_states)
 
         return hidden_states, output_states
@@ -1152,10 +1151,7 @@ class UpBlock(nn.Module):
             hidden_states = resnet(hidden_states, temb)
 
         if self.upsampler is not None:
-            if self.resblock_updown:
-                hidden_states = self.upsampler(hidden_states, temb)
-            else:
-                hidden_states = self.upsampler(hidden_states)
+            hidden_states = self.upsampler(hidden_states, temb)
 
         return hidden_states
 
