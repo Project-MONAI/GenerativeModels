@@ -207,12 +207,16 @@ class AttentionBlock(nn.Module):
         self.proj_attn = nn.Linear(num_channels, num_channels)
 
     def reshape_heads_to_batch_dim(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Divide hidden state dimension to the multiple attention heads and reshape their input as instances in the batch.
+        """
         batch_size, seq_len, dim = x.shape
         x = x.reshape(batch_size, seq_len, self.num_heads, dim // self.num_heads)
         x = x.permute(0, 2, 1, 3).reshape(batch_size * self.num_heads, seq_len, dim // self.num_heads)
         return x
 
     def reshape_batch_dim_to_heads(self, x: torch.Tensor) -> torch.Tensor:
+        """Combine the output of the attention heads back into the hidden state dimension."""
         batch_size, seq_len, dim = x.shape
         x = x.reshape(batch_size // self.num_heads, self.num_heads, seq_len, dim)
         x = x.permute(0, 2, 1, 3).reshape(batch_size // self.num_heads, seq_len, dim * self.num_heads)
