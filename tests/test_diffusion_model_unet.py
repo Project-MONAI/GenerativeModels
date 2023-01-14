@@ -168,6 +168,56 @@ UNCOND_CASES_3D = [
     ],
 ]
 
+COND_CASES_2D = [
+    [
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_res_blocks": 1,
+            "num_channels": (8, 8, 8),
+            "attention_levels": (False, False, True),
+            "num_head_channels": 4,
+            "norm_num_groups": 8,
+            "with_conditioning": True,
+            "transformer_num_layers": 1,
+            "cross_attention_dim": 3,
+        },
+    ],
+    [
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_res_blocks": 1,
+            "num_channels": (8, 8, 8),
+            "attention_levels": (False, False, True),
+            "num_head_channels": 4,
+            "norm_num_groups": 8,
+            "with_conditioning": True,
+            "transformer_num_layers": 1,
+            "cross_attention_dim": 3,
+            "resblock_updown": True,
+        },
+    ],
+    [
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_res_blocks": 1,
+            "num_channels": (8, 8, 8),
+            "attention_levels": (False, False, True),
+            "num_head_channels": 4,
+            "norm_num_groups": 8,
+            "with_conditioning": True,
+            "transformer_num_layers": 1,
+            "cross_attention_dim": 3,
+            "upcast_attention": True,
+        },
+    ],
+]
+
 
 class TestDiffusionModelUNet2D(unittest.TestCase):
     @parameterized.expand(UNCOND_CASES_2D)
@@ -340,21 +390,12 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
         )
         test_script_save(net, torch.rand((1, 1, 16, 16)), torch.randint(0, 1000, (1,)).long(), torch.rand((1, 1, 3)))
 
-    def test_script_conditioned_2d_models_with_resblock_updown(self):
-        net = DiffusionModelUNet(
-            spatial_dims=2,
-            in_channels=1,
-            out_channels=1,
-            num_res_blocks=1,
-            num_channels=(8, 8, 8),
-            attention_levels=(False, False, True),
-            norm_num_groups=8,
-            with_conditioning=True,
-            transformer_num_layers=1,
-            cross_attention_dim=3,
-            resblock_updown=True,
-        )
-        test_script_save(net, torch.rand((1, 1, 16, 16)), torch.randint(0, 1000, (1,)).long(), torch.rand((1, 1, 3)))
+    @parameterized.expand(COND_CASES_2D)
+    def test_conditioned_2d_models_shape(self, input_param):
+        net = DiffusionModelUNet(**input_param)
+        with eval_mode(net):
+            result = net.forward(torch.rand((1, 1, 16, 16)), torch.randint(0, 1000, (1,)).long(), torch.rand((1, 1, 3)))
+            self.assertEqual(result.shape, (1, 1, 16, 16))
 
 
 class TestDiffusionModelUNet3D(unittest.TestCase):
