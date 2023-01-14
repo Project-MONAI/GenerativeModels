@@ -37,6 +37,18 @@ UNCOND_CASES_2D = [
             "out_channels": 1,
             "num_res_blocks": 1,
             "num_channels": (8, 8, 8),
+            "attention_levels": (False, False, False),
+            "norm_num_groups": 8,
+            "resblock_updown": True,
+        },
+    ],
+    [
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_res_blocks": 1,
+            "num_channels": (8, 8, 8),
             "attention_levels": (False, False, True),
             "num_head_channels": 8,
             "norm_num_groups": 8,
@@ -50,7 +62,32 @@ UNCOND_CASES_2D = [
             "num_res_blocks": 1,
             "num_channels": (8, 8, 8),
             "attention_levels": (False, False, True),
+            "num_head_channels": 8,
+            "norm_num_groups": 8,
+            "resblock_updown": True,
+        },
+    ],
+    [
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_res_blocks": 1,
+            "num_channels": (8, 8, 8),
+            "attention_levels": (False, False, True),
             "num_head_channels": 4,
+            "norm_num_groups": 8,
+        },
+    ],
+    [
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_res_blocks": 1,
+            "num_channels": (8, 8, 8),
+            "attention_levels": (False, True, True),
+            "num_head_channels": (0, 2, 4),
             "norm_num_groups": 8,
         },
     ],
@@ -75,6 +112,18 @@ UNCOND_CASES_3D = [
             "out_channels": 1,
             "num_res_blocks": 1,
             "num_channels": (8, 8, 8),
+            "attention_levels": (False, False, False),
+            "norm_num_groups": 8,
+            "resblock_updown": True,
+        },
+    ],
+    [
+        {
+            "spatial_dims": 3,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_res_blocks": 1,
+            "num_channels": (8, 8, 8),
             "attention_levels": (False, False, True),
             "num_head_channels": 8,
             "norm_num_groups": 8,
@@ -88,7 +137,32 @@ UNCOND_CASES_3D = [
             "num_res_blocks": 1,
             "num_channels": (8, 8, 8),
             "attention_levels": (False, False, True),
+            "num_head_channels": 8,
+            "norm_num_groups": 8,
+            "resblock_updown": True,
+        },
+    ],
+    [
+        {
+            "spatial_dims": 3,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_res_blocks": 1,
+            "num_channels": (8, 8, 8),
+            "attention_levels": (False, False, True),
             "num_head_channels": 4,
+            "norm_num_groups": 8,
+        },
+    ],
+    [
+        {
+            "spatial_dims": 3,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_res_blocks": 1,
+            "num_channels": (8, 8, 8),
+            "attention_levels": (False, False, True),
+            "num_head_channels": (0, 0, 4),
             "norm_num_groups": 8,
         },
     ],
@@ -131,6 +205,19 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
                 norm_num_groups=8,
             )
 
+    def test_attention_levels_with_different_length_num_head_channels(self):
+        with self.assertRaises(ValueError):
+            net = DiffusionModelUNet(
+                spatial_dims=2,
+                in_channels=1,
+                out_channels=1,
+                num_res_blocks=1,
+                num_channels=(8, 8, 8),
+                attention_levels=(False, False, False),
+                num_head_channels=(0, 2),
+                norm_num_groups=8,
+            )
+
     def test_shape_conditioned_models(self):
         net = DiffusionModelUNet(
             spatial_dims=2,
@@ -167,6 +254,26 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
                 cross_attention_dim=None,
                 norm_num_groups=8,
             )
+
+    def test_context_with_conditioning_none(self):
+        with self.assertRaises(ValueError):
+            net = DiffusionModelUNet(
+                spatial_dims=2,
+                in_channels=1,
+                out_channels=1,
+                num_res_blocks=1,
+                num_channels=(8, 8, 8),
+                attention_levels=(False, False, True),
+                with_conditioning=False,
+                transformer_num_layers=1,
+                norm_num_groups=8,
+            )
+            with eval_mode(net):
+                net.forward(
+                    x=torch.rand((1, 1, 16, 32)),
+                    timesteps=torch.randint(0, 1000, (1,)).long(),
+                    context=torch.rand((1, 1, 3)),
+                )
 
     def test_shape_conditioned_models_class_conditioning(self):
         net = DiffusionModelUNet(
@@ -230,6 +337,22 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
             with_conditioning=True,
             transformer_num_layers=1,
             cross_attention_dim=3,
+        )
+        test_script_save(net, torch.rand((1, 1, 16, 16)), torch.randint(0, 1000, (1,)).long(), torch.rand((1, 1, 3)))
+
+    def test_script_conditioned_2d_models_with_resblock_updown(self):
+        net = DiffusionModelUNet(
+            spatial_dims=2,
+            in_channels=1,
+            out_channels=1,
+            num_res_blocks=1,
+            num_channels=(8, 8, 8),
+            attention_levels=(False, False, True),
+            norm_num_groups=8,
+            with_conditioning=True,
+            transformer_num_layers=1,
+            cross_attention_dim=3,
+            resblock_updown=True,
         )
         test_script_save(net, torch.rand((1, 1, 16, 16)), torch.randint(0, 1000, (1,)).long(), torch.rand((1, 1, 3)))
 

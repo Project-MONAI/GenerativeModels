@@ -9,12 +9,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib.util
+import math
 from typing import Optional, Sequence, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from monai.networks.blocks import Convolution
+
+# To install xformers, use pip install xformers==0.0.16rc401
+if importlib.util.find_spec("xformers") is not None:
+    import xformers
+    import xformers.ops
+
+    has_xformers = True
+else:
+    xformers = None
+    has_xformers = False
+
+# TODO: Use MONAI's optional_import
+# from monai.utils import optional_import
+# xformers, has_xformers = optional_import("xformers.ops", name="xformers")
 
 __all__ = ["AutoencoderKL"]
 
@@ -165,106 +181,120 @@ class ResBlock(nn.Module):
         return x + h
 
 
-class AttnBlock(nn.Module):
+class AttentionBlock(nn.Module):
     """
     Attention block.
 
     Args:
         spatial_dims: number of spatial dimensions (1D, 2D, 3D).
-        in_channels: number of input channels.
+        num_channels: number of input channels.
+        num_head_channels: number of channels in each attention head.
         norm_num_groups: number of groups involved for the group normalisation layer. Ensure that your number of
             channels is divisible by this number.
-        norm_eps: epsilon for the normalisation.
+        norm_eps: epsilon value to use for the normalisation.
     """
 
     def __init__(
         self,
         spatial_dims: int,
-        in_channels: int,
-        norm_num_groups: int,
-        norm_eps: float,
+        num_channels: int,
+        num_head_channels: Optional[int] = None,
+        norm_num_groups: int = 32,
+        norm_eps: float = 1e-6,
     ) -> None:
         super().__init__()
         self.spatial_dims = spatial_dims
-        self.in_channels = in_channels
+        self.num_channels = num_channels
 
-        self.norm = nn.GroupNorm(num_groups=norm_num_groups, num_channels=in_channels, eps=norm_eps, affine=True)
-        self.q = Convolution(
-            spatial_dims=spatial_dims,
-            in_channels=in_channels,
-            out_channels=in_channels,
-            strides=1,
-            kernel_size=1,
-            padding=0,
-            conv_only=True,
+        self.num_heads = num_channels // num_head_channels if num_head_channels is not None else 1
+        self.scale = 1 / math.sqrt(num_channels / self.num_heads)
+
+        self.norm = nn.GroupNorm(num_groups=norm_num_groups, num_channels=num_channels, eps=norm_eps, affine=True)
+
+        self.to_q = nn.Linear(num_channels, num_channels)
+        self.to_k = nn.Linear(num_channels, num_channels)
+        self.to_v = nn.Linear(num_channels, num_channels)
+
+        self.proj_attn = nn.Linear(num_channels, num_channels)
+
+    def reshape_heads_to_batch_dim(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Divide hidden state dimension to the multiple attention heads and reshape their input as instances in the batch.
+        """
+        batch_size, seq_len, dim = x.shape
+        x = x.reshape(batch_size, seq_len, self.num_heads, dim // self.num_heads)
+        x = x.permute(0, 2, 1, 3).reshape(batch_size * self.num_heads, seq_len, dim // self.num_heads)
+        return x
+
+    def reshape_batch_dim_to_heads(self, x: torch.Tensor) -> torch.Tensor:
+        """Combine the output of the attention heads back into the hidden state dimension."""
+        batch_size, seq_len, dim = x.shape
+        x = x.reshape(batch_size // self.num_heads, self.num_heads, seq_len, dim)
+        x = x.permute(0, 2, 1, 3).reshape(batch_size // self.num_heads, seq_len, dim * self.num_heads)
+        return x
+
+    def _memory_efficient_attention_xformers(
+        self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
+    ) -> torch.Tensor:
+        query = query.contiguous()
+        key = key.contiguous()
+        value = value.contiguous()
+        x = xformers.ops.memory_efficient_attention(query, key, value, attn_bias=None)
+        return x
+
+    def _attention(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor) -> torch.Tensor:
+        attention_scores = torch.baddbmm(
+            torch.empty(query.shape[0], query.shape[1], key.shape[1], dtype=query.dtype, device=query.device),
+            query,
+            key.transpose(-1, -2),
+            beta=0,
+            alpha=self.scale,
         )
-        self.k = Convolution(
-            spatial_dims=spatial_dims,
-            in_channels=in_channels,
-            out_channels=in_channels,
-            strides=1,
-            kernel_size=1,
-            padding=0,
-            conv_only=True,
-        )
-        self.v = Convolution(
-            spatial_dims=spatial_dims,
-            in_channels=in_channels,
-            out_channels=in_channels,
-            strides=1,
-            kernel_size=1,
-            padding=0,
-            conv_only=True,
-        )
-        self.proj_out = Convolution(
-            spatial_dims=spatial_dims,
-            in_channels=in_channels,
-            out_channels=in_channels,
-            strides=1,
-            kernel_size=1,
-            padding=0,
-            conv_only=True,
-        )
+        attention_probs = attention_scores.softmax(dim=-1)
+        x = torch.bmm(attention_probs, value)
+        return x
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        h_ = x
-        h_ = self.norm(h_)
-        q = self.q(h_)
-        k = self.k(h_)
-        v = self.v(h_)
+        residual = x
 
-        # Compute attention
-        b = q.shape[0]
-        c = q.shape[1]
-        h = q.shape[2]
-        w = q.shape[3]
-        # in order to Torchscript work, we initialise d = 1
-        d = 1
-
+        batch = channel = height = width = depth = -1
+        if self.spatial_dims == 2:
+            batch, channel, height, width = x.shape
         if self.spatial_dims == 3:
-            d = q.shape[4]
-        n_spatial_elements = h * w * d
+            batch, channel, height, width, depth = x.shape
 
-        q = q.reshape(b, c, n_spatial_elements)
-        q = q.permute(0, 2, 1)
-        k = k.reshape(b, c, n_spatial_elements)
-        w_ = torch.bmm(q, k)
-        w_ = w_ * (int(c) ** (-0.5))
-        w_ = F.softmax(w_, dim=2)
-
-        # Attend to values
-        v = v.reshape(b, c, n_spatial_elements)
-        w_ = w_.permute(0, 2, 1)
-        h_ = torch.bmm(v, w_)
+        # norm
+        x = self.norm(x)
 
         if self.spatial_dims == 2:
-            h_ = h_.reshape(b, c, h, w)
+            x = x.view(batch, channel, height * width).transpose(1, 2)
         if self.spatial_dims == 3:
-            h_ = h_.reshape(b, c, h, w, d)
+            x = x.view(batch, channel, height * width * depth).transpose(1, 2)
 
-        h_ = self.proj_out(h_)
+        # proj to q, k, v
+        query = self.to_q(x)
+        key = self.to_k(x)
+        value = self.to_v(x)
 
-        return x + h_
+        # Multi-Head Attention
+        query = self.reshape_heads_to_batch_dim(query)
+        key = self.reshape_heads_to_batch_dim(key)
+        value = self.reshape_heads_to_batch_dim(value)
+
+        if has_xformers:
+            x = self._memory_efficient_attention_xformers(query, key, value)
+        else:
+            x = self._attention(query, key, value)
+
+        x = self.reshape_batch_dim_to_heads(x)
+        x = x.to(query.dtype)
+
+        if self.spatial_dims == 2:
+            x = x.transpose(-1, -2).reshape(batch, channel, height, width)
+        if self.spatial_dims == 3:
+            x = x.transpose(-1, -2).reshape(batch, channel, height, width, depth)
+
+        return x + residual
 
 
 class Encoder(nn.Module):
@@ -346,7 +376,14 @@ class Encoder(nn.Module):
                 )
                 block_in_ch = block_out_ch
                 if attention_levels[i]:
-                    blocks.append(AttnBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps))
+                    blocks.append(
+                        AttentionBlock(
+                            spatial_dims=spatial_dims,
+                            num_channels=block_in_ch,
+                            norm_num_groups=norm_num_groups,
+                            norm_eps=norm_eps,
+                        )
+                    )
 
             if i != len(ch_mult) - 1:
                 blocks.append(Downsample(spatial_dims, block_in_ch))
@@ -354,7 +391,14 @@ class Encoder(nn.Module):
         # Non-local attention block
         if with_nonlocal_attn is True:
             blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_in_ch))
-            blocks.append(AttnBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps))
+            blocks.append(
+                AttentionBlock(
+                    spatial_dims=spatial_dims,
+                    num_channels=block_in_ch,
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                )
+            )
             blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_in_ch))
 
         # Normalise and convert to latent size
@@ -445,7 +489,14 @@ class Decoder(nn.Module):
         # Non-local attention block
         if with_nonlocal_attn is True:
             blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_in_ch))
-            blocks.append(AttnBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps))
+            blocks.append(
+                AttentionBlock(
+                    spatial_dims=spatial_dims,
+                    num_channels=block_in_ch,
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                )
+            )
             blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_in_ch))
 
         for i in reversed(range(len(ch_mult))):
@@ -456,7 +507,14 @@ class Decoder(nn.Module):
                 block_in_ch = block_out_ch
 
                 if attention_levels[i]:
-                    blocks.append(AttnBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps))
+                    blocks.append(
+                        AttentionBlock(
+                            spatial_dims=spatial_dims,
+                            num_channels=block_in_ch,
+                            norm_num_groups=norm_num_groups,
+                            norm_eps=norm_eps,
+                        )
+                    )
 
             if i != 0:
                 blocks.append(Upsample(spatial_dims, block_in_ch))
@@ -554,9 +612,33 @@ class AutoencoderKL(nn.Module):
             attention_levels=attention_levels,
             with_nonlocal_attn=with_decoder_nonlocal_attn,
         )
-        self.quant_conv_mu = Convolution(spatial_dims, latent_channels, latent_channels, 1, conv_only=True)
-        self.quant_conv_log_sigma = Convolution(spatial_dims, latent_channels, latent_channels, 1, conv_only=True)
-        self.post_quant_conv = Convolution(spatial_dims, latent_channels, latent_channels, 1, conv_only=True)
+        self.quant_conv_mu = Convolution(
+            spatial_dims=spatial_dims,
+            in_channels=latent_channels,
+            out_channels=latent_channels,
+            strides=1,
+            kernel_size=1,
+            padding=0,
+            conv_only=True,
+        )
+        self.quant_conv_log_sigma = Convolution(
+            spatial_dims=spatial_dims,
+            in_channels=latent_channels,
+            out_channels=latent_channels,
+            strides=1,
+            kernel_size=1,
+            padding=0,
+            conv_only=True,
+        )
+        self.post_quant_conv = Convolution(
+            spatial_dims=spatial_dims,
+            in_channels=latent_channels,
+            out_channels=latent_channels,
+            strides=1,
+            kernel_size=1,
+            padding=0,
+            conv_only=True,
+        )
         self.latent_channels = latent_channels
 
     def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
