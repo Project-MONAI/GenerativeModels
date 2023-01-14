@@ -1,0 +1,65 @@
+# Brain Imaging Generation with Latent Diffusion Models
+
+### **Authors**
+
+Walter H. L. Pinaya, Petru-Daniel Tudosiu, Jessica Dafflon, Pedro F Da Costa, Virginia Fernandez, Parashkev Nachev,
+Sebastien Ourselin, and M. Jorge Cardoso
+
+### **Tags**
+Synthetic data, Latent Diffusion Model, Generative model, Brain Imaging
+
+## **Model Description**
+This model is trained using the Latent Diffusion Model architecture [1] and is used for the synthesis of conditioned 3D
+brain MRI data. The model is divided into two parts: a autoencoder with KL-regularisation model that compresses data
+into a latent space, and a diffusion model that learns the to generated conditioned synthetic latent representations. This
+model is conditioned on age, sex, the volume of ventricular cerebrospinal fluid, and brain volume normalised for head size.
+
+## **Data**
+The model was trained on brain data from 31,740 participants from the UK Biobank [2]. We used high-resolution 3D T1w MRI with voxel size of 1mm3, resulting in volumes with 160 x 224 x 160 voxels
+
+#### **Preprocessing**
+For the image pre-processing, we used UniRes [3] to perform a rigid body registration to a common MNI space. The voxel intensity was normalised to be between [0, 1].
+
+## **Performance**
+This model achieves the following results on UK Biobank: a FID of 0.0076, a MS-SSIM of 0.6555, and a 4-G-R-SSIM of 0.3883.
+
+For more details regarding evaluation results, we refer to table 1 of the original paper.
+
+
+## **Additinal Usage Steps** (Optional)
+*If your bundle requires steps outside the normal flow of usage, describe those here in bash style commands.*
+
+Example:
+
+My first special instruction for training:
+```
+$ python -m monai.bundle <my special instructions>
+```
+My special instruction for inference 2:
+```
+$ python -m monai.bundle <my special instructions 2>
+```
+
+
+## **Citation Info**
+
+```
+@inproceedings{pinaya2022brain,
+  title={Brain imaging generation with latent diffusion models},
+  author={Pinaya, Walter HL and Tudosiu, Petru-Daniel and Dafflon, Jessica and Da Costa, Pedro F and Fernandez, Virginia and Nachev, Parashkev and Ourselin, Sebastien and Cardoso, M Jorge},
+  booktitle={MICCAI Workshop on Deep Generative Models},
+  pages={117--126},
+  year={2022},
+  organization={Springer}
+}
+```
+
+## **References** (Optional)
+
+Example:
+
+[1] Pinaya, Walter HL, et al. "Brain imaging generation with latent diffusion models." MICCAI Workshop on Deep Generative Models. Springer, Cham, 2022.
+
+[2] Sudlow, Cathie, et al. "UK biobank: an open access resource for identifying the causes of a wide range of complex diseases of middle and old age." PLoS medicine 12.3 (2015): e1001779.
+
+[3] Brudfors, Mikael, et al. "MRI super-resolution using multi-channel total variation." Annual Conference on Medical Image Understanding and Analysis. Springer, Cham, 2018.
