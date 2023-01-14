@@ -51,6 +51,10 @@ class DDPMScheduler(nn.Module):
         variance_type: {``"fixed_small"``, ``"fixed_large"``, ``"learned"``, ``"learned_range"``}
             options to clip the variance used when adding noise to the denoised sample.
         clip_sample: option to clip predicted sample between -1 and 1 for numerical stability.
+        prediction_type: {``"epsilon"``, ``"sample"``, ``"v_prediction"``}
+            prediction type of the scheduler function, one of `epsilon` (predicting the noise of the diffusion
+            process), `sample` (directly predicting the noisy sample`) or `v_prediction` (see section 2.4
+            https://imagen.research.google/video/paper.pdf)
     """
 
     def __init__(
@@ -179,7 +183,6 @@ class DDPMScheduler(nn.Module):
         model_output: torch.Tensor,
         timestep: int,
         sample: torch.Tensor,
-        predict_epsilon=True,
         generator: Optional[torch.Generator] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -190,7 +193,6 @@ class DDPMScheduler(nn.Module):
             model_output: direct output from learned diffusion model.
             timestep: current discrete timestep in the diffusion chain.
             sample: current instance of sample being created by diffusion process.
-            predict_epsilon: flag to use when model predicts the samples directly instead of the noise, epsilon.
             generator: random number generator.
 
         Returns:

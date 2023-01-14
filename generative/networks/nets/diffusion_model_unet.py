@@ -31,7 +31,7 @@
 
 import importlib.util
 import math
-from typing import List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -525,7 +525,8 @@ class Downsample(nn.Module):
             assert self.num_channels == self.out_channels
             self.op = Pool[Pool.AVG, spatial_dims](kernel_size=2, stride=2)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, emb: Optional[torch.Tensor] = None) -> torch.Tensor:
+        del emb
         assert x.shape[1] == self.num_channels
         return self.op(x)
 
@@ -565,8 +566,11 @@ class Upsample(nn.Module):
                 padding=padding,
                 conv_only=True,
             )
+        else:
+            self.conv = None
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, emb: Optional[torch.Tensor] = None) -> torch.Tensor:
+        del emb
         assert x.shape[1] == self.num_channels
         x = F.interpolate(x, scale_factor=2.0, mode="nearest")
         if self.use_conv:
@@ -698,6 +702,7 @@ class DownBlock(nn.Module):
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
         add_downsample: bool = True,
+        resblock_updown: bool = False,
         downsample_padding: int = 1,
     ) -> None:
         """
@@ -712,9 +717,12 @@ class DownBlock(nn.Module):
             norm_num_groups: number of groups for the group normalization.
             norm_eps: epsilon for the group normalization.
             add_downsample: if True add downsample block.
+            resblock_updown: if True use residual blocks for downsampling.
             downsample_padding: padding used in the downsampling block.
         """
         super().__init__()
+        self.resblock_updown = resblock_updown
+
         resnets = []
 
         for i in range(num_res_blocks):
@@ -733,13 +741,24 @@ class DownBlock(nn.Module):
         self.resnets = nn.ModuleList(resnets)
 
         if add_downsample:
-            self.downsampler = Downsample(
-                spatial_dims=spatial_dims,
-                num_channels=out_channels,
-                use_conv=True,
-                out_channels=out_channels,
-                padding=downsample_padding,
-            )
+            if resblock_updown:
+                self.downsampler = ResnetBlock(
+                    spatial_dims=spatial_dims,
+                    in_channels=out_channels,
+                    out_channels=out_channels,
+                    temb_channels=temb_channels,
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                    down=True,
+                )
+            else:
+                self.downsampler = Downsample(
+                    spatial_dims=spatial_dims,
+                    num_channels=out_channels,
+                    use_conv=True,
+                    out_channels=out_channels,
+                    padding=downsample_padding,
+                )
         else:
             self.downsampler = None
 
@@ -754,7 +773,7 @@ class DownBlock(nn.Module):
             output_states.append(hidden_states)
 
         if self.downsampler is not None:
-            hidden_states = self.downsampler(hidden_states)
+            hidden_states = self.downsampler(hidden_states, temb)
             output_states.append(hidden_states)
 
         return hidden_states, output_states
@@ -771,6 +790,7 @@ class AttnDownBlock(nn.Module):
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
         add_downsample: bool = True,
+        resblock_updown: bool = False,
         downsample_padding: int = 1,
         num_head_channels: int = 1,
     ) -> None:
@@ -786,10 +806,13 @@ class AttnDownBlock(nn.Module):
             norm_num_groups: number of groups for the group normalization.
             norm_eps: epsilon for the group normalization.
             add_downsample: if True add downsample block.
+            resblock_updown: if True use residual blocks for downsampling.
             downsample_padding: padding used in the downsampling block.
             num_head_channels: number of channels in each attention head.
         """
         super().__init__()
+        self.resblock_updown = resblock_updown
+
         resnets = []
         attentions = []
 
@@ -819,13 +842,24 @@ class AttnDownBlock(nn.Module):
         self.resnets = nn.ModuleList(resnets)
 
         if add_downsample:
-            self.downsampler = Downsample(
-                spatial_dims=spatial_dims,
-                num_channels=out_channels,
-                use_conv=True,
-                out_channels=out_channels,
-                padding=downsample_padding,
-            )
+            if resblock_updown:
+                self.downsampler = ResnetBlock(
+                    spatial_dims=spatial_dims,
+                    in_channels=out_channels,
+                    out_channels=out_channels,
+                    temb_channels=temb_channels,
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                    down=True,
+                )
+            else:
+                self.downsampler = Downsample(
+                    spatial_dims=spatial_dims,
+                    num_channels=out_channels,
+                    use_conv=True,
+                    out_channels=out_channels,
+                    padding=downsample_padding,
+                )
         else:
             self.downsampler = None
 
@@ -841,7 +875,7 @@ class AttnDownBlock(nn.Module):
             output_states.append(hidden_states)
 
         if self.downsampler is not None:
-            hidden_states = self.downsampler(hidden_states)
+            hidden_states = self.downsampler(hidden_states, temb)
             output_states.append(hidden_states)
 
         return hidden_states, output_states
@@ -858,6 +892,7 @@ class CrossAttnDownBlock(nn.Module):
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
         add_downsample: bool = True,
+        resblock_updown: bool = False,
         downsample_padding: int = 1,
         num_head_channels: int = 1,
         transformer_num_layers: int = 1,
@@ -875,12 +910,15 @@ class CrossAttnDownBlock(nn.Module):
             norm_num_groups: number of groups for the group normalization.
             norm_eps: epsilon for the group normalization.
             add_downsample: if True add downsample block.
+            resblock_updown: if True use residual blocks for downsampling.
             downsample_padding: padding used in the downsampling block.
             num_head_channels: number of channels in each attention head.
             transformer_num_layers: number of layers of Transformer blocks to use.
             cross_attention_dim: number of context dimensions to use.
         """
         super().__init__()
+        self.resblock_updown = resblock_updown
+
         resnets = []
         attentions = []
 
@@ -914,13 +952,24 @@ class CrossAttnDownBlock(nn.Module):
         self.resnets = nn.ModuleList(resnets)
 
         if add_downsample:
-            self.downsampler = Downsample(
-                spatial_dims=spatial_dims,
-                num_channels=out_channels,
-                use_conv=True,
-                out_channels=out_channels,
-                padding=downsample_padding,
-            )
+            if resblock_updown:
+                self.downsampler = ResnetBlock(
+                    spatial_dims=spatial_dims,
+                    in_channels=out_channels,
+                    out_channels=out_channels,
+                    temb_channels=temb_channels,
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                    down=True,
+                )
+            else:
+                self.downsampler = Downsample(
+                    spatial_dims=spatial_dims,
+                    num_channels=out_channels,
+                    use_conv=True,
+                    out_channels=out_channels,
+                    padding=downsample_padding,
+                )
         else:
             self.downsampler = None
 
@@ -935,7 +984,7 @@ class CrossAttnDownBlock(nn.Module):
             output_states.append(hidden_states)
 
         if self.downsampler is not None:
-            hidden_states = self.downsampler(hidden_states)
+            hidden_states = self.downsampler(hidden_states, temb)
             output_states.append(hidden_states)
 
         return hidden_states, output_states
@@ -1078,6 +1127,7 @@ class UpBlock(nn.Module):
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
         add_upsample: bool = True,
+        resblock_updown: bool = False,
     ) -> None:
         """
         Unet's up block containing resnet and upsamplers blocks.
@@ -1092,8 +1142,10 @@ class UpBlock(nn.Module):
             norm_num_groups: number of groups for the group normalization.
             norm_eps: epsilon for the group normalization.
             add_upsample: if True add downsample block.
+            resblock_updown: if True use residual blocks for upsampling.
         """
         super().__init__()
+        self.resblock_updown = resblock_updown
         resnets = []
 
         for i in range(num_res_blocks):
@@ -1114,9 +1166,20 @@ class UpBlock(nn.Module):
         self.resnets = nn.ModuleList(resnets)
 
         if add_upsample:
-            self.upsampler = Upsample(
-                spatial_dims=spatial_dims, num_channels=out_channels, use_conv=True, out_channels=out_channels
-            )
+            if resblock_updown:
+                self.upsampler = ResnetBlock(
+                    spatial_dims=spatial_dims,
+                    in_channels=out_channels,
+                    out_channels=out_channels,
+                    temb_channels=temb_channels,
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                    up=True,
+                )
+            else:
+                self.upsampler = Upsample(
+                    spatial_dims=spatial_dims, num_channels=out_channels, use_conv=True, out_channels=out_channels
+                )
         else:
             self.upsampler = None
 
@@ -1137,7 +1200,7 @@ class UpBlock(nn.Module):
             hidden_states = resnet(hidden_states, temb)
 
         if self.upsampler is not None:
-            hidden_states = self.upsampler(hidden_states)
+            hidden_states = self.upsampler(hidden_states, temb)
 
         return hidden_states
 
@@ -1154,6 +1217,7 @@ class AttnUpBlock(nn.Module):
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
         add_upsample: bool = True,
+        resblock_updown: bool = False,
         num_head_channels: int = 1,
     ) -> None:
         """
@@ -1169,9 +1233,12 @@ class AttnUpBlock(nn.Module):
             norm_num_groups: number of groups for the group normalization.
             norm_eps: epsilon for the group normalization.
             add_upsample: if True add downsample block.
+            resblock_updown: if True use residual blocks for upsampling.
             num_head_channels: number of channels in each attention head.
         """
         super().__init__()
+        self.resblock_updown = resblock_updown
+
         resnets = []
         attentions = []
 
@@ -1203,9 +1270,20 @@ class AttnUpBlock(nn.Module):
         self.attentions = nn.ModuleList(attentions)
 
         if add_upsample:
-            self.upsampler = Upsample(
-                spatial_dims=spatial_dims, num_channels=out_channels, use_conv=True, out_channels=out_channels
-            )
+            if resblock_updown:
+                self.upsampler = ResnetBlock(
+                    spatial_dims=spatial_dims,
+                    in_channels=out_channels,
+                    out_channels=out_channels,
+                    temb_channels=temb_channels,
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                    up=True,
+                )
+            else:
+                self.upsampler = Upsample(
+                    spatial_dims=spatial_dims, num_channels=out_channels, use_conv=True, out_channels=out_channels
+                )
         else:
             self.upsampler = None
 
@@ -1227,7 +1305,7 @@ class AttnUpBlock(nn.Module):
             hidden_states = attn(hidden_states)
 
         if self.upsampler is not None:
-            hidden_states = self.upsampler(hidden_states)
+            hidden_states = self.upsampler(hidden_states, temb)
 
         return hidden_states
 
@@ -1244,6 +1322,7 @@ class CrossAttnUpBlock(nn.Module):
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
         add_upsample: bool = True,
+        resblock_updown: bool = False,
         num_head_channels: int = 1,
         transformer_num_layers: int = 1,
         cross_attention_dim: Optional[int] = None,
@@ -1261,11 +1340,14 @@ class CrossAttnUpBlock(nn.Module):
             norm_num_groups: number of groups for the group normalization.
             norm_eps: epsilon for the group normalization.
             add_upsample: if True add downsample block.
+            resblock_updown: if True use residual blocks for upsampling.
             num_head_channels: number of channels in each attention head.
             transformer_num_layers: number of layers of Transformer blocks to use.
             cross_attention_dim: number of context dimensions to use.
         """
         super().__init__()
+        self.resblock_updown = resblock_updown
+
         resnets = []
         attentions = []
 
@@ -1300,9 +1382,20 @@ class CrossAttnUpBlock(nn.Module):
         self.resnets = nn.ModuleList(resnets)
 
         if add_upsample:
-            self.upsampler = Upsample(
-                spatial_dims=spatial_dims, num_channels=out_channels, use_conv=True, out_channels=out_channels
-            )
+            if resblock_updown:
+                self.upsampler = ResnetBlock(
+                    spatial_dims=spatial_dims,
+                    in_channels=out_channels,
+                    out_channels=out_channels,
+                    temb_channels=temb_channels,
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                    up=True,
+                )
+            else:
+                self.upsampler = Upsample(
+                    spatial_dims=spatial_dims, num_channels=out_channels, use_conv=True, out_channels=out_channels
+                )
         else:
             self.upsampler = None
 
@@ -1323,7 +1416,7 @@ class CrossAttnUpBlock(nn.Module):
             hidden_states = attn(hidden_states, context=context)
 
         if self.upsampler is not None:
-            hidden_states = self.upsampler(hidden_states)
+            hidden_states = self.upsampler(hidden_states, temb)
 
         return hidden_states
 
@@ -1337,6 +1430,7 @@ def get_down_block(
     norm_num_groups: int,
     norm_eps: float,
     add_downsample: bool,
+    resblock_updown: bool,
     with_attn: bool,
     with_cross_attn: bool,
     num_head_channels: int,
@@ -1353,6 +1447,7 @@ def get_down_block(
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
             add_downsample=add_downsample,
+            resblock_updown=resblock_updown,
             num_head_channels=num_head_channels,
         )
     elif with_cross_attn:
@@ -1365,6 +1460,7 @@ def get_down_block(
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
             add_downsample=add_downsample,
+            resblock_updown=resblock_updown,
             num_head_channels=num_head_channels,
             transformer_num_layers=transformer_num_layers,
             cross_attention_dim=cross_attention_dim,
@@ -1379,6 +1475,7 @@ def get_down_block(
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
             add_downsample=add_downsample,
+            resblock_updown=resblock_updown,
         )
 
 
@@ -1425,6 +1522,7 @@ def get_up_block(
     norm_num_groups: int,
     norm_eps: float,
     add_upsample: bool,
+    resblock_updown: bool,
     with_attn: bool,
     with_cross_attn: bool,
     num_head_channels: int,
@@ -1442,6 +1540,7 @@ def get_up_block(
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
             add_upsample=add_upsample,
+            resblock_updown=resblock_updown,
             num_head_channels=num_head_channels,
         )
     elif with_cross_attn:
@@ -1455,6 +1554,7 @@ def get_up_block(
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
             add_upsample=add_upsample,
+            resblock_updown=resblock_updown,
             num_head_channels=num_head_channels,
             transformer_num_layers=transformer_num_layers,
             cross_attention_dim=cross_attention_dim,
@@ -1470,6 +1570,7 @@ def get_up_block(
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
             add_upsample=add_upsample,
+            resblock_updown=resblock_updown,
         )
 
 
@@ -1488,6 +1589,7 @@ class DiffusionModelUNet(nn.Module):
         attention_levels: list of levels to add attention.
         norm_num_groups: number of groups for the normalization.
         norm_eps: epsilon for the normalization.
+        resblock_updown: if True use residual blocks for up/downsampling.
         num_head_channels: number of channels in each attention head.
         with_conditioning: if True add spatial transformers to perform conditioning.
         transformer_num_layers: number of layers of Transformer blocks to use.
@@ -1506,7 +1608,8 @@ class DiffusionModelUNet(nn.Module):
         attention_levels: Sequence[bool] = (False, False, True, True),
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
-        num_head_channels: int = 8,
+        resblock_updown: bool = False,
+        num_head_channels: Union[int, Sequence[int]] = 8,
         with_conditioning: bool = False,
         transformer_num_layers: int = 1,
         cross_attention_dim: Optional[int] = None,
@@ -1529,12 +1632,22 @@ class DiffusionModelUNet(nn.Module):
         if any((out_channel % norm_num_groups) != 0 for out_channel in num_channels):
             raise ValueError("DiffusionModelUNet expects all num_channels being multiple of norm_num_groups")
 
+        if isinstance(num_head_channels, int):
+            num_head_channels = (num_head_channels,) * len(attention_levels)
+
+        if len(num_head_channels) != len(attention_levels):
+            raise ValueError(
+                "num_head_channels should have the same length as attention_levels. For the i levels without attention,"
+                " i.e. `attention_level[i]=False`, the num_head_channels[i] will be ignored."
+            )
+
         self.in_channels = in_channels
         self.block_out_channels = num_channels
         self.out_channels = out_channels
         self.num_res_blocks = num_res_blocks
         self.attention_levels = attention_levels
         self.num_head_channels = num_head_channels
+        self.with_conditioning = with_conditioning
 
         # input
         self.conv_in = Convolution(
@@ -1577,9 +1690,10 @@ class DiffusionModelUNet(nn.Module):
                 norm_num_groups=norm_num_groups,
                 norm_eps=norm_eps,
                 add_downsample=not is_final_block,
+                resblock_updown=resblock_updown,
                 with_attn=(attention_levels[i] and not with_conditioning),
                 with_cross_attn=(attention_levels[i] and with_conditioning),
-                num_head_channels=num_head_channels,
+                num_head_channels=num_head_channels[i],
                 transformer_num_layers=transformer_num_layers,
                 cross_attention_dim=cross_attention_dim,
             )
@@ -1594,7 +1708,7 @@ class DiffusionModelUNet(nn.Module):
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
             with_conditioning=with_conditioning,
-            num_head_channels=num_head_channels,
+            num_head_channels=num_head_channels[-1],
             transformer_num_layers=transformer_num_layers,
             cross_attention_dim=cross_attention_dim,
         )
@@ -1603,6 +1717,7 @@ class DiffusionModelUNet(nn.Module):
         self.up_blocks = nn.ModuleList([])
         reversed_block_out_channels = list(reversed(num_channels))
         reversed_attention_levels = list(reversed(attention_levels))
+        reversed_num_head_channels = list(reversed(num_head_channels))
         output_channel = reversed_block_out_channels[0]
         for i in range(len(reversed_block_out_channels)):
             prev_output_channel = output_channel
@@ -1621,9 +1736,10 @@ class DiffusionModelUNet(nn.Module):
                 norm_num_groups=norm_num_groups,
                 norm_eps=norm_eps,
                 add_upsample=not is_final_block,
+                resblock_updown=resblock_updown,
                 with_attn=(reversed_attention_levels[i] and not with_conditioning),
                 with_cross_attn=(reversed_attention_levels[i] and with_conditioning),
-                num_head_channels=num_head_channels,
+                num_head_channels=reversed_num_head_channels[i],
                 transformer_num_layers=transformer_num_layers,
                 cross_attention_dim=cross_attention_dim,
             )
@@ -1676,6 +1792,8 @@ class DiffusionModelUNet(nn.Module):
         h = self.conv_in(x)
 
         # 4. down
+        if context is not None and self.with_conditioning is False:
+            raise ValueError("model should have with_conditioning = True if context is provided")
         down_block_res_samples: List[torch.Tensor] = [h]
         for downsample_block in self.down_blocks:
             h, res_samples = downsample_block(hidden_states=h, temb=emb, context=context)

@@ -29,6 +29,21 @@ TEST_CASES = [
         (2, 1, 64, 64, 64),
     ],
     [
+        {"spatial_dims": 2, "network_type": "radimagenet_resnet50"},
+        (2, 1, 64, 64),
+        (2, 1, 64, 64),
+    ],
+    [
+        {"spatial_dims": 2, "network_type": "radimagenet_resnet50"},
+        (2, 3, 64, 64),
+        (2, 3, 64, 64),
+    ],
+    [
+        {"spatial_dims": 3, "network_type": "radimagenet_resnet50", "is_fake_3d": True, "fake_3d_ratio": 0.1},
+        (2, 1, 64, 64, 64),
+        (2, 1, 64, 64, 64),
+    ],
+    [
         {"spatial_dims": 3, "network_type": "medicalnet_resnet10_23datasets", "is_fake_3d": False},
         (2, 1, 64, 64, 64),
         (2, 1, 64, 64, 64),
@@ -60,6 +75,13 @@ class TestPerceptualLoss(unittest.TestCase):
     def test_1d(self):
         with self.assertRaises(NotImplementedError):
             PerceptualLoss(spatial_dims=1)
+
+    def test_medicalnet_on_2d_data(self):
+        with self.assertRaises(ValueError):
+            PerceptualLoss(spatial_dims=2, network_type="medicalnet_resnet10_23datasets")
+
+        with self.assertRaises(ValueError):
+            PerceptualLoss(spatial_dims=2, network_type="medicalnet_resnet50_23datasets")
 
 
 if __name__ == "__main__":

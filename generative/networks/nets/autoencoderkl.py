@@ -597,9 +597,33 @@ class AutoencoderKL(nn.Module):
             attention_levels=attention_levels,
             with_nonlocal_attn=with_decoder_nonlocal_attn,
         )
-        self.quant_conv_mu = Convolution(spatial_dims, latent_channels, latent_channels, 1, conv_only=True)
-        self.quant_conv_log_sigma = Convolution(spatial_dims, latent_channels, latent_channels, 1, conv_only=True)
-        self.post_quant_conv = Convolution(spatial_dims, latent_channels, latent_channels, 1, conv_only=True)
+        self.quant_conv_mu = Convolution(
+            spatial_dims=spatial_dims,
+            in_channels=latent_channels,
+            out_channels=latent_channels,
+            strides=1,
+            kernel_size=1,
+            padding=0,
+            conv_only=True,
+        )
+        self.quant_conv_log_sigma = Convolution(
+            spatial_dims=spatial_dims,
+            in_channels=latent_channels,
+            out_channels=latent_channels,
+            strides=1,
+            kernel_size=1,
+            padding=0,
+            conv_only=True,
+        )
+        self.post_quant_conv = Convolution(
+            spatial_dims=spatial_dims,
+            in_channels=latent_channels,
+            out_channels=latent_channels,
+            strides=1,
+            kernel_size=1,
+            padding=0,
+            conv_only=True,
+        )
         self.latent_channels = latent_channels
 
     def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
