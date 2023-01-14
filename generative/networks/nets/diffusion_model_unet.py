@@ -726,6 +726,22 @@ class ResnetBlock(nn.Module):
 
 
 class DownBlock(nn.Module):
+    """
+    Unet's down block containing resnet and downsamplers blocks.
+
+    Args:
+        spatial_dims: The number of spatial dimensions.
+        in_channels: number of input channels.
+        out_channels: number of output channels.
+        temb_channels: number of timestep embedding channels.
+        num_res_blocks: number of residual blocks.
+        norm_num_groups: number of groups for the group normalization.
+        norm_eps: epsilon for the group normalization.
+        add_downsample: if True add downsample block.
+        resblock_updown: if True use residual blocks for downsampling.
+        downsample_padding: padding used in the downsampling block.
+    """
+
     def __init__(
         self,
         spatial_dims: int,
@@ -739,21 +755,6 @@ class DownBlock(nn.Module):
         resblock_updown: bool = False,
         downsample_padding: int = 1,
     ) -> None:
-        """
-        Unet's down block containing resnet and downsamplers blocks.
-
-        Args:
-            spatial_dims: The number of spatial dimensions.
-            in_channels: number of input channels.
-            out_channels: number of output channels.
-            temb_channels: number of timestep embedding channels.
-            num_res_blocks: number of residual blocks.
-            norm_num_groups: number of groups for the group normalization.
-            norm_eps: epsilon for the group normalization.
-            add_downsample: if True add downsample block.
-            resblock_updown: if True use residual blocks for downsampling.
-            downsample_padding: padding used in the downsampling block.
-        """
         super().__init__()
         self.resblock_updown = resblock_updown
 
@@ -814,6 +815,23 @@ class DownBlock(nn.Module):
 
 
 class AttnDownBlock(nn.Module):
+    """
+    Unet's down block containing resnet, downsamplers and self-attention blocks.
+
+    Args:
+        spatial_dims: The number of spatial dimensions.
+        in_channels: number of input channels.
+        out_channels: number of output channels.
+        temb_channels: number of timestep embedding  channels.
+        num_res_blocks: number of residual blocks.
+        norm_num_groups: number of groups for the group normalization.
+        norm_eps: epsilon for the group normalization.
+        add_downsample: if True add downsample block.
+        resblock_updown: if True use residual blocks for downsampling.
+        downsample_padding: padding used in the downsampling block.
+        num_head_channels: number of channels in each attention head.
+    """
+
     def __init__(
         self,
         spatial_dims: int,
@@ -828,22 +846,6 @@ class AttnDownBlock(nn.Module):
         downsample_padding: int = 1,
         num_head_channels: int = 1,
     ) -> None:
-        """
-        Unet's down block containing resnet, downsamplers and self-attention blocks.
-
-        Args:
-            spatial_dims: The number of spatial dimensions.
-            in_channels: number of input channels.
-            out_channels: number of output channels.
-            temb_channels: number of timestep embedding  channels.
-            num_res_blocks: number of residual blocks.
-            norm_num_groups: number of groups for the group normalization.
-            norm_eps: epsilon for the group normalization.
-            add_downsample: if True add downsample block.
-            resblock_updown: if True use residual blocks for downsampling.
-            downsample_padding: padding used in the downsampling block.
-            num_head_channels: number of channels in each attention head.
-        """
         super().__init__()
         self.resblock_updown = resblock_updown
 
@@ -916,6 +918,26 @@ class AttnDownBlock(nn.Module):
 
 
 class CrossAttnDownBlock(nn.Module):
+    """
+    Unet's down block containing resnet, downsamplers and cross-attention blocks.
+
+    Args:
+        spatial_dims: number of spatial dimensions.
+        in_channels: number of input channels.
+        out_channels: number of output channels.
+        temb_channels: number of timestep embedding channels.
+        num_res_blocks: number of residual blocks.
+        norm_num_groups: number of groups for the group normalization.
+        norm_eps: epsilon for the group normalization.
+        add_downsample: if True add downsample block.
+        resblock_updown: if True use residual blocks for downsampling.
+        downsample_padding: padding used in the downsampling block.
+        num_head_channels: number of channels in each attention head.
+        transformer_num_layers: number of layers of Transformer blocks to use.
+        cross_attention_dim: number of context dimensions to use.
+        upcast_attention: if True, upcast attention operations to full precision.
+    """
+
     def __init__(
         self,
         spatial_dims: int,
@@ -933,25 +955,6 @@ class CrossAttnDownBlock(nn.Module):
         cross_attention_dim: Optional[int] = None,
         upcast_attention: bool = False,
     ) -> None:
-        """
-        Unet's down block containing resnet, downsamplers and cross-attention blocks.
-
-        Args:
-            spatial_dims: number of spatial dimensions.
-            in_channels: number of input channels.
-            out_channels: number of output channels.
-            temb_channels: number of timestep embedding channels.
-            num_res_blocks: number of residual blocks.
-            norm_num_groups: number of groups for the group normalization.
-            norm_eps: epsilon for the group normalization.
-            add_downsample: if True add downsample block.
-            resblock_updown: if True use residual blocks for downsampling.
-            downsample_padding: padding used in the downsampling block.
-            num_head_channels: number of channels in each attention head.
-            transformer_num_layers: number of layers of Transformer blocks to use.
-            cross_attention_dim: number of context dimensions to use.
-            upcast_attention: if True, upcast attention operations to full precision.
-        """
         super().__init__()
         self.resblock_updown = resblock_updown
 
@@ -1028,6 +1031,18 @@ class CrossAttnDownBlock(nn.Module):
 
 
 class AttnMidBlock(nn.Module):
+    """
+    Unet's mid block containing resnet and self-attention blocks.
+
+    Args:
+        spatial_dims: The number of spatial dimensions.
+        in_channels: number of input channels.
+        temb_channels: number of timestep embedding channels.
+        norm_num_groups: number of groups for the group normalization.
+        norm_eps: epsilon for the group normalization.
+        num_head_channels: number of channels in each attention head.
+    """
+
     def __init__(
         self,
         spatial_dims: int,
@@ -1037,17 +1052,6 @@ class AttnMidBlock(nn.Module):
         norm_eps: float = 1e-6,
         num_head_channels: int = 1,
     ) -> None:
-        """
-        Unet's mid block containing resnet and self-attention blocks.
-
-        Args:
-            spatial_dims: The number of spatial dimensions.
-            in_channels: number of input channels.
-            temb_channels: number of timestep embedding channels.
-            norm_num_groups: number of groups for the group normalization.
-            norm_eps: epsilon for the group normalization.
-            num_head_channels: number of channels in each attention head.
-        """
         super().__init__()
         self.attention = None
 
@@ -1088,6 +1092,21 @@ class AttnMidBlock(nn.Module):
 
 
 class CrossAttnMidBlock(nn.Module):
+    """
+    Unet's mid block containing resnet and cross-attention blocks.
+
+    Args:
+        spatial_dims: The number of spatial dimensions.
+        in_channels: number of input channels.
+        temb_channels: number of timestep embedding channels
+        norm_num_groups: number of groups for the group normalization.
+        norm_eps: epsilon for the group normalization.
+        num_head_channels: number of channels in each attention head.
+        transformer_num_layers: number of layers of Transformer blocks to use.
+        cross_attention_dim: number of context dimensions to use.
+        upcast_attention: if True, upcast attention operations to full precision.
+    """
+
     def __init__(
         self,
         spatial_dims: int,
@@ -1100,20 +1119,6 @@ class CrossAttnMidBlock(nn.Module):
         cross_attention_dim: Optional[int] = None,
         upcast_attention: bool = False,
     ) -> None:
-        """
-        Unet's mid block containing resnet and cross-attention blocks.
-
-        Args:
-            spatial_dims: The number of spatial dimensions.
-            in_channels: number of input channels.
-            temb_channels: number of timestep embedding channels
-            norm_num_groups: number of groups for the group normalization.
-            norm_eps: epsilon for the group normalization.
-            num_head_channels: number of channels in each attention head.
-            transformer_num_layers: number of layers of Transformer blocks to use.
-            cross_attention_dim: number of context dimensions to use.
-            upcast_attention: if True, upcast attention operations to full precision.
-        """
         super().__init__()
         self.attention = None
 
@@ -1156,6 +1161,22 @@ class CrossAttnMidBlock(nn.Module):
 
 
 class UpBlock(nn.Module):
+    """
+    Unet's up block containing resnet and upsamplers blocks.
+
+    Args:
+        spatial_dims: The number of spatial dimensions.
+        in_channels: number of input channels.
+        prev_output_channel: number of channels from residual connection.
+        out_channels: number of output channels.
+        temb_channels: number of timestep embedding channels.
+        num_res_blocks: number of residual blocks.
+        norm_num_groups: number of groups for the group normalization.
+        norm_eps: epsilon for the group normalization.
+        add_upsample: if True add downsample block.
+        resblock_updown: if True use residual blocks for upsampling.
+    """
+
     def __init__(
         self,
         spatial_dims: int,
@@ -1169,21 +1190,6 @@ class UpBlock(nn.Module):
         add_upsample: bool = True,
         resblock_updown: bool = False,
     ) -> None:
-        """
-        Unet's up block containing resnet and upsamplers blocks.
-
-        Args:
-            spatial_dims: The number of spatial dimensions.
-            in_channels: number of input channels.
-            prev_output_channel: number of channels from residual connection.
-            out_channels: number of output channels.
-            temb_channels: number of timestep embedding channels.
-            num_res_blocks: number of residual blocks.
-            norm_num_groups: number of groups for the group normalization.
-            norm_eps: epsilon for the group normalization.
-            add_upsample: if True add downsample block.
-            resblock_updown: if True use residual blocks for upsampling.
-        """
         super().__init__()
         self.resblock_updown = resblock_updown
         resnets = []
@@ -1246,6 +1252,23 @@ class UpBlock(nn.Module):
 
 
 class AttnUpBlock(nn.Module):
+    """
+    Unet's up block containing resnet, upsamplers, and self-attention blocks.
+
+    Args:
+        spatial_dims: The number of spatial dimensions.
+        in_channels: number of input channels.
+        prev_output_channel: number of channels from residual connection.
+        out_channels: number of output channels.
+        temb_channels: number of timestep embedding channels.
+        num_res_blocks: number of residual blocks.
+        norm_num_groups: number of groups for the group normalization.
+        norm_eps: epsilon for the group normalization.
+        add_upsample: if True add downsample block.
+        resblock_updown: if True use residual blocks for upsampling.
+        num_head_channels: number of channels in each attention head.
+    """
+
     def __init__(
         self,
         spatial_dims: int,
@@ -1260,22 +1283,6 @@ class AttnUpBlock(nn.Module):
         resblock_updown: bool = False,
         num_head_channels: int = 1,
     ) -> None:
-        """
-        Unet's up block containing resnet, upsamplers, and self-attention blocks.
-
-        Args:
-            spatial_dims: The number of spatial dimensions.
-            in_channels: number of input channels.
-            prev_output_channel: number of channels from residual connection.
-            out_channels: number of output channels.
-            temb_channels: number of timestep embedding channels.
-            num_res_blocks: number of residual blocks.
-            norm_num_groups: number of groups for the group normalization.
-            norm_eps: epsilon for the group normalization.
-            add_upsample: if True add downsample block.
-            resblock_updown: if True use residual blocks for upsampling.
-            num_head_channels: number of channels in each attention head.
-        """
         super().__init__()
         self.resblock_updown = resblock_updown
 
@@ -1351,6 +1358,26 @@ class AttnUpBlock(nn.Module):
 
 
 class CrossAttnUpBlock(nn.Module):
+    """
+    Unet's up block containing resnet, upsamplers, and self-attention blocks.
+
+    Args:
+        spatial_dims: The number of spatial dimensions.
+        in_channels: number of input channels.
+        prev_output_channel: number of channels from residual connection.
+        out_channels: number of output channels.
+        temb_channels: number of timestep embedding channels.
+        num_res_blocks: number of residual blocks.
+        norm_num_groups: number of groups for the group normalization.
+        norm_eps: epsilon for the group normalization.
+        add_upsample: if True add downsample block.
+        resblock_updown: if True use residual blocks for upsampling.
+        num_head_channels: number of channels in each attention head.
+        transformer_num_layers: number of layers of Transformer blocks to use.
+        cross_attention_dim: number of context dimensions to use.
+        upcast_attention: if True, upcast attention operations to full precision.
+    """
+
     def __init__(
         self,
         spatial_dims: int,
@@ -1368,25 +1395,6 @@ class CrossAttnUpBlock(nn.Module):
         cross_attention_dim: Optional[int] = None,
         upcast_attention: bool = False,
     ) -> None:
-        """
-        Unet's up block containing resnet, upsamplers, and self-attention blocks.
-
-        Args:
-            spatial_dims: The number of spatial dimensions.
-            in_channels: number of input channels.
-            prev_output_channel: number of channels from residual connection.
-            out_channels: number of output channels.
-            temb_channels: number of timestep embedding channels.
-            num_res_blocks: number of residual blocks.
-            norm_num_groups: number of groups for the group normalization.
-            norm_eps: epsilon for the group normalization.
-            add_upsample: if True add downsample block.
-            resblock_updown: if True use residual blocks for upsampling.
-            num_head_channels: number of channels in each attention head.
-            transformer_num_layers: number of layers of Transformer blocks to use.
-            cross_attention_dim: number of context dimensions to use.
-            upcast_attention: if True, upcast attention operations to full precision.
-        """
         super().__init__()
         self.resblock_updown = resblock_updown
 
