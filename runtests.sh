@@ -120,7 +120,7 @@ fi
 
 function check_import {
     echo "Python: ${PY_EXE}"
-    ${cmdPrefix}${PY_EXE} -W error -W ignore::DeprecationWarning -c "import monai"
+    ${cmdPrefix}${PY_EXE} -W error -W ignore::DeprecationWarning -c "import generative"
 }
 
 function print_version {
@@ -154,8 +154,8 @@ function clang_format {
         echo "'clang-format' not found, skipping the formatting."
         exit 1
     fi
-    find monai/csrc -type f | while read i; do $clang_format_tool -style=file -i $i; done
-    find monai/_extensions -type f -name "*.cpp" -o -name "*.h" -o -name "*.cuh" -o -name "*.cu" |\
+    find generative/csrc -type f | while read i; do $clang_format_tool -style=file -i $i; done
+    find generative/_extensions -type f -name "*.cpp" -o -name "*.h" -o -name "*.cuh" -o -name "*.cu" |\
         while read i; do $clang_format_tool -style=file -i $i; done
 }
 
@@ -178,13 +178,13 @@ function clean_py {
     TO_CLEAN="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
     echo "Removing temporary files in ${TO_CLEAN}"
 
-    find ${TO_CLEAN}/monai -type f -name "*.py[co]" -delete
-    find ${TO_CLEAN}/monai -type f -name "*.so" -delete
-    find ${TO_CLEAN}/monai -type d -name "__pycache__" -delete
+    find ${TO_CLEAN}/generative -type f -name "*.py[co]" -delete
+    find ${TO_CLEAN}/generative -type f -name "*.so" -delete
+    find ${TO_CLEAN}/generative -type d -name "__pycache__" -delete
     find ${TO_CLEAN} -maxdepth 1 -type f -name ".coverage.*" -delete
 
     find ${TO_CLEAN} -depth -maxdepth 1 -type d -name ".eggs" -exec rm -r "{}" +
-    find ${TO_CLEAN} -depth -maxdepth 1 -type d -name "monai.egg-info" -exec rm -r "{}" +
+    find ${TO_CLEAN} -depth -maxdepth 1 -type d -name "generative.egg-info" -exec rm -r "{}" +
     find ${TO_CLEAN} -depth -maxdepth 1 -type d -name "build" -exec rm -r "{}" +
     find ${TO_CLEAN} -depth -maxdepth 1 -type d -name "dist" -exec rm -r "{}" +
     find ${TO_CLEAN} -depth -maxdepth 1 -type d -name ".mypy_cache" -exec rm -r "{}" +
@@ -392,7 +392,7 @@ then
             print_error_msg "Missing the license header in file: $fname"
             copyright_bad=$((copyright_bad + 1))
         fi
-    done <<< "$(find "$(pwd)/monai" "$(pwd)/tests" -type f \
+    done <<< "$(find "$(pwd)/generative" "$(pwd)/tests" -type f \
         ! -wholename "*_version.py" -and -name "*.py" -or -name "*.cpp" -or -name "*.cu" -or -name "*.h")"
     if [[ ${copyright_bad} -eq 0 ]];
     then
@@ -540,7 +540,7 @@ then
     ${cmdPrefix}${PY_EXE} -m pylint --version
 
     ignore_codes="C,R,W,E1101,E1102,E0601,E1130,E1123,E0102,E1120,E1137,E1136"
-    ${cmdPrefix}${PY_EXE} -m pylint monai tests --disable=$ignore_codes -j $NUM_PARALLEL
+    ${cmdPrefix}${PY_EXE} -m pylint generative tests --disable=$ignore_codes -j $NUM_PARALLEL
     pylint_status=$?
 
     if [ ${pylint_status} -ne 0 ]
