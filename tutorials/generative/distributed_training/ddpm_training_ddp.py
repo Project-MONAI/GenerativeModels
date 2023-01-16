@@ -49,14 +49,16 @@ import sys
 import time
 import warnings
 from pathlib import Path
+from typing import Optional
 
+import monai.inferers
 import numpy as np
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
 from monai import transforms
 from monai.apps import MedNISTDataset
-from monai.data import ThreadDataLoader, partition_dataset
+from monai.data import DataLoader, ThreadDataLoader, partition_dataset
 from monai.utils import set_determinism
 from torch.cuda.amp import GradScaler, autocast
 from torch.nn.parallel import DistributedDataParallel
@@ -74,12 +76,12 @@ class MedNISTCacheDataset(MedNISTDataset):
 
     def __init__(
         self,
-        root_dir,
-        section,
-        transform=None,
-        cache_rate=1.0,
-        num_workers=0,
-        shuffle=False,
+        root_dir: str,
+        section: str,
+        transform: Optional[transforms.Transform] = None,
+        cache_rate: float = 1.0,
+        num_workers: int = 0,
+        shuffle: bool = False,
     ) -> None:
 
         if not os.path.isdir(root_dir):
@@ -95,7 +97,7 @@ class MedNISTCacheDataset(MedNISTDataset):
         data = self._generate_data_list(dataset_dir)
         super(MedNISTDataset, self).__init__(data, transform, cache_rate=cache_rate, num_workers=num_workers)
 
-    def _generate_data_list(self, dataset_dir):
+    def _generate_data_list(self, dataset_dir: Path):
         data = super()._generate_data_list(dataset_dir)
         # only extract hand data
         data = [{"image": item["image"]} for item in data if item["class_name"] == "Hand"]
@@ -212,7 +214,7 @@ def main_worker(args):
         print(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
 
         if (epoch + 1) % args.val_interval == 0:
-            metric = evaluate(model, val_loader, inferer, scaler, device)
+            metric = evaluate(model, val_loader, inferer, device)
 
             if metric < best_metric:
                 best_metric = metric
@@ -234,7 +236,14 @@ def main_worker(args):
     dist.destroy_process_group()
 
 
-def train(train_loader, model, optimizer, inferer, scaler, device):
+def train(
+    train_loader: DataLoader,
+    model: torch.nn,
+    optimizer: torch.optim.Optimizer,
+    inferer: monai.inferers.Inferer,
+    scaler: GradScaler,
+    device: torch.device,
+):
     model.train()
     step = 0
     epoch_len = len(train_loader)
@@ -268,7 +277,7 @@ def train(train_loader, model, optimizer, inferer, scaler, device):
     return epoch_loss
 
 
-def evaluate(model, val_loader, inferer, scaler, device):
+def evaluate(model: torch.nn, val_loader: DataLoader, inferer: monai.inferers.Inferer, device: torch.device):
     model.eval()
     val_epoch_loss = 0
     with torch.no_grad():
