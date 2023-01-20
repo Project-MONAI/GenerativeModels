@@ -54,4 +54,3 @@ nni
 optuna
 git+https://github.com/Project-MONAI/MetricsReloaded@monai-support#egg=MetricsReloaded
 lpips==0.1.4
-monai-weekly==1.1.dev2248
