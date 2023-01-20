@@ -29,7 +29,8 @@ def run_testsuit():
     :return: a test suite
     """
     exclude_cases = [  # these cases use external dependencies
-        "test_adversarial",
+        "test_perceptual_loss",
+        "test_integration_workflows_adversarial",
     ]
     assert sorted(exclude_cases) == sorted(set(exclude_cases)), f"Duplicated items in {exclude_cases}"
 
