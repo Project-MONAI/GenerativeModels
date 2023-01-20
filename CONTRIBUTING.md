@@ -89,7 +89,7 @@ Before submitting a pull request, we recommend that all linting and unit tests
 should pass, by running the following command locally:
 
 ```bash
-./runtests.sh -f -u --net --coverage
+./runtests.sh -u --net
 ```
 or (for new features that would not break existing functionality):
 

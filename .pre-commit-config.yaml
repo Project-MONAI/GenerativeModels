@@ -53,7 +53,7 @@ repos:
           - pep8-naming
         exclude: |
           (?x)^(
-              monai/__init__.py|
+              generative/__init__.py|
               docs/source/conf.py
           )$
 
@@ -62,3 +62,13 @@ repos:
     hooks:
       - id: pycln
         args: [--config=pyproject.toml]
+
+  - repo: https://github.com/psf/black
+    rev: 22.3.0
+    hooks:
+      - id: black
+
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.9.3
+    hooks:
+      - id: isort
