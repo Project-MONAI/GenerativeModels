@@ -31,6 +31,7 @@ def run_testsuit():
     exclude_cases = [  # these cases use external dependencies
         "test_perceptual_loss",
         "test_integration_workflows_adversarial",
+        "test_latent_diffusion_inferer",
     ]
     assert sorted(exclude_cases) == sorted(set(exclude_cases)), f"Duplicated items in {exclude_cases}"
 
