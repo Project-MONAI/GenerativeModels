@@ -9,10 +9,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple, Union
+# =========================================================================
+# Adapted from https://github.com/photosynthesis-team/piq
+# which has the following license:
+# https://github.com/photosynthesis-team/piq/blob/master/LICENSE
+
+# Copyright 2023 photosynthesis-team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# =========================================================================
+
+from __future__ import annotations
 
 import torch
-from monai.metrics import CumulativeIterationMetric
+from monai.metrics.metric import Metric
 from monai.metrics.utils import do_metric_reduction
 from monai.utils import MetricReduction
 from torchvision.models import Inception_V3_Weights, inception_v3
@@ -24,8 +44,7 @@ RADIMAGENET_WEIGHTS = "RadImageNet-InceptionV3_notop.h5"
 # TODO: get a better name for parameters
 # TODO: Transform radimagenet's Keras weight to Torch weights following https://github.com/BMEII-AI/RadImageNet/issues/3
 # TODO: Create Mednet3D
-# TODO: Remove CumulativeIterationMetric
-class FID(CumulativeIterationMetric):
+class FID(Metric):
     """
     Frechet Inception Distance (FID). FID can compare two data distributions with different number of samples.
     But dimensionalities should match, otherwise it won't be possible to correctly compute statistics. Based on:
@@ -40,7 +59,7 @@ class FID(CumulativeIterationMetric):
 
     def __init__(
         self,
-        reduction: Union[MetricReduction, str] = MetricReduction.MEAN,
+        reduction: MetricReduction | str = MetricReduction.MEAN,
         extract_features: bool = True,
         feature_extractor: str = "imagenet",
     ) -> None:
@@ -76,7 +95,7 @@ class FID(CumulativeIterationMetric):
 
         return compute_fid_from_features(y_pred_features, y_features)
 
-    def aggregate(self, reduction: Union[MetricReduction, str, None] = None):
+    def aggregate(self, reduction: MetricReduction | str | None = None):
         """
         Args:
             reduction: define mode of reduction to the metrics, will only apply reduction on `not-nan` values,
@@ -92,7 +111,7 @@ class FID(CumulativeIterationMetric):
         return (f, not_nans) if self.get_not_nans else f
 
 
-def _sqrtm_newton_schulz(matrix: torch.Tensor, num_iters: int = 100) -> Tuple[torch.Tensor, torch.Tensor]:
+def _sqrtm_newton_schulz(matrix: torch.Tensor, num_iters: int = 100) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Square root of matrix using Newton-Schulz Iterative method. Based on:
     https://github.com/msubhransu/matrix-sqrt/blob/master/matrix_sqrt.py
@@ -131,7 +150,7 @@ def _sqrtm_newton_schulz(matrix: torch.Tensor, num_iters: int = 100) -> Tuple[to
     return s_matrix, error
 
 
-def _compute_statistics(samples: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+def _compute_statistics(samples: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Calculates the statistics used by FID
 
