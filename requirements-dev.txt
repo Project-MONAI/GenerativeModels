@@ -13,3 +13,4 @@ matplotlib!=3.5.0
 einops
 tensorboard>=2.11.0
 nibabel>=4.0.2
+gdown>=4.4.0

@@ -14,12 +14,13 @@
 # ---
 
 # %% [markdown]
-# # Denoising Diffusion Probabilistic Models with MedNIST Dataset
+# # Inpainting with Denoising Diffusion Probabilistic Models
 #
-# This tutorial illustrates how to use MONAI for training a denoising diffusion probabilistic model (DDPM)[1] to create
-# synthetic 2D images.
+# This tutorial illustrates how to use MONAI for training a denoising diffusion probabilistic model (DDPM)[1] to inpaint 2D images.
 #
 # [1] - Ho et al. "Denoising Diffusion Probabilistic Models" https://arxiv.org/abs/2006.11239
+#
+# [2] - Lugmayr et al. "RePaint: Inpainting using Denoising Diffusion Probabilistic Models" https://arxiv.org/abs/2201.09865
 #
 # TODO: Add Open in Colab
 #
@@ -33,7 +34,7 @@
 # %% [markdown]
 # ## Setup imports
 
-# %% jupyter={"outputs_hidden": false}
+# %% tags=[]
 # Copyright 2020 MONAI Consortium
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -78,7 +79,7 @@ print_config()
 #
 # If not specified a temporary directory will be used.
 
-# %% jupyter={"outputs_hidden": false}
+# %% tags=[]
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
 root_dir = tempfile.mkdtemp() if directory is None else directory
 print(root_dir)
@@ -86,7 +87,7 @@ print(root_dir)
 # %% [markdown]
 # ## Set deterministic training for reproducibility
 
-# %% jupyter={"outputs_hidden": false}
+# %% tags=[]
 set_determinism(42)
 
 # %% [markdown]
@@ -95,7 +96,7 @@ set_determinism(42)
 # (https://docs.monai.io/en/stable/apps.html#monai.apps.MedNISTDataset). In order to train faster, we will select just
 # one of the available classes ("Hand"), resulting in a training set with 7999 2D images.
 
-# %% jupyter={"outputs_hidden": false}
+# %% tags=[]
 train_data = MedNISTDataset(root_dir=root_dir, section="training", download=True, progress=False, seed=0)
 train_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "Hand"]
 
@@ -107,7 +108,7 @@ train_datalist = [{"image": item["image"]} for item in train_data.data if item["
 # 1. `ScaleIntensityRanged` extracts intensity range [0, 255] and scales to [0, 1].
 # 1. `RandAffined` efficiently performs rotate, scale, shear, translate, etc. together based on PyTorch affine transform.
 
-# %% jupyter={"outputs_hidden": false}
+# %% tags=[]
 train_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),
@@ -127,7 +128,7 @@ train_transforms = transforms.Compose(
 train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
 train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=4, persistent_workers=True)
 
-# %% jupyter={"outputs_hidden": false}
+# %% tags=[]
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, progress=False, seed=0)
 val_datalist = [{"image": item["image"]} for item in val_data.data if item["class_name"] == "Hand"]
 val_transforms = transforms.Compose(
@@ -143,7 +144,7 @@ val_loader = DataLoader(val_ds, batch_size=128, shuffle=False, num_workers=4, pe
 # %% [markdown]
 # ### Visualisation of the training images
 
-# %% jupyter={"outputs_hidden": false}
+# %% tags=[]
 check_data = first(train_loader)
 print(f"batch shape: {check_data['image'].shape}")
 image_visualisation = torch.cat(
@@ -161,7 +162,7 @@ plt.show()
 # the original DDPM scheduler containing 1000 timesteps in its Markov chain, and a 2D UNET with attention mechanisms
 # in the 2nd and 3rd levels, each with 1 attention head.
 
-# %% jupyter={"outputs_hidden": false}
+# %% tags=[]
 device = torch.device("cuda")
 
 model = DiffusionModelUNet(
@@ -184,17 +185,17 @@ optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
 inferer = DiffusionInferer(scheduler)
 # %% [markdown]
 # ### Model training
-# Here, we are training our model for 75 epochs (training time: ~50 minutes).
+# Here, we are training our model for 50 epochs (training time: ~33 minutes).
 #
 # If you would like to skip the training and use a pre-trained model instead, set `use_pretrained=True`. This model was trained using the code in `tutorials/generative/distributed_training/ddpm_training_ddp.py`
 
-# %% jupyter={"outputs_hidden": false}
+# %% tags=[]
 use_pretrained = False
 
 if use_pretrained:
     model = torch.hub.load("marksgraham/pretrained_generative_models", model="ddpm_2d", verbose=True).to(device)
 else:
-    n_epochs = 75
+    n_epochs = 50
     val_interval = 5
     epoch_loss_list = []
     val_epoch_loss_list = []
@@ -275,47 +276,103 @@ else:
     total_time = time.time() - total_start
     print(f"train completed, total time: {total_time}.")
 # %% [markdown]
-# ### Learning curves
+# ### Get masked image for inpainting
 
-# %% jupyter={"outputs_hidden": false}
-if not use_pretrained:
-    plt.style.use("seaborn-v0_8")
-    plt.title("Learning Curves", fontsize=20)
-    plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, color="C0", linewidth=2.0, label="Train")
-    plt.plot(
-        np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
-        val_epoch_loss_list,
-        color="C1",
-        linewidth=2.0,
-        label="Validation",
-    )
-    plt.yticks(fontsize=12)
-    plt.xticks(fontsize=12)
-    plt.xlabel("Epochs", fontsize=16)
-    plt.ylabel("Loss", fontsize=16)
-    plt.legend(prop={"size": 14})
-    plt.show()
+# %% tags=[]
+image_idx = 1
+
+val_batch = first(val_loader)["image"]
+val_image = val_batch[image_idx, None, ...]
+
+mask = torch.ones_like(val_image)
+mask[:, :, 20:40, 30:80] = 0
+val_image_masked = val_image * mask
+
+# plot
+plt.subplot(1, 3, 1)
+plt.imshow(val_image[0, 0, ...], cmap="gray")
+plt.title("Original image")
+plt.axis("off")
+plt.subplot(1, 3, 2)
+plt.imshow(mask[0, 0, ...], cmap="gray")
+plt.axis("off")
+plt.title("Mask")
+plt.subplot(1, 3, 3)
+plt.imshow(val_image_masked[0, 0, ...], cmap="gray")
+plt.axis("off")
+plt.title("Masked image")
+plt.show()
 
 # %% [markdown]
-# ### Plotting sampling process along DDPM's Markov chain
+# ### Inpaint
+# Inpaint using Algorithm 1 in https://arxiv.org/pdf/2201.09865.
+#
+# `num_resample_steps` can be increased to improve the quality of inpainting, with an associated linear increase in inpainting time.
 
-# %% jupyter={"outputs_hidden": false}
+# %% tags=[]
 model.eval()
-noise = torch.randn((1, 1, 64, 64))
-noise = noise.to(device)
+mask = mask.to(device)
+val_image_masked = val_image_masked.to(device)
+timesteps = torch.Tensor((999,)).to(noise.device).long()
+val_image_inpainted = torch.randn((1, 1, 64, 64)).to(device)
+
 scheduler.set_timesteps(num_inference_steps=1000)
-with autocast(enabled=True):
-    image, intermediates = inferer.sample(
-        input_noise=noise, diffusion_model=model, scheduler=scheduler, save_intermediates=True, intermediate_steps=100
-    )
+progress_bar = tqdm(scheduler.timesteps)
 
-chain = torch.cat(intermediates, dim=-1)
+num_resample_steps = 4
+with torch.no_grad():
+    with autocast(enabled=True):
+        for t in progress_bar:
+            for u in range(num_resample_steps):
+                # get the known portion at t-1
+                if t > 0:
+                    noise = torch.randn((1, 1, 64, 64)).to(device)
+                    timesteps_prev = torch.Tensor((t - 1,)).to(noise.device).long()
+                    val_image_inpainted_prev_known = scheduler.add_noise(
+                        original_samples=val_image_masked, noise=noise, timesteps=timesteps_prev
+                    )
+                else:
+                    val_image_inpainted_prev_known = val_image_masked
 
-plt.style.use("default")
-plt.imshow(chain[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
-plt.tight_layout()
+                # perform a denoising step to get the unknown portion at t-1
+                if t > 0:
+                    timesteps = torch.Tensor((t,)).to(noise.device).long()
+                    model_output = model(val_image_inpainted, timesteps=timesteps)
+                    val_image_inpainted_prev_unknown, _ = scheduler.step(model_output, t, val_image_inpainted)
+
+                # combine known and unknown using the mask
+                val_image_inpainted = torch.where(
+                    mask == 1, val_image_inpainted_prev_known, val_image_inpainted_prev_unknown
+                )
+
+                # perform resampling
+                if t > 0 and u < (num_resample_steps - 1):
+                    # sample x_t from x_t-1
+                    noise = torch.randn((1, 1, 64, 64)).to(device)
+                    val_image_inpainted = (
+                        torch.sqrt(1 - scheduler.betas[t - 1]) * val_image_inpainted
+                        + torch.sqrt(scheduler.betas[t - 1]) * noise
+                    )
+
+
+# plot
+plt.subplot(1, 3, 1)
+plt.imshow(val_image[0, 0, ...].cpu(), cmap="gray")
+plt.title("Original image")
 plt.axis("off")
+plt.subplot(1, 3, 2)
+plt.imshow(val_image_masked[0, 0, ...].cpu(), cmap="gray")
+plt.axis("off")
+plt.title("Masked image")
+plt.subplot(1, 3, 3)
+plt.imshow(val_image_inpainted[0, 0, ...].cpu(), cmap="gray")
+plt.axis("off")
+plt.title("Inpainted image")
 plt.show()
+
+
+# %% [markdown]
+# ### Plot
 
 # %% [markdown]
 # ### Cleanup data directory
