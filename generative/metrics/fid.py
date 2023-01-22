@@ -33,17 +33,9 @@ from __future__ import annotations
 
 import torch
 from monai.metrics.metric import Metric
-from monai.metrics.utils import do_metric_reduction
-from monai.utils import MetricReduction
 from torchvision.models import Inception_V3_Weights, inception_v3
 
-RADIMAGENET_URL = "https://drive.google.com/uc?id=1p0q9AhG3rufIaaUE1jc2okpS8sdwN6PU"
-RADIMAGENET_WEIGHTS = "RadImageNet-InceptionV3_notop.h5"
 
-
-# TODO: get a better name for parameters
-# TODO: Transform radimagenet's Keras weight to Torch weights following https://github.com/BMEII-AI/RadImageNet/issues/3
-# TODO: Create Mednet3D
 class FID(Metric):
     """
     Frechet Inception Distance (FID). FID can compare two data distributions with different number of samples.
@@ -51,67 +43,54 @@ class FID(Metric):
     Heusel M. et al. "Gans trained by a two time-scale update rule converge to a local nash equilibrium."
     https://arxiv.org/abs/1706.08500#
 
-    Args:
-        reduction:
-        extract_features:
-        feature_extractor:
     """
 
     def __init__(
         self,
-        reduction: MetricReduction | str = MetricReduction.MEAN,
-        extract_features: bool = True,
-        feature_extractor: str = "imagenet",
+        feature_extractor_type: str | None = "imagenet",
     ) -> None:
         super().__init__()
-        self.reduction = reduction
-        self.feature_extractor = feature_extractor
+        self.feature_extractor_type = feature_extractor_type
+        self.feature_extractor = None
 
-        # TODO: Download pretrained network.
-        self.network = None
-        if extract_features:
-            if feature_extractor == "imagenet":
+        if feature_extractor_type:
+            if feature_extractor_type == "imagenet":
+                # TODO: Add feature extractor
                 weights = Inception_V3_Weights.IMAGENET1K_V1
-                self.network = inception_v3(weights=weights).eval()
-            elif feature_extractor == "radimagenet":
-                self.network = inception_v3().eval()
-            elif feature_extractor == "medicalnet":
-                pass
+                self.feature_extractor = inception_v3(weights=weights).eval()
+            elif feature_extractor_type == "radimagenet":
+                # TODO: Add feature extractor
+                self.feature_extractor = inception_v3().eval()
+            elif feature_extractor_type == "medicalnet":
+                # TODO: Add feature extractor
+                self.feature_extractor = inception_v3().eval()
 
-    def _compute_tensor(self, y_pred: torch.Tensor, y: torch.Tensor):  # type: ignore
-        """
-        Args:
-            y_pred:
-            y:
-        """
-        # check dimension
-        dims = y_pred.ndimension()
-        if dims < 2:
+    def __call__(self, y_pred: torch.Tensor, y: torch.Tensor):
+        if self.feature_extractor_type in ["radimagenet", "imagenet"] and (
+            y_pred.ndimension() != 4 or y.ndimension() != 4
+        ):
+            raise ValueError("FID requires RGB images.")
+
+        if self.feature_extractor_type == "medicalnet" and (y_pred.ndimension() != 5 or y.ndimension() != 5):
+            raise ValueError("FID requires RGB images.")
+
+        if y_pred.ndimension() < 2 or y.ndimension() < 2:
             raise ValueError("y_pred should have at least two dimensions.")
 
-        #     TODO: GET features
-        y_pred_features = None
-        y_features = None
+        if self.feature_extractor:
+            y_pred_features = self.feature_extractor.features(y_pred)
+            y_features = self.feature_extractor.features(y)
+        else:
+            y_pred_features = y_pred
+            y_features = y
 
-        return compute_fid_from_features(y_pred_features, y_features)
+        mu_y_pred, sigma_y_pred = compute_statistics(y_pred_features)
+        mu_y, sigma_y = compute_statistics(y_features)
 
-    def aggregate(self, reduction: MetricReduction | str | None = None):
-        """
-        Args:
-            reduction: define mode of reduction to the metrics, will only apply reduction on `not-nan` values,
-                available reduction modes: {``"none"``, ``"mean"``, ``"sum"``, ``"mean_batch"``, ``"sum_batch"``,
-                ``"mean_channel"``, ``"sum_channel"``}, default to `self.reduction`. if "none", will not do reduction.
-        """
-        data = self.get_buffer()
-        if not isinstance(data, torch.Tensor):
-            raise ValueError("The data to aggregate must be a PyTorch Tensor.")
-
-        # do metric reduction
-        f, not_nans = do_metric_reduction(data, reduction or self.reduction)
-        return (f, not_nans) if self.get_not_nans else f
+        return compute_frechet_distance(mu_y_pred, sigma_y_pred, mu_y, sigma_y)
 
 
-def _sqrtm_newton_schulz(matrix: torch.Tensor, num_iters: int = 100) -> tuple[torch.Tensor, torch.Tensor]:
+def _sqrtm_newton_schulz(matrix: torch.Tensor, num_iters: int = 100) -> torch.Tensor:
     """
     Square root of matrix using Newton-Schulz Iterative method. Based on:
     https://github.com/msubhransu/matrix-sqrt/blob/master/matrix_sqrt.py
@@ -120,9 +99,6 @@ def _sqrtm_newton_schulz(matrix: torch.Tensor, num_iters: int = 100) -> tuple[to
         matrix: matrix or batch of matrices
         num_iters: Number of iteration of the method
 
-    Returns:
-        Square root of matrix
-        Error
     """
     dim = matrix.size(0)
     norm_of_matrix = matrix.norm(p="fro")
@@ -150,7 +126,7 @@ def _sqrtm_newton_schulz(matrix: torch.Tensor, num_iters: int = 100) -> tuple[to
     return s_matrix, error
 
 
-def _compute_statistics(samples: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+def compute_statistics(samples: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Calculates the statistics used by FID
 
@@ -179,24 +155,11 @@ def _compute_statistics(samples: torch.Tensor) -> tuple[torch.Tensor, torch.Tens
     return mu, sigma
 
 
-def compute_fid_from_features(x_features: torch.Tensor, y_features: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
+def compute_frechet_distance(mu_x, sigma_x, mu_y, sigma_y, eps=1e-6):
     """
-    Fits multivariate Gaussians, then computes FID.
-
-    Args:
-        x_features: Samples from data distribution. Shape :math:`(N_x, D)`
-        y_features: Samples from data distribution. Shape :math:`(N_y, D)`
-        eps:
-
-    Returns:
-        The Frechet Distance.
+    The Frechet distance between two multivariate Gaussians
     """
 
-    mu_x, sigma_x = _compute_statistics(x_features)
-    mu_y, sigma_y = _compute_statistics(y_features)
-
-    # The Frechet Inception Distance between two multivariate Gaussians X_x ~ N(mu_1, sigm_1)
-    # and X_y ~ N(mu_2, sigm_2) is d^2 = ||mu_1 - mu_2||^2 + Tr(sigm_1 + sigm_2 - 2*sqrt(sigm_1*sigm_2)).
     diff = mu_x - mu_y
     covmean, _ = _sqrtm_newton_schulz(sigma_x.mm(sigma_y))
 
@@ -206,6 +169,4 @@ def compute_fid_from_features(x_features: torch.Tensor, y_features: torch.Tensor
         covmean, _ = _sqrtm_newton_schulz((sigma_x + offset).mm(sigma_y + offset))
 
     tr_covmean = torch.trace(covmean)
-    score = diff.dot(diff) + torch.trace(sigma_x) + torch.trace(sigma_y) - 2 * tr_covmean
-
-    return score
+    return diff.dot(diff) + torch.trace(sigma_x) + torch.trace(sigma_y) - 2 * tr_covmean
