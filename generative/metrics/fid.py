@@ -37,9 +37,15 @@ from monai.metrics.metric import Metric
 
 class FID(Metric):
     """
-    Frechet Inception Distance (FID). The FID calculates the distance between two groups of feature vectors. Based on:
-    Heusel M. et al. "Gans trained by a two time-scale update rule converge to a local nash equilibrium."
-    https://arxiv.org/abs/1706.08500#
+    Frechet Inception Distance (FID). The FID calculates the distance between two distributions of feature vectors.
+    Based on: Heusel M. et al. "Gans trained by a two time-scale update rule converge to a local nash equilibrium."
+    https://arxiv.org/abs/1706.08500#. The inputs for this metric should be two groups of feature vectors (with format
+    (number images, number of features)) extracted from the a pretrained network.
+
+    Originally, it was proposed to use the activations of the pool_3 layer of an Inception v3 pretrained with Imagenet.
+    However, others networks pretrained on medical datasets can be used as well (for example, RadImageNwt for 2D and
+    MedicalNet for 3D images). If the chosen model output is not a scalar, usually it is used a global spatial
+    average pooling.
     """
 
     def __init__(self) -> None:
@@ -53,19 +59,45 @@ def get_fid_score(y_pred: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     y = y.float()
     y_pred = y_pred.float()
 
-    if y.shape != y_pred.shape:
-        raise ValueError(f"y_pred and y should have same shapes, got {y_pred.shape} and {y.shape}.")
+    if y.ndimension() > 2:
+        raise ValueError(f"Inputs should have (number images, number of features) shape.")
 
-    mu_y_pred, sigma_y_pred = compute_statistics(y_pred)
-    mu_y, sigma_y = compute_statistics(y)
+    mu_y_pred = torch.mean(y_pred, dim=0)
+    sigma_y_pred = _cov(y_pred, rowvar=False)
+    mu_y = torch.mean(y, dim=0)
+    sigma_y = _cov(y, rowvar=False)
 
     return compute_frechet_distance(mu_y_pred, sigma_y_pred, mu_y, sigma_y)
+
+
+def _cov(m: torch.Tensor, rowvar: bool = True) -> torch.Tensor:
+    """
+    Estimate a covariance matrix of the variables.
+
+    Args:
+        m: A 1-D or 2-D array containing multiple variables and observations. Each row of `m` represents a variable,
+            and each column a single observation of all those variables.
+        rowvar: If rowvar is True (default), then each row represents a variable, with observations in the columns.
+            Otherwise, the relationship is transposed: each column represents a variable, while the rows contain
+            observations.
+    """
+    if m.dim() < 2:
+        m = m.view(1, -1)
+
+    if not rowvar and m.size(0) != 1:
+        m = m.t()
+
+    fact = 1.0 / (m.size(1) - 1)
+    m = m - torch.mean(m, dim=1, keepdim=True)
+    mt = m.t()
+    return fact * m.matmul(mt).squeeze()
 
 
 def _sqrtm_newton_schulz(matrix: torch.Tensor, num_iters: int = 100) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Square root of matrix using Newton-Schulz Iterative method. Based on:
-    https://github.com/msubhransu/matrix-sqrt/blob/master/matrix_sqrt.py
+    https://github.com/msubhransu/matrix-sqrt/blob/master/matrix_sqrt.py. Bechmark shown in:
+    https://github.com/photosynthesis-team/piq/issues/190#issuecomment-742039303
 
     Args:
         matrix: matrix or batch of matrices
@@ -98,48 +130,16 @@ def _sqrtm_newton_schulz(matrix: torch.Tensor, num_iters: int = 100) -> tuple[to
     return s_matrix, error
 
 
-def compute_statistics(samples: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    """
-    Calculates the statistics used by FID
-
-    Args:
-        samples:  Low-dimension representation of image set.
-            Shape (N_samples, dims) and dtype: np.float32 in range 0 - 1
-
-    Returns:
-        mu: mean over all activations from the encoder.
-        sigma: covariance matrix over all activations from the encoder.
-    """
-    mu = torch.mean(samples, dim=0)
-
-    # Estimate a covariance matrix
-    if samples.dim() < 2:
-        samples = samples.view(1, -1)
-
-    if samples.size(0) != 1:
-        samples = samples.t()
-
-    fact = 1.0 / (samples.size(1) - 1)
-    samples = samples - torch.mean(samples, dim=1, keepdim=True)
-    samplest = samples.t()
-    sigma = fact * samples.matmul(samplest).squeeze()
-
-    return mu, sigma
-
-
 def compute_frechet_distance(
-    mu_x: torch.Tensor, sigma_x: torch.Tensor, mu_y: torch.Tensor, sigma_y: torch.Tensor, eps: float = 1e-6
+    mu_x: torch.Tensor, sigma_x: torch.Tensor, mu_y: torch.Tensor, sigma_y: torch.Tensor, epsilon: float = 1e-6
 ) -> torch.Tensor:
-    """
-    The Frechet distance between two multivariate Gaussians.
-    """
-
+    """The Frechet distance between multivariate normal distributions."""
     diff = mu_x - mu_y
     covmean, _ = _sqrtm_newton_schulz(sigma_x.mm(sigma_y))
 
-    # Product might be almost singular
+    # If calculation produces singular product, epsilon is added to diagonal of cov estimates
     if not torch.isfinite(covmean).all():
-        offset = torch.eye(sigma_x.size(0), device=mu_x.device, dtype=mu_x.dtype) * eps
+        offset = torch.eye(sigma_x.size(0), device=mu_x.device, dtype=mu_x.dtype) * epsilon
         covmean, _ = _sqrtm_newton_schulz((sigma_x + offset).mm(sigma_y + offset))
 
     tr_covmean = torch.trace(covmean)
