@@ -32,68 +32,37 @@
 from __future__ import annotations
 
 import torch
-import torch.nn as nn
 from monai.metrics.metric import Metric
-from torchvision.models import Inception_V3_Weights, inception_v3
 
 
 class FID(Metric):
     """
-    Frechet Inception Distance (FID). FID can compare two data distributions with different number of samples.
-    But dimensionalities should match, otherwise it won't be possible to correctly compute statistics. Based on:
+    Frechet Inception Distance (FID). The FID calculates the distance between two groups of feature vectors. Based on:
     Heusel M. et al. "Gans trained by a two time-scale update rule converge to a local nash equilibrium."
     https://arxiv.org/abs/1706.08500#
-
     """
 
-    def __init__(
-        self,
-        feature_extractor_type: str | None = "imagenet",
-        verbose: bool = False,
-    ) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.feature_extractor_type = feature_extractor_type
-        self.feature_extractor = None
-
-        if feature_extractor_type:
-            if feature_extractor_type == "imagenet":
-                weights = Inception_V3_Weights.IMAGENET1K_V1
-                self.feature_extractor = inception_v3(weights=weights).eval()
-            elif feature_extractor_type == "radimagenet":
-                raise NotImplementedError("Radimage net not implemented yet")
-            elif feature_extractor_type == "medicalnet":
-                self.feature_extractor = MedicalNetFeatureExtractor(
-                    net="medicalnet_resnet10_23datasets", verbose=verbose
-                )
-
-            self.feature_extractor.eval()
 
     def __call__(self, y_pred: torch.Tensor, y: torch.Tensor):
-        if self.feature_extractor_type in ["radimagenet", "imagenet"] and (
-            y_pred.ndimension() != 4 or y.ndimension() != 4
-        ):
-            raise ValueError("FID requires RGB images.")
-
-        if self.feature_extractor_type == "medicalnet" and (y_pred.ndimension() != 5 or y.ndimension() != 5):
-            raise ValueError("FID requires RGB images.")
-
-        if y_pred.ndimension() < 2 or y.ndimension() < 2:
-            raise ValueError("y_pred should have at least two dimensions.")
-
-        if self.feature_extractor:
-            y_pred_features = self.feature_extractor.features(y_pred)
-            y_features = self.feature_extractor.features(y)
-        else:
-            y_pred_features = y_pred
-            y_features = y
-
-        mu_y_pred, sigma_y_pred = compute_statistics(y_pred_features)
-        mu_y, sigma_y = compute_statistics(y_features)
-
-        return compute_frechet_distance(mu_y_pred, sigma_y_pred, mu_y, sigma_y)
+        return get_fid_score(y_pred, y)
 
 
-def _sqrtm_newton_schulz(matrix: torch.Tensor, num_iters: int = 100) -> torch.Tensor:
+def get_fid_score(y_pred: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    y = y.float()
+    y_pred = y_pred.float()
+
+    if y.shape != y_pred.shape:
+        raise ValueError(f"y_pred and y should have same shapes, got {y_pred.shape} and {y.shape}.")
+
+    mu_y_pred, sigma_y_pred = compute_statistics(y_pred)
+    mu_y, sigma_y = compute_statistics(y)
+
+    return compute_frechet_distance(mu_y_pred, sigma_y_pred, mu_y, sigma_y)
+
+
+def _sqrtm_newton_schulz(matrix: torch.Tensor, num_iters: int = 100) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Square root of matrix using Newton-Schulz Iterative method. Based on:
     https://github.com/msubhransu/matrix-sqrt/blob/master/matrix_sqrt.py
@@ -162,7 +131,7 @@ def compute_frechet_distance(
     mu_x: torch.Tensor, sigma_x: torch.Tensor, mu_y: torch.Tensor, sigma_y: torch.Tensor, eps: float = 1e-6
 ) -> torch.Tensor:
     """
-    The Frechet distance between two multivariate Gaussians
+    The Frechet distance between two multivariate Gaussians.
     """
 
     diff = mu_x - mu_y
@@ -175,44 +144,3 @@ def compute_frechet_distance(
 
     tr_covmean = torch.trace(covmean)
     return diff.dot(diff) + torch.trace(sigma_x) + torch.trace(sigma_y) - 2 * tr_covmean
-
-
-class MedicalNetFeatureExtractor(nn.Module):
-    """
-    Component to compute the features with the networks pretrained by Chen, et al. "Med3D: Transfer Learning for 3D
-    Medical Image Analysis". This class uses torch Hub to download the networks from "Warvito/MedicalNet-models".
-
-    Args:
-        net: {``"medicalnet_resnet10_23datasets"``, ``"medicalnet_resnet50_23datasets"``}
-            Specifies the network architecture to use. Defaults to ``"medicalnet_resnet10_23datasets"``.
-        verbose: if false, mute messages from torch Hub load function.
-    """
-
-    def __init__(
-        self,
-        net: str = "medicalnet_resnet10_23datasets",
-        verbose: bool = False,
-    ) -> None:
-        super().__init__()
-        torch.hub._validate_not_a_forked_repo = lambda a, b, c: True
-        self.model = torch.hub.load("Warvito/MedicalNet-models", model=net, verbose=verbose)
-        self.eval()
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Compute features using MedicalNet 3D networks.
-
-        Args:
-            input: 3D input tensor with shape BCDHW.
-        """
-        x = medicalnet_intensity_normalisation(x)
-        return self.model.forward(x)
-
-
-def medicalnet_intensity_normalisation(volume):
-    """Intensity normalisation based on
-    https://github.com/Tencent/MedicalNet/blob/18c8bb6cd564eb1b964bffef1f4c2283f1ae6e7b/datasets/brains18.py#L133
-    """
-    mean = volume.mean()
-    std = volume.std()
-    return (volume - mean) / std
