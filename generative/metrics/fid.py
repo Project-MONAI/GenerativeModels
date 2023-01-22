@@ -32,6 +32,7 @@
 from __future__ import annotations
 
 import torch
+import torch.nn as nn
 from monai.metrics.metric import Metric
 from torchvision.models import Inception_V3_Weights, inception_v3
 
@@ -48,6 +49,7 @@ class FID(Metric):
     def __init__(
         self,
         feature_extractor_type: str | None = "imagenet",
+        verbose: bool = False,
     ) -> None:
         super().__init__()
         self.feature_extractor_type = feature_extractor_type
@@ -55,15 +57,16 @@ class FID(Metric):
 
         if feature_extractor_type:
             if feature_extractor_type == "imagenet":
-                # TODO: Add feature extractor
                 weights = Inception_V3_Weights.IMAGENET1K_V1
                 self.feature_extractor = inception_v3(weights=weights).eval()
             elif feature_extractor_type == "radimagenet":
-                # TODO: Add feature extractor
-                self.feature_extractor = inception_v3().eval()
+                raise NotImplementedError("Radimage net not implemented yet")
             elif feature_extractor_type == "medicalnet":
-                # TODO: Add feature extractor
-                self.feature_extractor = inception_v3().eval()
+                self.feature_extractor = MedicalNetFeatureExtractor(
+                    net="medicalnet_resnet10_23datasets", verbose=verbose
+                )
+
+            self.feature_extractor.eval()
 
     def __call__(self, y_pred: torch.Tensor, y: torch.Tensor):
         if self.feature_extractor_type in ["radimagenet", "imagenet"] and (
@@ -155,7 +158,9 @@ def compute_statistics(samples: torch.Tensor) -> tuple[torch.Tensor, torch.Tenso
     return mu, sigma
 
 
-def compute_frechet_distance(mu_x, sigma_x, mu_y, sigma_y, eps=1e-6):
+def compute_frechet_distance(
+    mu_x: torch.Tensor, sigma_x: torch.Tensor, mu_y: torch.Tensor, sigma_y: torch.Tensor, eps: float = 1e-6
+) -> torch.Tensor:
     """
     The Frechet distance between two multivariate Gaussians
     """
@@ -170,3 +175,44 @@ def compute_frechet_distance(mu_x, sigma_x, mu_y, sigma_y, eps=1e-6):
 
     tr_covmean = torch.trace(covmean)
     return diff.dot(diff) + torch.trace(sigma_x) + torch.trace(sigma_y) - 2 * tr_covmean
+
+
+class MedicalNetFeatureExtractor(nn.Module):
+    """
+    Component to compute the features with the networks pretrained by Chen, et al. "Med3D: Transfer Learning for 3D
+    Medical Image Analysis". This class uses torch Hub to download the networks from "Warvito/MedicalNet-models".
+
+    Args:
+        net: {``"medicalnet_resnet10_23datasets"``, ``"medicalnet_resnet50_23datasets"``}
+            Specifies the network architecture to use. Defaults to ``"medicalnet_resnet10_23datasets"``.
+        verbose: if false, mute messages from torch Hub load function.
+    """
+
+    def __init__(
+        self,
+        net: str = "medicalnet_resnet10_23datasets",
+        verbose: bool = False,
+    ) -> None:
+        super().__init__()
+        torch.hub._validate_not_a_forked_repo = lambda a, b, c: True
+        self.model = torch.hub.load("Warvito/MedicalNet-models", model=net, verbose=verbose)
+        self.eval()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Compute features using MedicalNet 3D networks.
+
+        Args:
+            input: 3D input tensor with shape BCDHW.
+        """
+        x = medicalnet_intensity_normalisation(x)
+        return self.model.forward(x)
+
+
+def medicalnet_intensity_normalisation(volume):
+    """Intensity normalisation based on
+    https://github.com/Tencent/MedicalNet/blob/18c8bb6cd564eb1b964bffef1f4c2283f1ae6e7b/datasets/brains18.py#L133
+    """
+    mean = volume.mean()
+    std = volume.std()
+    return (volume - mean) / std
