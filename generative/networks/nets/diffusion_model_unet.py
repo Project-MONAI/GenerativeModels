@@ -35,7 +35,7 @@ from typing import List, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.nn.functional as F
-from monai.networks.blocks import Convolution
+from monai.networks.blocks import Convolution, MLPBlock
 from monai.networks.layers.factories import Pool
 from torch import nn
 
@@ -64,46 +64,6 @@ def zero_module(module: nn.Module) -> nn.Module:
     for p in module.parameters():
         p.detach().zero_()
     return module
-
-
-class GEGLU(nn.Module):
-    """
-    A variant of the gated linear unit activation function from https://arxiv.org/abs/2002.05202.
-
-    Args:
-        dim_in: number of channels in the input.
-        dim_out: number of channels in the output.
-    """
-
-    def __init__(self, dim_in: int, dim_out: int) -> None:
-        super().__init__()
-        self.proj = nn.Linear(dim_in, dim_out * 2)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x, gate = self.proj(x).chunk(2, dim=-1)
-        return x * F.gelu(gate.to(dtype=torch.float32)).to(dtype=gate.dtype)
-
-
-class FeedForward(nn.Module):
-    """
-    A feed-forward layer.
-
-    Args:
-        num_channels: number of channels in the input.
-        dim_out: number of channels in the output. If not given, defaults to `dim`.
-        mult: multiplier to use for the hidden dimension.
-        dropout: dropout probability to use.
-    """
-
-    def __init__(self, num_channels: int, dim_out: Optional[int] = None, mult: int = 4, dropout: float = 0.0) -> None:
-        super().__init__()
-        inner_dim = int(num_channels * mult)
-        dim_out = dim_out if dim_out is not None else num_channels
-
-        self.net = nn.Sequential(GEGLU(num_channels, inner_dim), nn.Dropout(dropout), nn.Linear(inner_dim, dim_out))
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)
 
 
 class CrossAttention(nn.Module):
@@ -239,7 +199,7 @@ class BasicTransformerBlock(nn.Module):
             dropout=dropout,
             upcast_attention=upcast_attention,
         )  # is a self-attention
-        self.ff = FeedForward(num_channels, dropout=dropout)
+        self.ff = MLPBlock(hidden_size=num_channels, mlp_dim=num_channels * 4, act="GEGLU")
         self.attn2 = CrossAttention(
             query_dim=num_channels,
             cross_attention_dim=cross_attention_dim,
@@ -1677,10 +1637,8 @@ class DiffusionModelUNet(nn.Module):
         super().__init__()
         if with_conditioning is True and cross_attention_dim is None:
             raise ValueError(
-                (
-                    "DiffusionModelUNet expects dimension of the cross-attention conditioning (cross_attention_dim) "
-                    "when using with_conditioning."
-                )
+                "DiffusionModelUNet expects dimension of the cross-attention conditioning (cross_attention_dim) "
+                "when using with_conditioning."
             )
         if cross_attention_dim is not None and with_conditioning is False:
             raise ValueError(
