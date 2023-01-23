@@ -9,6 +9,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .fid import FID
-from .mmd import MMD
-from .ms_ssim import MSSSIM
+
+import unittest
+
+import numpy as np
+import torch
+
+from generative.metrics import FID
+
+
+class TestMMDMetric(unittest.TestCase):
+    def test_results(self):
+        x = torch.Tensor([[1, 2], [1, 2], [1, 2]])
+        y = torch.Tensor([[2, 2], [1, 2], [1, 2]])
+        results = FID()(x, y)
+        np.testing.assert_allclose(results.cpu().numpy(), 0.4433, atol=1e-4)
+
+    def test_input_dimensions(self):
+        with self.assertRaises(ValueError):
+            FID()(torch.ones([3, 3, 144, 144]), torch.ones([3, 3, 145, 145]))
+
+
+if __name__ == "__main__":
+    unittest.main()
