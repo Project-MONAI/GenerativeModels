@@ -199,7 +199,7 @@ class BasicTransformerBlock(nn.Module):
             dropout=dropout,
             upcast_attention=upcast_attention,
         )  # is a self-attention
-        self.ff = MLPBlock(hidden_size=num_channels, mlp_dim=num_channels * 4, act="GEGLU")
+        self.ff = MLPBlock(hidden_size=num_channels, mlp_dim=num_channels * 4, act="GEGLU", dropout_rate=dropout)
         self.attn2 = CrossAttention(
             query_dim=num_channels,
             cross_attention_dim=cross_attention_dim,
