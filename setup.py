@@ -17,6 +17,6 @@ setup(
     version="0.1.0",
     description="Installer to help to use the prototypes from MONAI generative models in other projects.",
     install_requires=[
-        "lpips==0.1.4",
+        "monai-weekly==1.1.dev2248",
     ],
 )

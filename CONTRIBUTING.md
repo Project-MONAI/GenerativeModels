@@ -71,27 +71,38 @@ If you intend for any variables/functions/classes to be available outside of the
 - Add to the `__init__.py` file.
 
 #### Unit testing
->In progress.  Please wait for more instructions to follow
-
 MONAI Generative Models tests are located under `tests/`.
 
-##### Set environment
-To use the tests already available at MONAI core, first we clone it:
-```shell
-git clone https://github.com/Project-MONAI/MONAI --branch main
+- The unit test's file name currently follows `test_[module_name].py` or `test_[module_name]_dist.py`.
+- The `test_[module_name]_dist.py` subset of unit tests requires a distributed environment to verify the module with distributed GPU-based computation.
+- The integration test's file name follows `test_integration_[workflow_name].py`.
+
+A bash script (`runtests.sh`) is provided to run all tests locally.
+Please run ``./runtests.sh -h`` to see all options.
+
+To run a particular test, for example `tests/test_spectral_loss.py`:
+```
+python -m tests.test_spectral_loss
 ```
 
-Then we add it to PYTHONPATH
-```shell
-export PYTHONPATH="${PYTHONPATH}:./MONAI/"
+Before submitting a pull request, we recommend that all linting and unit tests
+should pass, by running the following command locally:
+
+```bash
+./runtests.sh -u --net
+```
+or (for new features that would not break existing functionality):
+
+```bash
+./runtests.sh --quick --unittests
 ```
 
-##### Executing tests
-To run tests, use the following command:
-
-```shell script
- python -m unittest discover tests
-```
+It is recommended that the new test `test_[module_name].py` is constructed by using only
+python 3.7+ build-in functions, `torch`, `numpy`, `coverage` (for reporting code coverages) and `parameterized` (for organising test cases) packages.
+If it requires any other external packages, please make sure:
+- the packages are listed in [`requirements-dev.txt`](requirements-dev.txt)
+- the new test `test_[module_name].py` is added to the `exclude_cases` in [`./tests/min_tests.py`](./tests/min_tests.py) so that
+the minimal CI runner will not execute it.
 
 
 ### Submitting pull requests
