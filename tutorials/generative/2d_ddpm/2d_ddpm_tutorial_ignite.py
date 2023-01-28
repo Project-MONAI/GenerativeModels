@@ -178,9 +178,7 @@ model = DiffusionModelUNet(
 model.to(device)
 
 num_train_timesteps = 1000
-scheduler = DDPMScheduler(
-    num_train_timesteps=num_train_timesteps,
-)
+scheduler = DDPMScheduler(num_train_timesteps=num_train_timesteps)
 
 optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
 
@@ -274,12 +272,8 @@ trainer = SupervisedTrainer(
     train_handlers=train_handlers,
 )
 ProgressBar(
-    persist=True,
-    bar_format="[{n_fmt}/{total_fmt}] {percentage:3.0f}%|{postfix} [{elapsed}<{remaining}]",
-).attach(
-    trainer,
-    output_transform=from_engine(["loss"]),
-)
+    persist=True, bar_format="[{n_fmt}/{total_fmt}] {percentage:3.0f}%|{postfix} [{elapsed}<{remaining}]"
+).attach(trainer, output_transform=from_engine(["loss"]))
 
 
 trainer.run()

@@ -93,9 +93,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         autoencoder_model.train()
         input = torch.randn(input_shape).to(device)
         noise = torch.randn(latent_shape).to(device)
-        scheduler = DDPMScheduler(
-            num_train_timesteps=10,
-        )
+        scheduler = DDPMScheduler(num_train_timesteps=10)
         inferer = LatentDiffusionInferer(scheduler=scheduler, scale_factor=1.0)
         scheduler.set_timesteps(num_inference_steps=10)
         timesteps = torch.randint(0, scheduler.num_train_timesteps, (input_shape[0],), device=input.device).long()
@@ -117,9 +115,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         autoencoder_model.eval()
         autoencoder_model.train()
         noise = torch.randn(latent_shape).to(device)
-        scheduler = DDPMScheduler(
-            num_train_timesteps=10,
-        )
+        scheduler = DDPMScheduler(num_train_timesteps=10)
         inferer = LatentDiffusionInferer(scheduler=scheduler, scale_factor=1.0)
         scheduler.set_timesteps(num_inference_steps=10)
         sample = inferer.sample(
@@ -140,9 +136,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         autoencoder_model.eval()
         autoencoder_model.train()
         noise = torch.randn(latent_shape).to(device)
-        scheduler = DDPMScheduler(
-            num_train_timesteps=10,
-        )
+        scheduler = DDPMScheduler(num_train_timesteps=10)
         inferer = LatentDiffusionInferer(scheduler=scheduler, scale_factor=1.0)
         scheduler.set_timesteps(num_inference_steps=10)
         sample, intermediates = inferer.sample(
@@ -169,9 +163,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         autoencoder_model.eval()
         autoencoder_model.train()
         input = torch.randn(input_shape).to(device)
-        scheduler = DDPMScheduler(
-            num_train_timesteps=10,
-        )
+        scheduler = DDPMScheduler(num_train_timesteps=10)
         inferer = LatentDiffusionInferer(scheduler=scheduler, scale_factor=1.0)
         scheduler.set_timesteps(num_inference_steps=10)
         sample, intermediates = inferer.get_likelihood(
@@ -197,9 +189,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         autoencoder_model.eval()
         autoencoder_model.train()
         input = torch.randn(input_shape).to(device)
-        scheduler = DDPMScheduler(
-            num_train_timesteps=10,
-        )
+        scheduler = DDPMScheduler(num_train_timesteps=10)
         inferer = LatentDiffusionInferer(scheduler=scheduler, scale_factor=1.0)
         scheduler.set_timesteps(num_inference_steps=10)
         sample, intermediates = inferer.get_likelihood(

@@ -169,10 +169,7 @@ class PNDMScheduler(nn.Module):
         self.counter = 0
 
     def step(
-        self,
-        model_output: torch.FloatTensor,
-        timestep: int,
-        sample: torch.FloatTensor,
+        self, model_output: torch.FloatTensor, timestep: int, sample: torch.FloatTensor
     ) -> Tuple[torch.Tensor, Any]:
         """
         Predict the sample at the previous timestep by reversing the SDE. Core function to propagate the diffusion
@@ -193,12 +190,7 @@ class PNDMScheduler(nn.Module):
         else:
             return self.step_plms(model_output=model_output, timestep=timestep, sample=sample), None
 
-    def step_prk(
-        self,
-        model_output: torch.FloatTensor,
-        timestep: int,
-        sample: torch.FloatTensor,
-    ) -> torch.Tensor:
+    def step_prk(self, model_output: torch.FloatTensor, timestep: int, sample: torch.FloatTensor) -> torch.Tensor:
         """
         Step function propagating the sample with the Runge-Kutta method. RK takes 4 forward passes to approximate the
         solution to the differential equation.
@@ -331,12 +323,7 @@ class PNDMScheduler(nn.Module):
 
         return prev_sample
 
-    def add_noise(
-        self,
-        original_samples: torch.Tensor,
-        noise: torch.Tensor,
-        timesteps: torch.Tensor,
-    ) -> torch.Tensor:
+    def add_noise(self, original_samples: torch.Tensor, noise: torch.Tensor, timesteps: torch.Tensor) -> torch.Tensor:
         """
         Add noise to the original samples.
 

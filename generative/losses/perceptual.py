@@ -38,11 +38,7 @@ class PerceptualLoss(nn.Module):
     """
 
     def __init__(
-        self,
-        spatial_dims: int,
-        network_type: str = "alex",
-        is_fake_3d: bool = True,
-        fake_3d_ratio: float = 0.5,
+        self, spatial_dims: int, network_type: str = "alex", is_fake_3d: bool = True, fake_3d_ratio: float = 0.5
     ):
         super().__init__()
 
@@ -58,11 +54,7 @@ class PerceptualLoss(nn.Module):
         elif "radimagenet_" in network_type:
             self.perceptual_function = RadImageNetPerceptualSimilarity(net=network_type, verbose=False)
         else:
-            self.perceptual_function = LPIPS(
-                pretrained=True,
-                net=network_type,
-                verbose=False,
-            )
+            self.perceptual_function = LPIPS(pretrained=True, net=network_type, verbose=False)
         self.is_fake_3d = is_fake_3d
         self.fake_3d_ratio = fake_3d_ratio
 
@@ -90,26 +82,12 @@ class PerceptualLoss(nn.Module):
         preserved_axes.remove(spatial_axis)
 
         channel_axis = 1
-        input_slices = batchify_axis(
-            x=input,
-            fake_3d_perm=(
-                spatial_axis,
-                channel_axis,
-            )
-            + tuple(preserved_axes),
-        )
+        input_slices = batchify_axis(x=input, fake_3d_perm=(spatial_axis, channel_axis) + tuple(preserved_axes))
         indices = torch.randperm(input_slices.shape[0])[: int(input_slices.shape[0] * self.fake_3d_ratio)].to(
             input_slices.device
         )
         input_slices = torch.index_select(input_slices, dim=0, index=indices)
-        target_slices = batchify_axis(
-            x=target,
-            fake_3d_perm=(
-                spatial_axis,
-                channel_axis,
-            )
-            + tuple(preserved_axes),
-        )
+        target_slices = batchify_axis(x=target, fake_3d_perm=(spatial_axis, channel_axis) + tuple(preserved_axes))
         target_slices = torch.index_select(target_slices, dim=0, index=indices)
 
         axis_loss = torch.mean(self.perceptual_function(input_slices, target_slices))
@@ -150,11 +128,7 @@ class MedicalNetPerceptualSimilarity(nn.Module):
         verbose: if false, mute messages from torch Hub load function.
     """
 
-    def __init__(
-        self,
-        net: str = "medicalnet_resnet10_23datasets",
-        verbose: bool = False,
-    ) -> None:
+    def __init__(self, net: str = "medicalnet_resnet10_23datasets", verbose: bool = False) -> None:
         super().__init__()
         torch.hub._validate_not_a_forked_repo = lambda a, b, c: True
         self.model = torch.hub.load("Warvito/MedicalNet-models", model=net, verbose=verbose)
@@ -216,11 +190,7 @@ class RadImageNetPerceptualSimilarity(nn.Module):
         verbose: if false, mute messages from torch Hub load function.
     """
 
-    def __init__(
-        self,
-        net: str = "radimagenet_resnet50",
-        verbose: bool = False,
-    ) -> None:
+    def __init__(self, net: str = "radimagenet_resnet50", verbose: bool = False) -> None:
         super().__init__()
         self.model = torch.hub.load("Warvito/radimagenet-models", model=net, verbose=verbose)
         self.eval()

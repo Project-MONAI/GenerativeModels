@@ -70,11 +70,7 @@ train_transforms = transforms.Compose(
         transforms.AddChanneld(keys=["image"]),
         transforms.EnsureTyped(keys=["image"]),
         transforms.Orientationd(keys=["image"], axcodes="RAS"),
-        transforms.Spacingd(
-            keys=["image"],
-            pixdim=(2.4, 2.4, 2.2),
-            mode=("bilinear"),
-        ),
+        transforms.Spacingd(keys=["image"], pixdim=(2.4, 2.4, 2.2), mode=("bilinear")),
         transforms.CenterSpatialCropd(keys=["image"], roi_size=(96, 96, 64)),
         transforms.ScaleIntensityRangePercentilesd(keys="image", lower=0, upper=99.5, b_min=0, b_max=1),
     ]
@@ -121,11 +117,7 @@ val_transforms = transforms.Compose(
         transforms.AddChanneld(keys=["image"]),
         transforms.EnsureTyped(keys=["image"]),
         transforms.Orientationd(keys=["image"], axcodes="RAS"),
-        transforms.Spacingd(
-            keys=["image"],
-            pixdim=(2.4, 2.4, 2.2),
-            mode=("bilinear"),
-        ),
+        transforms.Spacingd(keys=["image"], pixdim=(2.4, 2.4, 2.2), mode=("bilinear")),
         transforms.CenterSpatialCropd(keys=["image"], roi_size=(96, 96, 64)),
         transforms.ScaleIntensityRangePercentilesd(keys="image", lower=0, upper=99.5, b_min=0, b_max=1),
     ]

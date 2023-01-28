@@ -69,7 +69,8 @@ class MMD(RegressionMetric):
 
         if y_pred.shape != y.shape:
             raise ValueError(
-                f"y_pred and y shapes dont match after being processed by their transforms, received y_pred: {y_pred.shape} and y: {y.shape}"
+                "y_pred and y shapes dont match after being processed "
+                f"by their transforms, received y_pred: {y_pred.shape} and y: {y.shape}"
             )
 
         for d in range(len(y.shape) - 1, 1, -1):

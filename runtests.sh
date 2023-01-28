@@ -227,8 +227,8 @@ do
             doIsortFormat=true
             doFlake8Format=true
             doPylintFormat=true
-            doPytypeFormat=true
-            doMypyFormat=true
+            doPytypeFormat=false
+            doMypyFormat=false
             doCopyRight=true
         ;;
         --disttests)

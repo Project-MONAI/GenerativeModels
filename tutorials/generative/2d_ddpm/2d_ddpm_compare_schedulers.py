@@ -184,12 +184,8 @@ optimizer = torch.optim.Adam(model.parameters(), 2.5e-5)
 # We use a DDPM scheduler with 1000 steps for training. For sampling, we will compare the DDPM, DDIM, and PNDM.
 
 # %%
-ddpm_scheduler = DDPMScheduler(
-    num_train_timesteps=1000,
-)
-ddim_scheduler = DDIMScheduler(
-    num_train_timesteps=1000,
-)
+ddpm_scheduler = DDPMScheduler(num_train_timesteps=1000)
+ddim_scheduler = DDIMScheduler(num_train_timesteps=1000)
 pndm_scheduler = PNDMScheduler(num_train_timesteps=1000, skip_prk_steps=True)
 
 # the range of sampling steps we want to use when testing the DDIM and PNDM schedulers
@@ -243,11 +239,7 @@ else:
             optimizer.step()
             epoch_loss += loss.item()
 
-            progress_bar.set_postfix(
-                {
-                    "loss": epoch_loss / (step + 1),
-                }
-            )
+            progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
         epoch_loss_list.append(epoch_loss / (step + 1))
 
         if (epoch + 1) % val_interval == 0:
@@ -267,11 +259,7 @@ else:
                     val_loss = F.l1_loss(noise_pred.float(), noise.float())
 
                 val_epoch_loss += val_loss.item()
-                progress_bar.set_postfix(
-                    {
-                        "val_loss": val_epoch_loss / (step + 1),
-                    }
-                )
+                progress_bar.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
             val_epoch_loss_list.append(val_epoch_loss / (step + 1))
 
             # Sampling image during training

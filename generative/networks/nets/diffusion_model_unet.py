@@ -482,12 +482,7 @@ class Downsample(nn.Module):
     """
 
     def __init__(
-        self,
-        spatial_dims: int,
-        num_channels: int,
-        use_conv: bool,
-        out_channels: Optional[int] = None,
-        padding: int = 1,
+        self, spatial_dims: int, num_channels: int, use_conv: bool, out_channels: Optional[int] = None, padding: int = 1
     ) -> None:
         super().__init__()
         self.num_channels = num_channels
@@ -527,12 +522,7 @@ class Upsample(nn.Module):
     """
 
     def __init__(
-        self,
-        spatial_dims: int,
-        num_channels: int,
-        use_conv: bool,
-        out_channels: Optional[int] = None,
-        padding: int = 1,
+        self, spatial_dims: int, num_channels: int, use_conv: bool, out_channels: Optional[int] = None, padding: int = 1
     ) -> None:
         super().__init__()
         self.num_channels = num_channels
@@ -624,10 +614,7 @@ class ResnetBlock(nn.Module):
         elif down:
             self.downsample = Downsample(spatial_dims, in_channels, use_conv=False)
 
-        self.time_emb_proj = nn.Linear(
-            temb_channels,
-            self.out_channels,
-        )
+        self.time_emb_proj = nn.Linear(temb_channels, self.out_channels)
 
         self.norm2 = nn.GroupNorm(num_groups=norm_num_groups, num_channels=self.out_channels, eps=norm_eps, affine=True)
         self.conv2 = zero_module(
@@ -1197,7 +1184,7 @@ class UpBlock(nn.Module):
         context: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         del context
-        for i, resnet in enumerate(self.resnets):
+        for resnet in self.resnets:
             # pop res hidden states
             res_hidden_states = res_hidden_states_list[-1]
             res_hidden_states_list = res_hidden_states_list[:-1]
@@ -1680,9 +1667,7 @@ class DiffusionModelUNet(nn.Module):
         # time
         time_embed_dim = num_channels[0] * 4
         self.time_embed = nn.Sequential(
-            nn.Linear(num_channels[0], time_embed_dim),
-            nn.SiLU(),
-            nn.Linear(time_embed_dim, time_embed_dim),
+            nn.Linear(num_channels[0], time_embed_dim), nn.SiLU(), nn.Linear(time_embed_dim, time_embed_dim)
         )
 
         # class embedding

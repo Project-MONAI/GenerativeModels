@@ -55,9 +55,7 @@ class TestDDPMScheduler(unittest.TestCase):
 
     def test_step_learned(self):
         for variance_type in ["learned", "learned_range"]:
-            scheduler = DDPMScheduler(
-                variance_type=variance_type,
-            )
+            scheduler = DDPMScheduler(variance_type=variance_type)
         model_output = torch.randn(2, 6, 16, 16)
         sample = torch.randn(2, 3, 16, 16)
         output_step = scheduler.step(model_output=model_output, timestep=500, sample=sample)
@@ -65,17 +63,13 @@ class TestDDPMScheduler(unittest.TestCase):
         self.assertEqual(output_step[1].shape, sample.shape)
 
     def test_set_timesteps(self):
-        scheduler = DDPMScheduler(
-            num_train_timesteps=1000,
-        )
+        scheduler = DDPMScheduler(num_train_timesteps=1000)
         scheduler.set_timesteps(num_inference_steps=100)
         self.assertEqual(scheduler.num_inference_steps, 100)
         self.assertEqual(len(scheduler.timesteps), 100)
 
     def test_set_timesteps_with_num_inference_steps_bigger_than_num_train_timesteps(self):
-        scheduler = DDPMScheduler(
-            num_train_timesteps=1000,
-        )
+        scheduler = DDPMScheduler(num_train_timesteps=1000)
         with self.assertRaises(ValueError):
             scheduler.set_timesteps(num_inference_steps=2000)
 

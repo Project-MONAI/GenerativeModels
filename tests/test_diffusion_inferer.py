@@ -58,9 +58,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         model.eval()
         input = torch.randn(input_shape).to(device)
         noise = torch.randn(input_shape).to(device)
-        scheduler = DDPMScheduler(
-            num_train_timesteps=10,
-        )
+        scheduler = DDPMScheduler(num_train_timesteps=10)
         inferer = DiffusionInferer(scheduler=scheduler)
         scheduler.set_timesteps(num_inference_steps=10)
         timesteps = torch.randint(0, scheduler.num_train_timesteps, (input_shape[0],), device=input.device).long()
@@ -74,9 +72,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         model.to(device)
         model.eval()
         noise = torch.randn(input_shape).to(device)
-        scheduler = DDPMScheduler(
-            num_train_timesteps=10,
-        )
+        scheduler = DDPMScheduler(num_train_timesteps=10)
         inferer = DiffusionInferer(scheduler=scheduler)
         scheduler.set_timesteps(num_inference_steps=10)
         sample, intermediates = inferer.sample(
@@ -91,9 +87,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         model.to(device)
         model.eval()
         noise = torch.randn(input_shape).to(device)
-        scheduler = DDPMScheduler(
-            num_train_timesteps=1000,
-        )
+        scheduler = DDPMScheduler(num_train_timesteps=1000)
         inferer = DiffusionInferer(scheduler=scheduler)
         scheduler.set_timesteps(num_inference_steps=10)
         sample, intermediates = inferer.sample(
@@ -108,9 +102,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         model.to(device)
         model.eval()
         noise = torch.randn(input_shape).to(device)
-        scheduler = DDIMScheduler(
-            num_train_timesteps=1000,
-        )
+        scheduler = DDIMScheduler(num_train_timesteps=1000)
         inferer = DiffusionInferer(scheduler=scheduler)
         scheduler.set_timesteps(num_inference_steps=10)
         sample, intermediates = inferer.sample(
@@ -127,9 +119,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         model.to(device)
         model.eval()
         noise = torch.randn(input_shape).to(device)
-        scheduler = DDIMScheduler(
-            num_train_timesteps=1000,
-        )
+        scheduler = DDIMScheduler(num_train_timesteps=1000)
         inferer = DiffusionInferer(scheduler=scheduler)
         scheduler.set_timesteps(num_inference_steps=10)
         conditioning = torch.randn([input_shape[0], 1, 3]).to(device)
@@ -150,9 +140,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         model.to(device)
         model.eval()
         input = torch.randn(input_shape).to(device)
-        scheduler = DDPMScheduler(
-            num_train_timesteps=10,
-        )
+        scheduler = DDPMScheduler(num_train_timesteps=10)
         inferer = DiffusionInferer(scheduler=scheduler)
         scheduler.set_timesteps(num_inference_steps=10)
         likelihood, intermediates = inferer.get_likelihood(
@@ -164,9 +152,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
     def test_normal_cdf(self):
         from scipy.stats import norm
 
-        scheduler = DDPMScheduler(
-            num_train_timesteps=10,
-        )
+        scheduler = DDPMScheduler(num_train_timesteps=10)
         inferer = DiffusionInferer(scheduler=scheduler)
 
         x = torch.linspace(-10, 10, 20)

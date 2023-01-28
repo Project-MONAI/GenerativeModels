@@ -25,7 +25,8 @@ class VQVAEResidualUnit(nn.Module):
     """
     Implementation of the ResidualLayer used in the VQVAE network as originally used in Morphology-preserving
     Autoregressive 3D Generative Modelling of the Brain by Tudosiu et al. (https://arxiv.org/pdf/2209.03177.pdf) and
-    the original implementation that can be found at https://github.com/AmigoLab/SynthAnatomy/blob/main/src/networks/vqvae/baseline.py#L150.
+    the original implementation that can be found at
+    https://github.com/AmigoLab/SynthAnatomy/blob/main/src/networks/vqvae/baseline.py#L150.
 
     Args:
         spatial_dims: number of spatial spatial_dims of the input data.

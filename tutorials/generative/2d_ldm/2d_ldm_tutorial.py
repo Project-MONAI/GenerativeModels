@@ -120,20 +120,10 @@ autoencoderkl = autoencoderkl.to(device)
 
 # +
 unet = DiffusionModelUNet(
-    spatial_dims=2,
-    in_channels=3,
-    out_channels=3,
-    num_res_blocks=1,
-    num_channels=(128, 256, 256),
-    num_head_channels=256,
+    spatial_dims=2, in_channels=3, out_channels=3, num_res_blocks=1, num_channels=(128, 256, 256), num_head_channels=256
 )
 
-scheduler = DDPMScheduler(
-    num_train_timesteps=1000,
-    beta_schedule="linear",
-    beta_start=0.0015,
-    beta_end=0.0195,
-)
+scheduler = DDPMScheduler(num_train_timesteps=1000, beta_schedule="linear", beta_start=0.0015, beta_end=0.0195)
 
 inferer = DiffusionInferer(scheduler)
 
@@ -321,11 +311,7 @@ for epoch in range(n_epochs):
 
         epoch_loss += loss.item()
 
-        progress_bar.set_postfix(
-            {
-                "loss": epoch_loss / (step + 1),
-            }
-        )
+        progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
     epoch_loss_list.append(epoch_loss / (step + 1))
 
     if (epoch + 1) % val_interval == 0:

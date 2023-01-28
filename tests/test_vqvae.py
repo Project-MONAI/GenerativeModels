@@ -14,9 +14,9 @@ import unittest
 import torch
 from monai.networks import eval_mode
 from parameterized import parameterized
-from tests.utils import test_script_save
 
 from generative.networks.nets.vqvae import VQVAE
+from tests.utils import test_script_save
 
 TEST_CASES = [
     [

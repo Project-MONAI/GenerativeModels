@@ -116,21 +116,13 @@ val_transform = Compose(
 
 # %%
 train_ds = DecathlonDataset(
-    root_dir=root_dir,
-    task="Task01_BrainTumour",
-    transform=train_transform,
-    section="training",
-    download=True,
+    root_dir=root_dir, task="Task01_BrainTumour", transform=train_transform, section="training", download=True
 )
 
 train_loader = DataLoader(train_ds, batch_size=16, shuffle=True, num_workers=8)
 
 val_ds = DecathlonDataset(
-    root_dir=root_dir,
-    task="Task01_BrainTumour",
-    transform=val_transform,
-    section="validation",
-    download=True,
+    root_dir=root_dir, task="Task01_BrainTumour", transform=val_transform, section="validation", download=True
 )
 
 val_loader = DataLoader(val_ds, batch_size=16, shuffle=False, num_workers=8)
@@ -166,9 +158,7 @@ model = DiffusionModelUNet(
 )
 model.to(device)
 
-scheduler = DDPMScheduler(
-    num_train_timesteps=1000,
-)
+scheduler = DDPMScheduler(num_train_timesteps=1000)
 
 inferer = DiffusionInferer(scheduler)
 
@@ -210,11 +200,7 @@ for epoch in range(n_epochs):
 
         epoch_loss += loss.item()
 
-        progress_bar.set_postfix(
-            {
-                "loss": epoch_loss / (step + 1),
-            }
-        )
+        progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
     epoch_loss_list.append(epoch_loss / (step + 1))
 
     if (epoch + 1) % val_interval == 0:
@@ -229,11 +215,7 @@ for epoch in range(n_epochs):
                     val_loss = F.mse_loss(noise_pred.float(), noise.float())
 
             val_epoch_loss += val_loss.item()
-            progress_bar.set_postfix(
-                {
-                    "val_loss": val_epoch_loss / (step + 1),
-                }
-            )
+            progress_bar.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
         val_epoch_loss_list.append(val_epoch_loss / (step + 1))
 
         # Sampling image during training
