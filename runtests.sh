@@ -58,7 +58,7 @@ PY_EXE=${MONAI_PY_EXE:-$(which python)}
 function print_usage {
     echo "runtests.sh [--codeformat] [--autofix] [--black] [--isort] [--flake8] [--pylint] [--pytype] [--mypy]"
     echo "            [--unittests] [--disttests] [--coverage] [--quick] [--min] [--net] [--dryrun] [-j number] [--list_tests]"
-    echo "            [--copyright] [--build] [--clean] [--precommit] [--help] [--version]"
+    echo "            [--copyright] [--clean] [--precommit] [--help] [--version]"
     echo ""
     echo "MONAI unit testing utilities."
     echo ""
@@ -155,7 +155,6 @@ function clean_py {
 
     find ${TO_CLEAN} -depth -maxdepth 1 -type d -name ".eggs" -exec rm -r "{}" +
     find ${TO_CLEAN} -depth -maxdepth 1 -type d -name "generative.egg-info" -exec rm -r "{}" +
-    find ${TO_CLEAN} -depth -maxdepth 1 -type d -name "build" -exec rm -r "{}" +
     find ${TO_CLEAN} -depth -maxdepth 1 -type d -name "dist" -exec rm -r "{}" +
     find ${TO_CLEAN} -depth -maxdepth 1 -type d -name ".mypy_cache" -exec rm -r "{}" +
     find ${TO_CLEAN} -depth -maxdepth 1 -type d -name ".pytype" -exec rm -r "{}" +
