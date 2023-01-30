@@ -223,12 +223,7 @@ class DDIMScheduler(nn.Module):
 
         return pred_prev_sample, pred_original_sample
 
-    def add_noise(
-        self,
-        original_samples: torch.Tensor,
-        noise: torch.Tensor,
-        timesteps: torch.Tensor,
-    ) -> torch.Tensor:
+    def add_noise(self, original_samples: torch.Tensor, noise: torch.Tensor, timesteps: torch.Tensor) -> torch.Tensor:
         """
         Add noise to the original samples.
 

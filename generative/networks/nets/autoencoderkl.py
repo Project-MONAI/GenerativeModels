@@ -44,11 +44,7 @@ class Upsample(nn.Module):
         in_channels: number of input channels to the layer.
     """
 
-    def __init__(
-        self,
-        spatial_dims: int,
-        in_channels: int,
-    ) -> None:
+    def __init__(self, spatial_dims: int, in_channels: int) -> None:
         super().__init__()
         self.conv = Convolution(
             spatial_dims=spatial_dims,
@@ -86,11 +82,7 @@ class Downsample(nn.Module):
         in_channels: number of input channels.
     """
 
-    def __init__(
-        self,
-        spatial_dims: int,
-        in_channels: int,
-    ) -> None:
+    def __init__(self, spatial_dims: int, in_channels: int) -> None:
         super().__init__()
         self.pad = (0, 1) * spatial_dims
 

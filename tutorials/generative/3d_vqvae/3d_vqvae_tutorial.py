@@ -90,21 +90,13 @@ val_transform = transforms.Compose(
 
 # %%
 train_ds = DecathlonDataset(
-    root_dir=root_dir,
-    task="Task01_BrainTumour",
-    transform=train_transform,
-    section="training",
-    download=True,
+    root_dir=root_dir, task="Task01_BrainTumour", transform=train_transform, section="training", download=True
 )
 
 train_loader = DataLoader(train_ds, batch_size=16, shuffle=True, num_workers=8)
 
 val_ds = DecathlonDataset(
-    root_dir=root_dir,
-    task="Task01_BrainTumour",
-    transform=val_transform,
-    section="validation",
-    download=True,
+    root_dir=root_dir, task="Task01_BrainTumour", transform=val_transform, section="validation", download=True
 )
 
 val_loader = DataLoader(val_ds, batch_size=16, shuffle=False, num_workers=8)
@@ -182,10 +174,7 @@ for epoch in range(n_epochs):
         epoch_loss += recons_loss.item()
 
         progress_bar.set_postfix(
-            {
-                "recons_loss": epoch_loss / (step + 1),
-                "quantization_loss": quantization_loss.item() / (step + 1),
-            }
+            {"recons_loss": epoch_loss / (step + 1), "quantization_loss": quantization_loss.item() / (step + 1)}
         )
     epoch_recon_loss_list.append(epoch_loss / (step + 1))
     epoch_quant_loss_list.append(quantization_loss.item() / (step + 1))

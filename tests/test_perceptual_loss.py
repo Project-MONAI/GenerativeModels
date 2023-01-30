@@ -18,26 +18,14 @@ from parameterized import parameterized
 from generative.losses.perceptual import PerceptualLoss
 
 TEST_CASES = [
-    [
-        {"spatial_dims": 2, "network_type": "squeeze"},
-        (2, 1, 64, 64),
-        (2, 1, 64, 64),
-    ],
+    [{"spatial_dims": 2, "network_type": "squeeze"}, (2, 1, 64, 64), (2, 1, 64, 64)],
     [
         {"spatial_dims": 3, "network_type": "squeeze", "is_fake_3d": True, "fake_3d_ratio": 0.1},
         (2, 1, 64, 64, 64),
         (2, 1, 64, 64, 64),
     ],
-    [
-        {"spatial_dims": 2, "network_type": "radimagenet_resnet50"},
-        (2, 1, 64, 64),
-        (2, 1, 64, 64),
-    ],
-    [
-        {"spatial_dims": 2, "network_type": "radimagenet_resnet50"},
-        (2, 3, 64, 64),
-        (2, 3, 64, 64),
-    ],
+    [{"spatial_dims": 2, "network_type": "radimagenet_resnet50"}, (2, 1, 64, 64), (2, 1, 64, 64)],
+    [{"spatial_dims": 2, "network_type": "radimagenet_resnet50"}, (2, 3, 64, 64), (2, 3, 64, 64)],
     [
         {"spatial_dims": 3, "network_type": "radimagenet_resnet50", "is_fake_3d": True, "fake_3d_ratio": 0.1},
         (2, 1, 64, 64, 64),

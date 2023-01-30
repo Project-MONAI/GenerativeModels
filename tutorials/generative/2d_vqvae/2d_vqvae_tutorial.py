@@ -42,7 +42,6 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import torch.nn.functional as F
 from monai import transforms
 from monai.apps import MedNISTDataset
 from monai.config import print_config
@@ -184,10 +183,7 @@ for epoch in range(n_epochs):
         epoch_loss += recons_loss.item()
 
         progress_bar.set_postfix(
-            {
-                "recons_loss": epoch_loss / (step + 1),
-                "quantization_loss": quantization_loss.item() / (step + 1),
-            }
+            {"recons_loss": epoch_loss / (step + 1), "quantization_loss": quantization_loss.item() / (step + 1)}
         )
     epoch_recon_loss_list.append(epoch_loss / (step + 1))
     epoch_quant_loss_list.append(quantization_loss.item() / (step + 1))

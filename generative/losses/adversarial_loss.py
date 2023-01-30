@@ -128,7 +128,7 @@ class PatchAdversarialLoss(_Loss):
         if type(input) is not list:
             input = [input]
         target_ = []
-        for disc_ind, disc_out in enumerate(input):
+        for _, disc_out in enumerate(input):
             if self.criterion != AdversarialCriterions.HINGE.value:
                 target_.append(self.get_target_tensor(disc_out, target_is_real))
             else:

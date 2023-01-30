@@ -29,7 +29,7 @@ all = true
 
 [tool.pytype]
 # Space-separated list of files or directories to exclude.
-exclude = ["versioneer.py", "_version.py"]
+exclude = ["versioneer.py", "_version.py", "tutorials/"]
 # Space-separated list of files or directories to process.
 inputs = ["generative"]
 # Keep going past errors to analyze as many files as possible.

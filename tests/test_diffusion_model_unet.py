@@ -14,9 +14,9 @@ import unittest
 import torch
 from monai.networks import eval_mode
 from parameterized import parameterized
-from tests.utils import test_script_save
 
 from generative.networks.nets import DiffusionModelUNet
+from tests.utils import test_script_save
 
 UNCOND_CASES_2D = [
     [
@@ -28,7 +28,7 @@ UNCOND_CASES_2D = [
             "num_channels": (8, 8, 8),
             "attention_levels": (False, False, False),
             "norm_num_groups": 8,
-        },
+        }
     ],
     [
         {
@@ -40,7 +40,7 @@ UNCOND_CASES_2D = [
             "attention_levels": (False, False, False),
             "norm_num_groups": 8,
             "resblock_updown": True,
-        },
+        }
     ],
     [
         {
@@ -52,7 +52,7 @@ UNCOND_CASES_2D = [
             "attention_levels": (False, False, True),
             "num_head_channels": 8,
             "norm_num_groups": 8,
-        },
+        }
     ],
     [
         {
@@ -65,7 +65,7 @@ UNCOND_CASES_2D = [
             "num_head_channels": 8,
             "norm_num_groups": 8,
             "resblock_updown": True,
-        },
+        }
     ],
     [
         {
@@ -77,7 +77,7 @@ UNCOND_CASES_2D = [
             "attention_levels": (False, False, True),
             "num_head_channels": 4,
             "norm_num_groups": 8,
-        },
+        }
     ],
     [
         {
@@ -89,7 +89,7 @@ UNCOND_CASES_2D = [
             "attention_levels": (False, True, True),
             "num_head_channels": (0, 2, 4),
             "norm_num_groups": 8,
-        },
+        }
     ],
 ]
 
@@ -103,7 +103,7 @@ UNCOND_CASES_3D = [
             "num_channels": (8, 8, 8),
             "attention_levels": (False, False, False),
             "norm_num_groups": 8,
-        },
+        }
     ],
     [
         {
@@ -115,7 +115,7 @@ UNCOND_CASES_3D = [
             "attention_levels": (False, False, False),
             "norm_num_groups": 8,
             "resblock_updown": True,
-        },
+        }
     ],
     [
         {
@@ -127,7 +127,7 @@ UNCOND_CASES_3D = [
             "attention_levels": (False, False, True),
             "num_head_channels": 8,
             "norm_num_groups": 8,
-        },
+        }
     ],
     [
         {
@@ -140,7 +140,7 @@ UNCOND_CASES_3D = [
             "num_head_channels": 8,
             "norm_num_groups": 8,
             "resblock_updown": True,
-        },
+        }
     ],
     [
         {
@@ -152,7 +152,7 @@ UNCOND_CASES_3D = [
             "attention_levels": (False, False, True),
             "num_head_channels": 4,
             "norm_num_groups": 8,
-        },
+        }
     ],
     [
         {
@@ -164,7 +164,7 @@ UNCOND_CASES_3D = [
             "attention_levels": (False, False, True),
             "num_head_channels": (0, 0, 4),
             "norm_num_groups": 8,
-        },
+        }
     ],
 ]
 
@@ -182,7 +182,7 @@ COND_CASES_2D = [
             "with_conditioning": True,
             "transformer_num_layers": 1,
             "cross_attention_dim": 3,
-        },
+        }
     ],
     [
         {
@@ -198,7 +198,7 @@ COND_CASES_2D = [
             "transformer_num_layers": 1,
             "cross_attention_dim": 3,
             "resblock_updown": True,
-        },
+        }
     ],
     [
         {
@@ -214,7 +214,7 @@ COND_CASES_2D = [
             "transformer_num_layers": 1,
             "cross_attention_dim": 3,
             "upcast_attention": True,
-        },
+        }
     ],
 ]
 
@@ -257,7 +257,7 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
 
     def test_attention_levels_with_different_length_num_head_channels(self):
         with self.assertRaises(ValueError):
-            net = DiffusionModelUNet(
+            DiffusionModelUNet(
                 spatial_dims=2,
                 in_channels=1,
                 out_channels=1,
@@ -358,10 +358,7 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
                 num_head_channels=8,
                 num_class_embeds=2,
             )
-            net.forward(
-                x=torch.rand((1, 1, 16, 32)),
-                timesteps=torch.randint(0, 1000, (1,)).long(),
-            )
+            net.forward(x=torch.rand((1, 1, 16, 32)), timesteps=torch.randint(0, 1000, (1,)).long())
 
     def test_script_unconditioned_2d_models(self):
         net = DiffusionModelUNet(
@@ -469,10 +466,7 @@ class TestDiffusionModelUNet3D(unittest.TestCase):
             cross_attention_dim=3,
         )
         test_script_save(
-            net,
-            torch.rand((1, 1, 16, 16, 16)),
-            torch.randint(0, 1000, (1,)).long(),
-            torch.rand((1, 1, 3)),
+            net, torch.rand((1, 1, 16, 16, 16)), torch.randint(0, 1000, (1,)).long(), torch.rand((1, 1, 3))
         )
 
 
