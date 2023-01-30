@@ -7,9 +7,9 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.14.1
+#       jupytext_version: 1.14.4
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: Python 3 (ipykernel)
 #     language: python
 #     name: python3
 # ---
@@ -164,7 +164,6 @@ scheduler = DDPMScheduler(
     beta_end=0.0195,
 )
 
-inferer = LatentDiffusionInferer(scheduler)
 # -
 
 # ## Define Losses
@@ -297,6 +296,26 @@ ax = axs[2]
 ax.imshow(img[img.shape[0] // 2, ...], cmap="gray")
 
 # ## Train Diffusion Model
+
+# ### Scaling factor
+#
+# As mentioned in Rombach et al. [1] Section 4.3.2 and D.1, the signal-to-noise ratio (induced by the scale of the latent space) can affect the results obtained with the LDM, if the standard deviation of the latent space distribution drifts too much from that of a Gaussian. For this reason, it is best practice to use a scaling factor to adapt this standard deviation.
+#
+# _Note: In case where the latent space is close to a Gaussian distribution, the scaling factor will be close to one, and the results will not differ from those obtained when it is not used._
+#
+
+# +
+with torch.no_grad():
+    with autocast(enabled=True):
+        z = autoencoderkl.encode_stage_2_inputs(check_data["image"].to(device))
+
+print(f"Scaling factor set to {1/torch.std(z)}")
+scale_factor = 1 / torch.std(z)
+# -
+
+# We define the inferer using the scale factor:
+
+inferer = LatentDiffusionInferer(scheduler)
 
 optimizer_diff = torch.optim.Adam(params=unet.parameters(), lr=1e-4)
 

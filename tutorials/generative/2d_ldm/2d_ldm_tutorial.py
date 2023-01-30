@@ -1,3 +1,19 @@
+# ---
+# jupyter:
+#   jupytext:
+#     cell_metadata_filter: -all
+#     formats: ipynb,py
+#     text_representation:
+#       extension: .py
+#       format_name: light
+#       format_version: '1.5'
+#       jupytext_version: 1.14.4
+#   kernelspec:
+#     display_name: Python 3 (ipykernel)
+#     language: python
+#     name: python3
+# ---
+
 # # 2D Latent Diffusion Model
 
 # +
@@ -134,8 +150,6 @@ scheduler = DDPMScheduler(
     beta_start=0.0015,
     beta_end=0.0195,
 )
-
-inferer = DiffusionInferer(scheduler)
 
 discriminator = PatchDiscriminator(
     spatial_dims=2,
@@ -283,6 +297,26 @@ for image_n in range(5):
     ax[image_n].set_ylabel(f"Epoch {val_samples[image_n]:.0f}")
 
 # ## Train Diffusion Model
+
+# ### Scaling factor
+#
+# As mentioned in Rombach et al. [1] Section 4.3.2 and D.1, the signal-to-noise ratio (induced by the scale of the latent space) can affect the results obtained with the LDM, if the standard deviation of the latent space distribution drifts too much from that of a Gaussian. For this reason, it is best practice to use a scaling factor to adapt this standard deviation.
+#
+# _Note: In case where the latent space is close to a Gaussian distribution, the scaling factor will be close to one, and the results will not differ from those obtained when it is not used._
+#
+
+# +
+with torch.no_grad():
+    with autocast(enabled=True):
+        z = autoencoderkl.encode_stage_2_inputs(check_data["image"].to(device))
+
+print(f"Scaling factor set to {1/torch.std(z)}")
+scale_factor = 1 / torch.std(z)
+# -
+
+# We define the inferer using the scale factor:
+
+inferer = DiffusionInferer(scheduler, scale_factor=scale_factor)
 
 # It takes about ~80 min to train the model.
 
