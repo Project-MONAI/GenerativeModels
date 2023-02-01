@@ -347,14 +347,14 @@ class LatentDiffusionInferer(DiffusionInferer):
             latent = outputs
 
         with torch.no_grad():
-            image = autoencoder_model.decode_stage_2_outputs(latent) * self.scale_factor
+            image = autoencoder_model.decode_stage_2_outputs(latent / self.scale_factor)
 
         if save_intermediates:
             intermediates = []
             for latent_intermediate in latent_intermediates:
                 with torch.no_grad():
                     intermediates.append(
-                        autoencoder_model.decode_stage_2_outputs(latent_intermediate) * self.scale_factor
+                        autoencoder_model.decode_stage_2_outputs(latent_intermediate / self.scale_factor)
                     )
             return image, intermediates
 
