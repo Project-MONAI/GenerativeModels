@@ -1636,6 +1636,9 @@ class DiffusionModelUNet(nn.Module):
         if any((out_channel % norm_num_groups) != 0 for out_channel in num_channels):
             raise ValueError("DiffusionModelUNet expects all num_channels being multiple of norm_num_groups")
 
+        if len(num_channels) != len(attention_levels):
+            raise ValueError("DiffusionModelUNet expects num_channels being same size of attention_levels")
+
         if isinstance(num_head_channels, int):
             num_head_channels = (num_head_channels,) * len(attention_levels)
 
