@@ -1,3 +1,14 @@
+# Copyright (c) MONAI Consortium
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 from typing import Tuple, Union
 
 import numpy as np
@@ -12,7 +23,7 @@ class Ordering:
     one of the following transformations:
         - Reflection - see np.flip for more details.
         - Transposition - see np.transpose for more details.
-        - 90 degree rotation - see np.rot90 for more details.
+        - 90-degree rotation - see np.rot90 for more details.
 
     The transformations are applied in the order specified by the transformation_order parameter.
 
@@ -44,13 +55,13 @@ class Ordering:
             OrderingTransformations.ROTATE_90.value,
             OrderingTransformations.REFLECT.value,
         ),
-    ):
+    ) -> None:
         super().__init__()
         self.ordering_type = ordering_type
 
-        if self.ordering_type not in [e for e in OrderingType]:
+        if self.ordering_type not in list(OrderingType):
             raise ValueError(
-                f"ordering_type must be one of the following {[e for e in OrderingType]}, but got {self.ordering_type}."
+                f"ordering_type must be one of the following {list(OrderingType)}, but got {self.ordering_type}."
             )
 
         self.spatial_dims = spatial_dims
@@ -66,9 +77,9 @@ class Ordering:
             raise ValueError(f"No duplicates are allowed. Received {transformation_order}.")
 
         for transformation in transformation_order:
-            if transformation not in [t for t in OrderingTransformations]:
+            if transformation not in list(OrderingTransformations):
                 raise ValueError(
-                    f"Valid transformations are {[t for t in OrderingTransformations]} but received {transformation}."
+                    f"Valid transformations are {list(OrderingTransformations)} but received {transformation}."
                 )
         self.transformation_order = transformation_order
 
@@ -87,7 +98,7 @@ class Ordering:
     def get_revert_sequence_ordering(self) -> np.ndarray:
         return self._revert_sequence_ordering
 
-    def _create_ordering(self):
+    def _create_ordering(self) -> np.ndarray:
         self.template = self._transform_template()
         order = self._order_template(template=self.template)
 
