@@ -6,9 +6,9 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.14.1
+#       jupytext_version: 1.14.4
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: Python 3 (ipykernel)
 #     language: python
 #     name: python3
 # ---
@@ -190,10 +190,7 @@ discriminator = PatchDiscriminator(
 )
 discriminator.to(device)
 
-perceptual_loss = PerceptualLoss(
-    spatial_dims=2,
-    network_type="alex",
-)
+perceptual_loss = PerceptualLoss(spatial_dims=2, network_type="alex")
 perceptual_loss.to(device)
 
 optimizer_g = torch.optim.Adam(params=model.parameters(), lr=1e-4)

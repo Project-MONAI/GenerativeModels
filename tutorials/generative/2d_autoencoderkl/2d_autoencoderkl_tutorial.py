@@ -144,10 +144,7 @@ discriminator = PatchDiscriminator(
 )
 discriminator.to(device)
 
-perceptual_loss = PerceptualLoss(
-    spatial_dims=2,
-    network_type="alex",
-)
+perceptual_loss = PerceptualLoss(spatial_dims=2, network_type="alex")
 perceptual_loss.to(device)
 
 optimizer_g = torch.optim.Adam(params=model.parameters(), lr=1e-4)

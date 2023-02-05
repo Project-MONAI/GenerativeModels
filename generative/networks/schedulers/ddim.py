@@ -55,8 +55,9 @@ class DDIMScheduler(nn.Module):
         steps_offset: an offset added to the inference steps. You can use a combination of `steps_offset=1` and
             `set_alpha_to_one=False`, to make the last step use step 0 for the previous alpha product, as done in
             stable diffusion.
-        prediction_type: prediction type of the scheduler function, one of `epsilon` (predicting the noise of the
-            diffusion process), `sample` (directly predicting the noisy sample`) or `v_prediction` (see section 2.4
+        prediction_type: {``"epsilon"``, ``"sample"``, ``"v_prediction"``}
+            prediction type of the scheduler function, one of `epsilon` (predicting the noise of the diffusion
+            process), `sample` (directly predicting the noisy sample`) or `v_prediction` (see section 2.4
             https://imagen.research.google/video/paper.pdf)
     """
 
@@ -104,7 +105,7 @@ class DDIMScheduler(nn.Module):
 
         # setable values
         self.num_inference_steps = None
-        self.timesteps = torch.from_numpy(np.arange(0, num_train_timesteps)[::-1].copy().astype(np.int64))
+        self.timesteps = torch.from_numpy(np.arange(0, num_train_timesteps)[::-1].astype(np.int64))
 
         self.clip_sample = clip_sample
         self.steps_offset = steps_offset
@@ -117,6 +118,13 @@ class DDIMScheduler(nn.Module):
             num_inference_steps: number of diffusion steps used when generating samples with a pre-trained model.
             device: target device to put the data.
         """
+        if num_inference_steps > self.num_train_timesteps:
+            raise ValueError(
+                f"`num_inference_steps`: {num_inference_steps} cannot be larger than `self.num_train_timesteps`:"
+                f" {self.num_train_timesteps} as the unet model trained with this scheduler can only handle"
+                f" maximal {self.num_train_timesteps} timesteps."
+            )
+
         self.num_inference_steps = num_inference_steps
         step_ratio = self.num_train_timesteps // self.num_inference_steps
         # creates integer timesteps by multiplying by ratio
@@ -215,12 +223,7 @@ class DDIMScheduler(nn.Module):
 
         return pred_prev_sample, pred_original_sample
 
-    def add_noise(
-        self,
-        original_samples: torch.Tensor,
-        noise: torch.Tensor,
-        timesteps: torch.Tensor,
-    ) -> torch.Tensor:
+    def add_noise(self, original_samples: torch.Tensor, noise: torch.Tensor, timesteps: torch.Tensor) -> torch.Tensor:
         """
         Add noise to the original samples.
 

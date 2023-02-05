@@ -55,6 +55,10 @@ class PNDMScheduler(nn.Module):
             each diffusion step uses the value of alphas product at that step and at the previous one. For the final
             step there is no previous alpha. When this option is `True` the previous alpha product is fixed to `1`,
             otherwise it uses the value of alpha at step 0.
+        prediction_type: {``"epsilon"``, ``"v_prediction"``}
+            prediction type of the scheduler function, one of `epsilon` (predicting the noise of the diffusion
+            process) or `v_prediction` (see section 2.4
+            https://imagen.research.google/video/paper.pdf)
         steps_offset:
             an offset added to the inference steps. You can use a combination of `offset=1` and
             `set_alpha_to_one=False`, to make the last step use step 0 for the previous alpha product, as done in
@@ -69,6 +73,7 @@ class PNDMScheduler(nn.Module):
         beta_schedule: str = "linear",
         skip_prk_steps: bool = False,
         set_alpha_to_one: bool = False,
+        prediction_type: str = "epsilon",
         steps_offset: int = 0,
     ) -> None:
         super().__init__()
@@ -83,6 +88,10 @@ class PNDMScheduler(nn.Module):
         else:
             raise NotImplementedError(f"{beta_schedule} does is not implemented for {self.__class__}")
 
+        if prediction_type.lower() not in ["epsilon", "v_prediction"]:
+            raise ValueError(f"prediction_type given as {prediction_type} must be one of `epsilon` or `v_prediction`")
+
+        self.prediction_type = prediction_type
         self.num_train_timesteps = num_train_timesteps
         self.alphas = 1.0 - self.betas
         self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
@@ -121,11 +130,18 @@ class PNDMScheduler(nn.Module):
             num_inference_steps: number of diffusion steps used when generating samples with a pre-trained model.
             device: target device to put the data.
         """
+        if num_inference_steps > self.num_train_timesteps:
+            raise ValueError(
+                f"`num_inference_steps`: {num_inference_steps} cannot be larger than `self.num_train_timesteps`:"
+                f" {self.num_train_timesteps} as the unet model trained with this scheduler can only handle"
+                f" maximal {self.num_train_timesteps} timesteps."
+            )
+
         self.num_inference_steps = num_inference_steps
         step_ratio = self.num_train_timesteps // self.num_inference_steps
         # creates integer timesteps by multiplying by ratio
         # casting to int to avoid issues when num_inference_step is power of 3
-        self._timesteps = (np.arange(0, num_inference_steps) * step_ratio).round()
+        self._timesteps = (np.arange(0, num_inference_steps) * step_ratio).round().astype(np.int64)
         self._timesteps += self.steps_offset
 
         if self.skip_prk_steps:
@@ -153,10 +169,7 @@ class PNDMScheduler(nn.Module):
         self.counter = 0
 
     def step(
-        self,
-        model_output: torch.FloatTensor,
-        timestep: int,
-        sample: torch.FloatTensor,
+        self, model_output: torch.FloatTensor, timestep: int, sample: torch.FloatTensor
     ) -> Tuple[torch.Tensor, Any]:
         """
         Predict the sample at the previous timestep by reversing the SDE. Core function to propagate the diffusion
@@ -177,12 +190,7 @@ class PNDMScheduler(nn.Module):
         else:
             return self.step_plms(model_output=model_output, timestep=timestep, sample=sample), None
 
-    def step_prk(
-        self,
-        model_output: torch.FloatTensor,
-        timestep: int,
-        sample: torch.FloatTensor,
-    ) -> torch.Tensor:
+    def step_prk(self, model_output: torch.FloatTensor, timestep: int, sample: torch.FloatTensor) -> torch.Tensor:
         """
         Step function propagating the sample with the Runge-Kutta method. RK takes 4 forward passes to approximate the
         solution to the differential equation.
@@ -294,6 +302,9 @@ class PNDMScheduler(nn.Module):
         beta_prod_t = 1 - alpha_prod_t
         beta_prod_t_prev = 1 - alpha_prod_t_prev
 
+        if self.prediction_type == "v_prediction":
+            model_output = (alpha_prod_t**0.5) * model_output + (beta_prod_t**0.5) * sample
+
         # corresponds to (α_(t−δ) - α_t) divided by
         # denominator of x_t in formula (9) and plus 1
         # Note: (α_(t−δ) - α_t) / (sqrt(α_t) * (sqrt(α_(t−δ)) + sqr(α_t))) =
@@ -312,12 +323,7 @@ class PNDMScheduler(nn.Module):
 
         return prev_sample
 
-    def add_noise(
-        self,
-        original_samples: torch.Tensor,
-        noise: torch.Tensor,
-        timesteps: torch.Tensor,
-    ) -> torch.Tensor:
+    def add_noise(self, original_samples: torch.Tensor, noise: torch.Tensor, timesteps: torch.Tensor) -> torch.Tensor:
         """
         Add noise to the original samples.
 

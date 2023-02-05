@@ -141,7 +141,7 @@ class DiffusionInferer(Inferer):
             progress_bar = iter(scheduler.timesteps)
         intermediates = []
         noise = torch.randn_like(inputs).to(inputs.device)
-        total_kl = torch.zeros((inputs.shape[0])).to(inputs.device)
+        total_kl = torch.zeros(inputs.shape[0]).to(inputs.device)
         for t in progress_bar:
             timesteps = torch.full(inputs.shape[:1], t, device=inputs.device).long()
             noisy_image = self.scheduler.add_noise(original_samples=inputs, noise=noise, timesteps=timesteps)
@@ -228,8 +228,8 @@ class DiffusionInferer(Inferer):
         inputs: torch.Tensor,
         means: torch.Tensor,
         log_scales: torch.Tensor,
-        original_input_range: Optional[Tuple] = [0, 255],
-        scaled_input_range: Optional[Tuple] = [0, 1],
+        original_input_range: Optional[Tuple] = (0, 255),
+        scaled_input_range: Optional[Tuple] = (0, 1),
     ) -> torch.Tensor:
         """
         Compute the log-likelihood of a Gaussian distribution discretizing to a
@@ -304,11 +304,7 @@ class LatentDiffusionInferer(DiffusionInferer):
             latent = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
 
         prediction = super().__call__(
-            inputs=latent,
-            diffusion_model=diffusion_model,
-            noise=noise,
-            timesteps=timesteps,
-            condition=condition,
+            inputs=latent, diffusion_model=diffusion_model, noise=noise, timesteps=timesteps, condition=condition
         )
 
         return prediction
@@ -351,14 +347,14 @@ class LatentDiffusionInferer(DiffusionInferer):
             latent = outputs
 
         with torch.no_grad():
-            image = autoencoder_model.decode_stage_2_outputs(latent) * self.scale_factor
+            image = autoencoder_model.decode_stage_2_outputs(latent / self.scale_factor)
 
         if save_intermediates:
             intermediates = []
             for latent_intermediate in latent_intermediates:
                 with torch.no_grad():
                     intermediates.append(
-                        autoencoder_model.decode_stage_2_outputs(latent_intermediate) * self.scale_factor
+                        autoencoder_model.decode_stage_2_outputs(latent_intermediate / self.scale_factor)
                     )
             return image, intermediates
 

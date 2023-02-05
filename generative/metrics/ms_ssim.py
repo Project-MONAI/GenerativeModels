@@ -65,13 +65,7 @@ class MSSSIM(RegressionMetric):
         self.weights = weights
         self.reduction = reduction
 
-        self.SSIM = SSIMMetric(
-            self.data_range,
-            self.win_size,
-            self.k1,
-            self.k2,
-            self.spatial_dims,
-        )
+        self.SSIM = SSIMMetric(self.data_range, self.win_size, self.k1, self.k2, self.spatial_dims)
 
     def _compute_metric(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """

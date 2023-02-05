@@ -18,11 +18,7 @@ from generative.networks.layers import EMAQuantizer, VectorQuantizer
 
 class TestEMA(unittest.TestCase):
     def test_ema_shape(self):
-        layer = EMAQuantizer(
-            spatial_dims=2,
-            num_embeddings=16,
-            embedding_dim=8,
-        )
+        layer = EMAQuantizer(spatial_dims=2, num_embeddings=16, embedding_dim=8)
         input_shape = (1, 8, 8, 8)
         x = torch.randn(input_shape)
         layer = layer.train()
@@ -36,11 +32,7 @@ class TestEMA(unittest.TestCase):
         self.assertEqual(outputs[2].shape, (1, 8, 8))
 
     def test_ema_quantize(self):
-        layer = EMAQuantizer(
-            spatial_dims=2,
-            num_embeddings=16,
-            embedding_dim=8,
-        )
+        layer = EMAQuantizer(spatial_dims=2, num_embeddings=16, embedding_dim=8)
         input_shape = (1, 8, 8, 8)
         x = torch.randn(input_shape)
         outputs = layer.quantize(x)
@@ -70,26 +62,14 @@ class TestEMA(unittest.TestCase):
 
 class TestVectorQuantizer(unittest.TestCase):
     def test_vector_quantizer_shape(self):
-        layer = VectorQuantizer(
-            EMAQuantizer(
-                spatial_dims=2,
-                num_embeddings=16,
-                embedding_dim=8,
-            )
-        )
+        layer = VectorQuantizer(EMAQuantizer(spatial_dims=2, num_embeddings=16, embedding_dim=8))
         input_shape = (1, 8, 8, 8)
         x = torch.randn(input_shape)
         outputs = layer(x)
         self.assertEqual(outputs[1].shape, input_shape)
 
     def test_vector_quantizer_quantize(self):
-        layer = VectorQuantizer(
-            EMAQuantizer(
-                spatial_dims=2,
-                num_embeddings=16,
-                embedding_dim=8,
-            )
-        )
+        layer = VectorQuantizer(EMAQuantizer(spatial_dims=2, num_embeddings=16, embedding_dim=8))
         input_shape = (1, 8, 8, 8)
         x = torch.randn(input_shape)
         outputs = layer.quantize(x)
