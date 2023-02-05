@@ -33,6 +33,7 @@ def run_testsuit():
         "test_integration_workflows_adversarial",
         "test_latent_diffusion_inferer",
         "test_diffusion_inferer",
+        "test_autoregressive_transformer",
     ]
     assert sorted(exclude_cases) == sorted(set(exclude_cases)), f"Duplicated items in {exclude_cases}"
 

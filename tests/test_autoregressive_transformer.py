@@ -9,8 +9,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .autoencoderkl import AutoencoderKL
-from .autoregressive_transformer import AutoregressiveTransformer
-from .diffusion_model_unet import DiffusionModelUNet
-from .patchgan_discriminator import MultiScalePatchDiscriminator, PatchDiscriminator
-from .vqvae import VQVAE
+import unittest
+
+import torch
+from monai.networks import eval_mode
+
+from generative.networks.nets import AutoregressiveTransformer
+
+
+class TestAutoregressiveTransformer(unittest.TestCase):
+    def test_shape_unconditioned_models(self):
+        net = AutoregressiveTransformer(
+            num_tokens=10, max_seq_len=16, attn_layers_dim=8, attn_layers_depth=2, attn_layers_heads=2
+        )
+        with eval_mode(net):
+            net.forward(torch.randint(0, 10, (1, 16)))
+
+
+if __name__ == "__main__":
+    unittest.main()
