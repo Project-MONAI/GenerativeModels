@@ -197,7 +197,7 @@ def main_worker(args):
 
     inferer = DiffusionInferer(scheduler)
     # wrap the model with DistributedDataParallel module
-    model = DistributedDataParallel(model, device_ids=[device])
+    model = DistributedDataParallel(model, device_ids=[device], find_unused_parameters=True)
 
     # start a typical PyTorch training
     best_metric = 10000
