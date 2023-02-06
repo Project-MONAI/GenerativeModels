@@ -9,14 +9,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Optional
+
+import torch
 import torch.nn as nn
 from x_transformers import Decoder, TransformerWrapper
 
-__all__ = ["AutoregressiveTransformer"]
+__all__ = ["DecoderOnlyTransformer"]
 
 
-class AutoregressiveTransformer(nn.Module):
-    """Autoregressive Transformer model.
+class DecoderOnlyTransformer(nn.Module):
+    """Decoder-only (Autoregressive) Transformer model.
 
     Args:
         num_tokens: Number of tokens in the vocabulary.
@@ -24,10 +27,17 @@ class AutoregressiveTransformer(nn.Module):
         attn_layers_dim: Dimensionality of the attention layers.
         attn_layers_depth: Number of attention layers.
         attn_layers_heads: Number of attention heads.
+        with_cross_attention: Whether to use cross attention for conditioning.
     """
 
     def __init__(
-        self, num_tokens: int, max_seq_len: int, attn_layers_dim: int, attn_layers_depth: int, attn_layers_heads: int
+        self,
+        num_tokens: int,
+        max_seq_len: int,
+        attn_layers_dim: int,
+        attn_layers_depth: int,
+        attn_layers_heads: int,
+        with_cross_attention: bool = False,
     ) -> None:
         super().__init__()
         self.num_tokens = num_tokens
@@ -39,8 +49,13 @@ class AutoregressiveTransformer(nn.Module):
         self.model = TransformerWrapper(
             num_tokens=self.num_tokens,
             max_seq_len=self.max_seq_len,
-            attn_layers=Decoder(dim=self.attn_layers_dim, depth=self.attn_layers_depth, heads=self.attn_layers_heads),
+            attn_layers=Decoder(
+                dim=self.attn_layers_dim,
+                depth=self.attn_layers_depth,
+                heads=self.attn_layers_heads,
+                cross_attend=with_cross_attention,
+            ),
         )
 
-    def forward(self, x):
-        return self.model(x)
+    def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
+        return self.model(x, context=context)

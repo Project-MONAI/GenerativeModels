@@ -10,7 +10,7 @@
 # limitations under the License.
 
 from .autoencoderkl import AutoencoderKL
-from .autoregressive_transformer import AutoregressiveTransformer
 from .diffusion_model_unet import DiffusionModelUNet
 from .patchgan_discriminator import MultiScalePatchDiscriminator, PatchDiscriminator
+from .transformer import DecoderOnlyTransformer
 from .vqvae import VQVAE

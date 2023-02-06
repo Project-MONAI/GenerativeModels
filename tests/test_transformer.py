@@ -14,16 +14,28 @@ import unittest
 import torch
 from monai.networks import eval_mode
 
-from generative.networks.nets import AutoregressiveTransformer
+from generative.networks.nets import DecoderOnlyTransformer
 
 
-class TestAutoregressiveTransformer(unittest.TestCase):
-    def test_shape_unconditioned_models(self):
-        net = AutoregressiveTransformer(
+class TestDecoderOnlyTransformer(unittest.TestCase):
+    def test_unconditioned_models(self):
+        net = DecoderOnlyTransformer(
             num_tokens=10, max_seq_len=16, attn_layers_dim=8, attn_layers_depth=2, attn_layers_heads=2
         )
         with eval_mode(net):
             net.forward(torch.randint(0, 10, (1, 16)))
+
+    def test_conditioned_models(self):
+        net = DecoderOnlyTransformer(
+            num_tokens=10,
+            max_seq_len=16,
+            attn_layers_dim=8,
+            attn_layers_depth=2,
+            attn_layers_heads=2,
+            with_cross_attention=True,
+        )
+        with eval_mode(net):
+            net.forward(torch.randint(0, 10, (1, 16)), context=torch.randn(1, 4, 8))
 
 
 if __name__ == "__main__":
