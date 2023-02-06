@@ -218,7 +218,7 @@ TEST_3D = [
     ]
 ]
 
-TEST_ORDERING_FAILURE = [
+TEST_ORDERING_TYPE_FAILURE = [
     [
         {
             "ordering_type": "hilbert",
@@ -234,6 +234,9 @@ TEST_ORDERING_FAILURE = [
             ),
         }
     ],
+]
+
+TEST_ORDERING_TRANSFORMATION_FAILURE = [
     [
         {
             "ordering_type": OrderingType.S_CURVE,
@@ -274,12 +277,15 @@ class TestOrdering(unittest.TestCase):
     @parameterized.expand(TEST_2D_NON_RANDOM + TEST_3D)
     def test_ordering(self, input_param, expected_sequence_ordering):
         ordering = Ordering(**input_param)
-        print(ordering.get_sequence_ordering())
-        print(expected_sequence_ordering)
         self.assertTrue(np.array_equal(ordering.get_sequence_ordering(), expected_sequence_ordering, equal_nan=True))
 
-    @parameterized.expand(TEST_ORDERING_FAILURE)
-    def test_failure(self, input_param):
+    @parameterized.expand(TEST_ORDERING_TYPE_FAILURE)
+    def test_ordering_type_failure(self, input_param):
+        with self.assertRaises(ValueError):
+            Ordering(**input_param)
+
+    @parameterized.expand(TEST_ORDERING_TRANSFORMATION_FAILURE)
+    def test_ordering_transformation_failure(self, input_param):
         with self.assertRaises(ValueError):
             Ordering(**input_param)
 
