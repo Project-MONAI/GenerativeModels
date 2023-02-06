@@ -81,8 +81,8 @@ class MSSSIM(RegressionMetric):
 
         if not x.shape == y.shape:
             raise ValueError(
-                f"Input images should have the same dimensions, \
-             but got {x.shape} and {y.shape}."
+                f"Input images should have the same dimensions, "
+                 "but got {x.shape} and {y.shape}."
             )
 
         for d in range(len(x.shape) - 1, 1, -1):
@@ -95,8 +95,8 @@ class MSSSIM(RegressionMetric):
             avg_pool = F.avg_pool3d
         else:
             raise ValueError(
-                f"Input images should be 4-d or 5-d tensors, but \
-                got {x.shape}"
+                f"Input images should be 4-d or 5-d tensors, but "
+                 "got {x.shape}"
             )
 
         if self.weights is None:
@@ -109,14 +109,14 @@ class MSSSIM(RegressionMetric):
         for idx, shape_size in enumerate(x.shape[2:]):
             if shape_size % divisible_by != 0:
                 raise ValueError(
-                    f"Image size needs to be divisible by {divisible_by} but \
-                        dimension {idx + 2} has size {shape_size}"
+                    f"Image size needs to be divisible by {divisible_by} but "
+                        "dimension {idx + 2} has size {shape_size}"
                 )
 
             if shape_size < bigger_than:
                 raise ValueError(
-                    f"Image size should be larger than {bigger_than} due to \
-                        the {len(self.weights) - 1} downsamplings in MS-SSIM."
+                    f"Image size should be larger than {bigger_than} due to "
+                        "the {len(self.weights) - 1} downsamplings in MS-SSIM."
                 )
 
         levels = self.weights.shape[0]
