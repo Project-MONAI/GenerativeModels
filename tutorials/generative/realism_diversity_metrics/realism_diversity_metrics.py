@@ -23,7 +23,7 @@ from monai.networks.layers import Act
 from monai.config import print_config
 from monai.utils import set_determinism
 
-from generative.metrics import FID
+from generative.metrics import FID, MMD, MSSSIM
 from generative.networks.nets import DiffusionModelUNet, PatchDiscriminator, AutoencoderKL
 from generative.networks.schedulers import DDPMScheduler
 from generative.inferers import DiffusionInferer
@@ -61,11 +61,11 @@ def get_features(image):
     # Get model outputs
     with torch.no_grad():
         feature_image = radnet.forward(image)
-        # TODO: FIX ME
-        feature_image = feature_image[:, :, 0, 0]
+        # flattens the image spatially
+        feature_image = spatial_average(feature_image, keepdim=False)
 
     # normalise through channels
-    features_image = normalize_tensor(feature_image)
+    #features_image = normalize_tensor(feature_image)
 
     return feature_image
 
@@ -105,8 +105,6 @@ autoencoderkl = AutoencoderKL(
     attention_levels=(False, False, True),
 )
 autoencoderkl = autoencoderkl.to(device)
-
-
 
 # +
 unet = DiffusionModelUNet(
@@ -158,7 +156,7 @@ val_transforms = transforms.Compose(
 val_ds = Dataset(data=val_datalist, transform=val_transforms)
 val_loader = DataLoader(val_ds, batch_size=64, shuffle=True, num_workers=4)
 
-# ## Get features
+# ## Get features for real data
 
 radnet = torch.hub.load("Warvito/radimagenet-models", model="radimagenet_resnet50", verbose=True)
 radnet.to(device)
@@ -173,9 +171,9 @@ for step, x in pbar:
     features_real = get_features(real_img)
     real_eval_feats.append(features_real.cpu())
     pbar.update()
-# -
 
 real_eval_feats = torch.cat(real_eval_feats, axis=0)
+# -
 
 # ## Generate synthetic images
 
@@ -212,18 +210,74 @@ for image_n in range(3):
     ax[image_n].imshow(syn_image[image_n, 0, :, :].cpu(), cmap="gray")
     ax[image_n].axis("off")
 
-synch_eval_feats2 = torch.cat(synth_eval_feats, axis=0)
-print(synch_eval_feats2.shape, real_eval_feats.shape)
+synch_eval_feats = torch.cat(synth_eval_feats, axis=0)
+print(synch_eval_feats.shape, real_eval_feats.shape)
 
 fid = FID()
-results = fid(real_eval_feats.cpu(), synch_eval_feats2.cpu())
-
+results = fid(real_eval_feats.to(device), synch_eval_feats)
 results.item()
 
-synch_eval_feats2
+# Even when passing the same image, it returns NaNs
+fid = FID()
+results = fid(synch_eval_feats, synch_eval_feats)
+results.item()
 
-plt.imshow(synch_eval_feats2.cpu())
-plt.colorbar()
+# Even when passing the same image, it returns NaNs
+fid = FID()
+results = fid(real_eval_feats.to(device), real_eval_feats.to(device))
+results.item()
 
-plt.imshow(real_eval_feats.cpu())
-plt.colorbar()
+# # Compute MMD
+
+# +
+# Generate a few samples (the 45 for the last batch)
+
+n_synthetic_images = len(real_img)
+syn_image = torch.randn((n_synthetic_images, 1, 64, 64))
+syn_image = syn_image.to(device)
+scheduler.set_timesteps(num_inference_steps=1000)
+
+with torch.no_grad():
+
+    z_mu, z_sigma = autoencoderkl.encode(syn_image)
+    z = autoencoderkl.sampling(z_mu, z_sigma)
+
+    noise = torch.randn_like(z).to(device)
+    syn_image, intermediates = inferer.sample(
+        input_noise=z, diffusion_model=unet, scheduler=scheduler, save_intermediates=True, intermediate_steps=100
+    )
+    syn_image = autoencoderkl.decode(syn_image)
+# -
+
+mmd = MMD()
+mmd(real_img, syn_image)
+
+real_img.shape
+
+syn_image.cpu().shape
+
+# # Compute SSIM
+
+data_range = 1.0
+mssim = MSSSIM(data_range=data_range)
+mssim(real_img, syn_image)
+
+real_img.max()
+
+image1 = torch.ones([3, 3, 144, 144]) / 2
+image2 = torch.ones([3, 3, 144, 144]) / 2
+
+data_range = 1.0
+mssim = MSSSIM(data_range=data_range)
+mssim(image1, image2)
+
+# +
+from generative.metrics import  MSSSIM
+import torch
+
+data_range = torch.ones(1, 3)
+image1 = torch.ones([3, 3, 144, 144]) / 2
+image2 = torch.ones([3, 3, 144, 144]) / 2
+
+mssim = MSSSIM(data_range=data_range)
+mssim(image1, image2)
