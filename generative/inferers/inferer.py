@@ -416,3 +416,52 @@ class LatentDiffusionInferer(DiffusionInferer):
             intermediates = [resizer(x) for x in intermediates]
             outputs = (outputs[0], intermediates)
         return outputs
+
+
+class VQVAETransformerInferer(Inferer):
+    """
+    """
+
+    def __init__(self) -> None:
+        Inferer.__init__(self)
+
+    def __call__(
+        self,
+        inputs: torch.Tensor,
+        vqvae_model: Callable[..., torch.Tensor],
+        transformer_model: Callable[..., torch.Tensor],
+        condition: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """
+        Implements the forward pass for a supervised training iteration.
+
+        Args:
+            inputs: input image to which the latent representation will be extracted and noise is added.
+            vqvae_model: first stage model.
+            transformer_model: transformer model.
+            condition: conditioning for network input.
+        """
+        with torch.no_grad():
+            latent = vqvae_model.encode_stage_2_inputs(inputs)
+
+        prediction = transformer_model(x=latent, context=condition)
+
+        return prediction
+
+    def sample(
+        self,
+        vqvae_model: Callable[..., torch.Tensor],
+        transformer_model: Callable[..., torch.Tensor],
+        conditioning: Optional[torch.Tensor] = None,
+        verbose: Optional[bool] = True,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
+        """
+        Sampling function for the VQVAE + Transformer model.
+
+        Args:
+            vqvae_model: first stage model.
+            transformer_model: model to sample from.
+            conditioning: Conditioning for network input.
+            verbose: if true, prints the progression bar of the sampling process.
+        """
+        pass
