@@ -9,7 +9,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple
+from __future__ import annotations
+
 
 import torch
 import torch.nn as nn
@@ -72,7 +73,7 @@ class PerceptualLoss(nn.Module):
             spatial_axis: spatial axis to obtain the 2D slices.
         """
 
-        def batchify_axis(x: torch.Tensor, fake_3d_perm: Tuple) -> torch.Tensor:
+        def batchify_axis(x: torch.Tensor, fake_3d_perm: tuple) -> torch.Tensor:
             """
             Transform slices from one spatial axis into different instances in the batch.
             """

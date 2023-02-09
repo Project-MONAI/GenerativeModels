@@ -9,7 +9,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+from __future__ import annotations
+
 
 import torch
 import torch.nn as nn
@@ -57,5 +58,5 @@ class DecoderOnlyTransformer(nn.Module):
             ),
         )
 
-    def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, context: torch.Tensor | None = None) -> torch.Tensor:
         return self.model(x, context=context)

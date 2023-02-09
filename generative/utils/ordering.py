@@ -9,7 +9,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple, Union
+from __future__ import annotations
+
 
 import numpy as np
 import torch
@@ -46,11 +47,11 @@ class Ordering:
         self,
         ordering_type: str,
         spatial_dims: int,
-        dimensions: Union[Tuple[int, int, int], Tuple[int, int, int, int]],
-        reflected_spatial_dims: Union[Tuple[bool, bool], Tuple[bool, bool, bool]] = (),
-        transpositions_axes: Union[Tuple[Tuple[int, int], ...], Tuple[Tuple[int, int, int], ...]] = (),
-        rot90_axes: Union[Tuple[Tuple[int, int], ...], Tuple[Tuple[int, int, int], ...]] = (),
-        transformation_order: Tuple[str, ...] = (
+        dimensions: tuple[int, int, int] | tuple[int, int, int, int],
+        reflected_spatial_dims: tuple[bool, bool] | tuple[bool, bool, bool] = (),
+        transpositions_axes: tuple[tuple[int, int], ...] | tuple[tuple[int, int, int], ...] = (),
+        rot90_axes: tuple[tuple[int, int], ...] | tuple[tuple[int, int, int], ...] = (),
+        transformation_order: tuple[str, ...] = (
             OrderingTransformations.TRANSPOSE.value,
             OrderingTransformations.ROTATE_90.value,
             OrderingTransformations.REFLECT.value,

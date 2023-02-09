@@ -29,7 +29,9 @@
 # limitations under the License.
 # =========================================================================
 
-from typing import Any, Optional, Tuple, Union
+from __future__ import annotations
+
+from typing import Any
 
 import numpy as np
 import torch
@@ -122,7 +124,7 @@ class PNDMScheduler(nn.Module):
         self.plms_timesteps = torch.Tensor([])
         self.timesteps = torch.Tensor([])
 
-    def set_timesteps(self, num_inference_steps: int, device: Optional[Union[str, torch.device]] = None) -> None:
+    def set_timesteps(self, num_inference_steps: int, device: str | torch.device | None = None) -> None:
         """
         Sets the discrete timesteps used for the diffusion chain. Supporting function to be run before inference.
 
@@ -170,7 +172,7 @@ class PNDMScheduler(nn.Module):
 
     def step(
         self, model_output: torch.FloatTensor, timestep: int, sample: torch.FloatTensor
-    ) -> Tuple[torch.Tensor, Any]:
+    ) -> tuple[torch.Tensor, Any]:
         """
         Predict the sample at the previous timestep by reversing the SDE. Core function to propagate the diffusion
         process from the learned model outputs (most often the predicted noise).

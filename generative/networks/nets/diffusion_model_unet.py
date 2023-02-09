@@ -29,9 +29,11 @@
 # limitations under the License.
 # =========================================================================
 
+from __future__ import annotations
+
 import importlib.util
 import math
-from typing import List, Optional, Sequence, Tuple, Union
+from typing import Sequence
 
 import torch
 import torch.nn.functional as F
@@ -82,7 +84,7 @@ class CrossAttention(nn.Module):
     def __init__(
         self,
         query_dim: int,
-        cross_attention_dim: Optional[int] = None,
+        cross_attention_dim: int | None = None,
         num_attention_heads: int = 8,
         num_head_channels: int = 64,
         dropout: float = 0.0,
@@ -147,7 +149,7 @@ class CrossAttention(nn.Module):
         x = torch.bmm(attention_probs, value)
         return x
 
-    def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, context: torch.Tensor | None = None) -> torch.Tensor:
         query = self.to_q(x)
         context = context if context is not None else x
         key = self.to_k(context)
@@ -188,7 +190,7 @@ class BasicTransformerBlock(nn.Module):
         num_attention_heads: int,
         num_head_channels: int,
         dropout: float = 0.0,
-        cross_attention_dim: Optional[int] = None,
+        cross_attention_dim: int | None = None,
         upcast_attention: bool = False,
     ) -> None:
         super().__init__()
@@ -212,7 +214,7 @@ class BasicTransformerBlock(nn.Module):
         self.norm2 = nn.LayerNorm(num_channels)
         self.norm3 = nn.LayerNorm(num_channels)
 
-    def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, context: torch.Tensor | None = None) -> torch.Tensor:
         # 1. Self-Attention
         x = self.attn1(self.norm1(x)) + x
 
@@ -252,7 +254,7 @@ class SpatialTransformer(nn.Module):
         dropout: float = 0.0,
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
-        cross_attention_dim: Optional[int] = None,
+        cross_attention_dim: int | None = None,
         upcast_attention: bool = False,
     ) -> None:
         super().__init__()
@@ -298,7 +300,7 @@ class SpatialTransformer(nn.Module):
             )
         )
 
-    def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, context: torch.Tensor | None = None) -> torch.Tensor:
         # note: if no context is given, cross-attention defaults to self-attention
         batch = channel = height = width = depth = -1
         if self.spatial_dims == 2:
@@ -347,7 +349,7 @@ class AttentionBlock(nn.Module):
         self,
         spatial_dims: int,
         num_channels: int,
-        num_head_channels: Optional[int] = None,
+        num_head_channels: int | None = None,
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
     ) -> None:
@@ -482,7 +484,7 @@ class Downsample(nn.Module):
     """
 
     def __init__(
-        self, spatial_dims: int, num_channels: int, use_conv: bool, out_channels: Optional[int] = None, padding: int = 1
+        self, spatial_dims: int, num_channels: int, use_conv: bool, out_channels: int | None = None, padding: int = 1
     ) -> None:
         super().__init__()
         self.num_channels = num_channels
@@ -502,7 +504,7 @@ class Downsample(nn.Module):
             assert self.num_channels == self.out_channels
             self.op = Pool[Pool.AVG, spatial_dims](kernel_size=2, stride=2)
 
-    def forward(self, x: torch.Tensor, emb: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, emb: torch.Tensor | None = None) -> torch.Tensor:
         del emb
         assert x.shape[1] == self.num_channels
         return self.op(x)
@@ -522,7 +524,7 @@ class Upsample(nn.Module):
     """
 
     def __init__(
-        self, spatial_dims: int, num_channels: int, use_conv: bool, out_channels: Optional[int] = None, padding: int = 1
+        self, spatial_dims: int, num_channels: int, use_conv: bool, out_channels: int | None = None, padding: int = 1
     ) -> None:
         super().__init__()
         self.num_channels = num_channels
@@ -541,7 +543,7 @@ class Upsample(nn.Module):
         else:
             self.conv = None
 
-    def forward(self, x: torch.Tensor, emb: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, emb: torch.Tensor | None = None) -> torch.Tensor:
         del emb
         assert x.shape[1] == self.num_channels
 
@@ -582,7 +584,7 @@ class ResnetBlock(nn.Module):
         spatial_dims: int,
         in_channels: int,
         temb_channels: int,
-        out_channels: Optional[int] = None,
+        out_channels: int | None = None,
         up: bool = False,
         down: bool = False,
         norm_num_groups: int = 32,
@@ -745,8 +747,8 @@ class DownBlock(nn.Module):
             self.downsampler = None
 
     def forward(
-        self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+        self, hidden_states: torch.Tensor, temb: torch.Tensor, context: torch.Tensor | None = None
+    ) -> tuple[torch.Tensor, list[torch.Tensor]]:
         del context
         output_states = []
 
@@ -847,8 +849,8 @@ class AttnDownBlock(nn.Module):
             self.downsampler = None
 
     def forward(
-        self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+        self, hidden_states: torch.Tensor, temb: torch.Tensor, context: torch.Tensor | None = None
+    ) -> tuple[torch.Tensor, list[torch.Tensor]]:
         del context
         output_states = []
 
@@ -899,7 +901,7 @@ class CrossAttnDownBlock(nn.Module):
         downsample_padding: int = 1,
         num_head_channels: int = 1,
         transformer_num_layers: int = 1,
-        cross_attention_dim: Optional[int] = None,
+        cross_attention_dim: int | None = None,
         upcast_attention: bool = False,
     ) -> None:
         super().__init__()
@@ -961,8 +963,8 @@ class CrossAttnDownBlock(nn.Module):
             self.downsampler = None
 
     def forward(
-        self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+        self, hidden_states: torch.Tensor, temb: torch.Tensor, context: torch.Tensor | None = None
+    ) -> tuple[torch.Tensor, list[torch.Tensor]]:
         output_states = []
 
         for resnet, attn in zip(self.resnets, self.attentions):
@@ -1028,7 +1030,7 @@ class AttnMidBlock(nn.Module):
         )
 
     def forward(
-        self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
+        self, hidden_states: torch.Tensor, temb: torch.Tensor, context: torch.Tensor | None = None
     ) -> torch.Tensor:
         del context
         hidden_states = self.resnet_1(hidden_states, temb)
@@ -1063,7 +1065,7 @@ class CrossAttnMidBlock(nn.Module):
         norm_eps: float = 1e-6,
         num_head_channels: int = 1,
         transformer_num_layers: int = 1,
-        cross_attention_dim: Optional[int] = None,
+        cross_attention_dim: int | None = None,
         upcast_attention: bool = False,
     ) -> None:
         super().__init__()
@@ -1098,7 +1100,7 @@ class CrossAttnMidBlock(nn.Module):
         )
 
     def forward(
-        self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
+        self, hidden_states: torch.Tensor, temb: torch.Tensor, context: torch.Tensor | None = None
     ) -> torch.Tensor:
         hidden_states = self.resnet_1(hidden_states, temb)
         hidden_states = self.attention(hidden_states, context=context)
@@ -1179,9 +1181,9 @@ class UpBlock(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        res_hidden_states_list: List[torch.Tensor],
+        res_hidden_states_list: list[torch.Tensor],
         temb: torch.Tensor,
-        context: Optional[torch.Tensor] = None,
+        context: torch.Tensor | None = None,
     ) -> torch.Tensor:
         del context
         for resnet in self.resnets:
@@ -1284,9 +1286,9 @@ class AttnUpBlock(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        res_hidden_states_list: List[torch.Tensor],
+        res_hidden_states_list: list[torch.Tensor],
         temb: torch.Tensor,
-        context: Optional[torch.Tensor] = None,
+        context: torch.Tensor | None = None,
     ) -> torch.Tensor:
         del context
         for resnet, attn in zip(self.resnets, self.attentions):
@@ -1339,7 +1341,7 @@ class CrossAttnUpBlock(nn.Module):
         resblock_updown: bool = False,
         num_head_channels: int = 1,
         transformer_num_layers: int = 1,
-        cross_attention_dim: Optional[int] = None,
+        cross_attention_dim: int | None = None,
         upcast_attention: bool = False,
     ) -> None:
         super().__init__()
@@ -1400,9 +1402,9 @@ class CrossAttnUpBlock(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        res_hidden_states_list: List[torch.Tensor],
+        res_hidden_states_list: list[torch.Tensor],
         temb: torch.Tensor,
-        context: Optional[torch.Tensor] = None,
+        context: torch.Tensor | None = None,
     ) -> torch.Tensor:
         for resnet, attn in zip(self.resnets, self.attentions):
             # pop res hidden states
@@ -1433,7 +1435,7 @@ def get_down_block(
     with_cross_attn: bool,
     num_head_channels: int,
     transformer_num_layers: int,
-    cross_attention_dim: Optional[int],
+    cross_attention_dim: int | None,
     upcast_attention: bool = False,
 ) -> nn.Module:
     if with_attn:
@@ -1488,7 +1490,7 @@ def get_mid_block(
     with_conditioning: bool,
     num_head_channels: int,
     transformer_num_layers: int,
-    cross_attention_dim: Optional[int],
+    cross_attention_dim: int | None,
     upcast_attention: bool = False,
 ) -> nn.Module:
     if with_conditioning:
@@ -1529,7 +1531,7 @@ def get_up_block(
     with_cross_attn: bool,
     num_head_channels: int,
     transformer_num_layers: int,
-    cross_attention_dim: Optional[int],
+    cross_attention_dim: int | None,
     upcast_attention: bool = False,
 ) -> nn.Module:
     if with_attn:
@@ -1614,11 +1616,11 @@ class DiffusionModelUNet(nn.Module):
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
         resblock_updown: bool = False,
-        num_head_channels: Union[int, Sequence[int]] = 8,
+        num_head_channels: int | Sequence[int] = 8,
         with_conditioning: bool = False,
         transformer_num_layers: int = 1,
-        cross_attention_dim: Optional[int] = None,
-        num_class_embeds: Optional[int] = None,
+        cross_attention_dim: int | None = None,
+        num_class_embeds: int | None = None,
         upcast_attention: bool = False,
     ) -> None:
         super().__init__()
@@ -1775,8 +1777,8 @@ class DiffusionModelUNet(nn.Module):
         self,
         x: torch.Tensor,
         timesteps: torch.Tensor,
-        context: Optional[torch.Tensor] = None,
-        class_labels: Optional[torch.Tensor] = None,
+        context: torch.Tensor | None = None,
+        class_labels: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -1808,7 +1810,7 @@ class DiffusionModelUNet(nn.Module):
         # 4. down
         if context is not None and self.with_conditioning is False:
             raise ValueError("model should have with_conditioning = True if context is provided")
-        down_block_res_samples: List[torch.Tensor] = [h]
+        down_block_res_samples: list[torch.Tensor] = [h]
         for downsample_block in self.down_blocks:
             h, res_samples = downsample_block(hidden_states=h, temb=emb, context=context)
             for residual in res_samples:

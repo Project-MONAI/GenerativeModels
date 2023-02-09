@@ -8,7 +8,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List, Optional, Union
+from __future__ import annotations
+
 
 import torch
 import torch.nn.functional as F
@@ -45,13 +46,13 @@ class MSSSIM(RegressionMetric):
 
     def __init__(
         self,
-        data_range: Union[torch.Tensor, float],
+        data_range: torch.Tensor | float,
         win_size: int = 7,
         k1: float = 0.01,
         k2: float = 0.03,
         spatial_dims: int = 2,
-        weights: Optional[List] = None,
-        reduction: Union[MetricReduction, str] = MetricReduction.MEAN,
+        weights: list | None = None,
+        reduction: MetricReduction | str = MetricReduction.MEAN,
     ) -> None:
         super().__init__()
 
@@ -114,7 +115,7 @@ class MSSSIM(RegressionMetric):
                 )
 
         levels = self.weights.shape[0]
-        mcs_list: List[torch.Tensor] = []
+        mcs_list: list[torch.Tensor] = []
         for i in range(levels):
             ssim, cs = self.SSIM._compute_metric_and_contrast(x, y)
 
