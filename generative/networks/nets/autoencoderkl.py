@@ -311,7 +311,7 @@ class Encoder(nn.Module):
         in_channels: int,
         num_channels: Sequence[int],
         out_channels: int,
-        num_res_blocks: int,
+        num_res_blocks: Sequence[int],
         norm_num_groups: int,
         norm_eps: float,
         attention_levels: Sequence[bool],
@@ -348,7 +348,7 @@ class Encoder(nn.Module):
             output_channel = num_channels[i]
             is_final_block = i == len(num_channels) - 1
 
-            for _ in range(self.num_res_blocks):
+            for _ in range(self.num_res_blocks[i]):
                 blocks.append(
                     ResBlock(
                         spatial_dims=spatial_dims,
@@ -447,7 +447,7 @@ class Decoder(nn.Module):
         num_channels: Sequence[int],
         in_channels: int,
         out_channels: int,
-        num_res_blocks: int,
+        num_res_blocks: Sequence[int],
         norm_num_groups: int,
         norm_eps: float,
         attention_levels: Sequence[bool],
@@ -509,13 +509,14 @@ class Decoder(nn.Module):
             )
 
         reversed_attention_levels = list(reversed(attention_levels))
+        reversed_num_res_blocks = list(reversed(num_res_blocks))
         block_out_ch = reversed_block_out_channels[0]
         for i in range(len(reversed_block_out_channels)):
             block_in_ch = block_out_ch
             block_out_ch = reversed_block_out_channels[i]
             is_final_block = i == len(num_channels) - 1
 
-            for _ in range(self.num_res_blocks):
+            for _ in range(reversed_num_res_blocks[i]):
                 blocks.append(
                     ResBlock(
                         spatial_dims=spatial_dims,
@@ -586,7 +587,7 @@ class AutoencoderKL(nn.Module):
         spatial_dims: int,
         in_channels: int = 1,
         out_channels: int = 1,
-        num_res_blocks: int = 2,
+        num_res_blocks: Sequence[int] | int = (2, 2, 2, 2),
         num_channels: Sequence[int] = (32, 64, 64, 64),
         attention_levels: Sequence[bool] = (False, False, True, True),
         latent_channels: int = 3,
@@ -603,6 +604,12 @@ class AutoencoderKL(nn.Module):
 
         if len(num_channels) != len(attention_levels):
             raise ValueError("AutoencoderKL expects num_channels being same size of attention_levels")
+
+        if isinstance(num_res_blocks, int):
+            num_res_blocks = (num_res_blocks,) * len(num_channels)
+
+        if len(num_res_blocks) != len(num_channels):
+            raise ValueError("num_res_blocks should have the same length as num_channels.")
 
         self.encoder = Encoder(
             spatial_dims=spatial_dims,
