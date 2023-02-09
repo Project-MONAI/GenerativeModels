@@ -6,9 +6,9 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.14.1
+#       jupytext_version: 1.14.4
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: Python 3 (ipykernel)
 #     language: python
 #     name: python3
 # ---
@@ -20,15 +20,17 @@
 #
 #
 # [1] - Wolleb et al. "Diffusion Models for Medical Anomaly Detection" https://arxiv.org/abs/2203.04306
-
+#
 #
 # TODO: Add Open in Colab
 #
 # ## Setup environment
 
 # %%
+# !python /home/juliawolleb/PycharmProjects/MONAI/GenerativeModels/setup.py install
 # !python -c "import monai" || pip install -q "monai-weekly[pillow, tqdm, einops]"
 # !python -c "import matplotlib" || pip install -q matplotlib
+# !python -c "import seaborn" || pip install -q seaborn
 # %matplotlib inline
 
 # %% [markdown]
@@ -49,13 +51,14 @@ import os
 import shutil
 import tempfile
 import time
-
+import os
 import matplotlib.pyplot as plt
+import seaborn
 import numpy as np
 import torch
 import torch.nn.functional as F
 from monai import transforms
-from monai.apps import MedNISTDataset
+from monai.apps import MedNISTDataset, DecathlonDataset
 from monai.config import print_config
 from monai.data import CacheDataset, DataLoader
 from monai.utils import first, set_determinism
@@ -65,18 +68,25 @@ from tqdm import tqdm
 from generative.inferers import DiffusionInferer
 
 # TODO: Add right import reference after deployed
-from generative.networks.nets import DiffusionModelUNet
-from generative.schedulers import DDPMScheduler
+from generative.networks.nets.diffusion_model_unet import DiffusionModelUNet, DiffusionModelEncoder
 
+from generative.networks.schedulers.ddpm import DDPMScheduler
+from generative.networks.schedulers.ddim import DDIMScheduler
 print_config()
+
+train=False
+
 
 # %% [markdown]
 # ## Setup data directory
 
 # %% jupyter={"outputs_hidden": false}
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
-root_dir = tempfile.mkdtemp() if directory is None else directory
-print(root_dir)
+#root_dir = tempfile.mkdtemp() if directory is None else directory
+root_dir='/home/juliawolleb/PycharmProjects/MONAI/val_brats'
+root_dir_val='/home/juliawolleb/PycharmProjects/MONAI/val_brats'
+
+print(root_dir, root_dir_val)
 
 # %% [markdown]
 # ## Set deterministic training for reproducibility
@@ -85,17 +95,71 @@ print(root_dir)
 set_determinism(42)
 
 # %% [markdown]
-# ## Setup MedNIST Dataset and training and validation dataloaders
-# In this tutorial, we will train our models on the MedNIST dataset available on MONAI
-# (https://docs.monai.io/en/stable/apps.html#monai.apps.MedNISTDataset).
-# Here, we will use the "Hand" and "HeadCT", where our conditioning variable `class` will specify the modality.
+# ## Setup BRATS Dataset for 2D slices  and training and validation dataloaders
+# As baseline, we use the load_2d_brats.ipynb written by Pedro in issue 150
 
 # %% jupyter={"outputs_hidden": false}
-train_data = MedNISTDataset(root_dir=root_dir, section="training", download=True, progress=False, seed=0)
-train_datalist = []
-for item in train_data.data:
-    if item["class_name"] in ["Hand", "HeadCT"]:
-        train_datalist.append({"image": item["image"], "class": 1 if item["class_name"] == "Hand" else 2})
+
+
+batch_size = 2
+channel = 0  # 0 = Flair
+assert channel in [0, 1, 2, 3], "Choose a valid channel"
+
+train_transforms = transforms.Compose(
+    [
+        transforms.LoadImaged(keys=["image","label"]),
+        transforms.EnsureChannelFirstd(keys=["image","label"]),
+        transforms.Lambdad(keys=["image"], func=lambda x: x[channel, :, :, :]),
+        transforms.AddChanneld(keys=["image"]),
+        transforms.EnsureTyped(keys=["image","label"]),
+        transforms.Orientationd(keys=["image","label"], axcodes="RAS"),
+        transforms.Spacingd(
+            keys=["image","label"],
+            pixdim=(3.0, 3.0, 2.0),
+            mode=("bilinear", "nearest"),
+        ),
+        transforms.CenterSpatialCropd(keys=["image","label"], roi_size=(64, 64, 64)),
+        transforms.ScaleIntensityRangePercentilesd(keys="image", lower=0, upper=99.5, b_min=0, b_max=1),
+        transforms.CopyItemsd(keys=["label"], times=1, names=["slice_label"]),
+        transforms.Lambdad(keys=["slice_label"], func=lambda x: (x.reshape(x.shape[0], -1, x.shape[-1]).sum(1) > 0 ).float().squeeze()),
+    ]
+)
+print('download training set')
+train_ds = DecathlonDataset(
+    root_dir=root_dir,
+    task="Task01_BrainTumour",
+    section="training",  # validation
+    cache_rate=0.0,  # you may need a few Gb of RAM... Set to 0 otherwise
+    num_workers=4,
+    download=False,  # Set download to True if the dataset hasnt been downloaded yet
+    seed=0,
+    transform=train_transforms,
+)
+nb_3D_images_to_mix =20
+train_loader_3D = DataLoader(train_ds, batch_size=nb_3D_images_to_mix, shuffle=True, num_workers=4)
+
+print(f'Image shape {train_ds[0]["image"].shape}')
+
+
+
+print('download val set')
+
+# %%
+
+val_ds = DecathlonDataset(
+    root_dir=root_dir_val,
+    task="Task01_BrainTumour",
+    section="validation",  # validation
+    cache_rate=0.0,  # you may need a few Gb of RAM... Set to 0 otherwise
+    num_workers=4,
+    download=False,  # Set download to True if the dataset hasnt been downloaded yet
+    seed=0,
+    transform=train_transforms,
+)
+val_loader_3D = DataLoader(val_ds, batch_size=2, shuffle=True, num_workers=4)
+print(f'Image shape {val_ds[0]["image"].shape}')
+
+
 
 # %% [markdown]
 # Here we use transforms to augment the training dataset, as usual:
@@ -105,74 +169,53 @@ for item in train_data.data:
 # 1. `ScaleIntensityRanged` extracts intensity range [0, 255] and scales to [0, 1].
 # 1. `RandAffined` efficiently performs rotate, scale, shear, translate, etc. together based on PyTorch affine transform.
 #
-# ### Classifier-free guidance during training
 #
-# In order to use the classifier-free guidance during training time, we need to not just have the `class` variable saying the modality of the image (`1` for Hands and `2` for HeadCTs) but we also need to train the model with an "unconditional" class.
-# Here we specify the "unconditional" class with the value `-1` with a probability of training on unconditional being 15%. Specified in the following line using MONAI's RandLambdad:
-#
-# `transforms.RandLambdad(keys=["class"], prob=0.15, func=lambda x: -1 * torch.ones_like(x))`
-#
-# Finally, our conditioning variable need to have the format (batch_size, 1, cross_attention_dim) when feeding into the model. For this reason, we use Lambdad to reshape our variables in the right format.
-
-# %% jupyter={"outputs_hidden": false}
-train_transforms = transforms.Compose(
-    [
-        transforms.LoadImaged(keys=["image"]),
-        transforms.EnsureChannelFirstd(keys=["image"]),
-        transforms.ScaleIntensityRanged(keys=["image"], a_min=0.0, a_max=255.0, b_min=0.0, b_max=1.0, clip=True),
-        transforms.RandAffined(
-            keys=["image"],
-            rotate_range=[(-np.pi / 36, np.pi / 36), (-np.pi / 36, np.pi / 36)],
-            translate_range=[(-1, 1), (-1, 1)],
-            scale_range=[(-0.05, 0.05), (-0.05, 0.05)],
-            spatial_size=[64, 64],
-            padding_mode="zeros",
-            prob=0.5,
-        ),
-        transforms.RandLambdad(keys=["class"], prob=0.15, func=lambda x: -1 * torch.ones_like(x)),
-        transforms.Lambdad(
-            keys=["class"], func=lambda x: torch.tensor(x, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-        ),
-    ]
-)
-train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
-train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=4, persistent_workers=True)
-
-# %% jupyter={"outputs_hidden": false}
-val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, progress=False, seed=0)
-val_datalist = []
-for item in val_data.data:
-    if item["class_name"] in ["Hand", "HeadCT"]:
-        val_datalist.append({"image": item["image"], "class": 1 if item["class_name"] == "Hand" else 2})
-
-
-val_transforms = transforms.Compose(
-    [
-        transforms.LoadImaged(keys=["image"]),
-        transforms.EnsureChannelFirstd(keys=["image"]),
-        transforms.ScaleIntensityRanged(keys=["image"], a_min=0.0, a_max=255.0, b_min=0.0, b_max=1.0, clip=True),
-        transforms.Lambdad(
-            keys=["class"], func=lambda x: torch.tensor(x, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-        ),
-    ]
-)
-val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
-val_loader = DataLoader(val_ds, batch_size=128, shuffle=False, num_workers=4, persistent_workers=True)
 
 # %% [markdown]
 # ### Visualisation of the training images
 
 # %% jupyter={"outputs_hidden": false}
-check_data = first(train_loader)
-print(f"batch shape: {check_data['image'].shape}")
-image_visualisation = torch.cat(
-    [check_data["image"][0, 0], check_data["image"][1, 0], check_data["image"][2, 0], check_data["image"][3, 0]], dim=1
-)
+
+
+from typing import Dict
+def get_batched_2d_axial_slices(data : Dict):
+    images_3D = data['image']
+    batched_2d_slices = torch.cat(images_3D.split(1, dim = -1), 0).squeeze(-1) # images_3D.view(images_3D.shape[0]*images_3D.shape[-1],*images_3D.shape[1:-1])
+    slice_label = data['slice_label']
+    #slice_label = (mask_label.reshape(mask_label.shape[0], -1, mask_label.shape[-1]).sum(1) > 0 ).float()
+    slice_label = torch.cat(slice_label.split(1, dim = -1),0).squeeze()
+    return batched_2d_slices, slice_label
+print('check data')
+
+if train==True:
+    check_data = first(train_loader_3D)
+    batched_2d_slices, slice_label = get_batched_2d_axial_slices(check_data)
+    idx = list(torch.randperm(batched_2d_slices.shape[0]))
+    print('idx', len(idx))
+    print(f"Batch shape: {batched_2d_slices.shape}")
+    print(f"Slices class: {slice_label[idx][slices].view(-1)}")
+    subset_2D = zip(batched_2d_slices.split(batch_size), slice_label.split(batch_size))  #
+
+check_data_val = first(val_loader_3D)
+batched_2d_slices_val, slice_label_val = get_batched_2d_axial_slices(check_data_val)
+
+
+
+idx_val=list(torch.randperm(batched_2d_slices_val.shape[0]))
+slices = [0,30,45,63]
+
+image_visualisation = torch.cat(batched_2d_slices_val[idx_val][slices].squeeze().split(1), dim=2).squeeze()
 plt.figure("training images", (12, 6))
 plt.imshow(image_visualisation, vmin=0, vmax=1, cmap="gray")
 plt.axis("off")
 plt.tight_layout()
 plt.show()
+
+# %%
+
+subset_2D_val = zip(batched_2d_slices_val.split(1),slice_label_val.split(1))#
+
+
 
 # %% [markdown]
 # ### Define network, scheduler, optimizer, and inferer
@@ -198,104 +241,245 @@ model = DiffusionModelUNet(
     attention_levels=(False, False, True),
     num_res_blocks=1,
     num_head_channels=64,
-    with_conditioning=True,
-    cross_attention_dim=1,
+    with_conditioning=False,
+  #  cross_attention_dim=1,
 )
 model.to(device)
 
-scheduler = DDPMScheduler(
+scheduler = DDIMScheduler(
     num_train_timesteps=1000,
 )
 
 optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
 
 inferer = DiffusionInferer(scheduler)
-# %% [markdown]
-# ### Model training
-# Here, we are training our model for 75 epochs (training time: ~50 minutes).
+# %% [markdown] tags=[]
+# ### Model training of the Diffusion Model
+# Here, we are training our diffusion model for 75 epochs (training time: ~50 minutes).
 
 # %% jupyter={"outputs_hidden": false}
-n_epochs = 75
-val_interval = 5
+n_epochs =100
+val_interval = 1
 epoch_loss_list = []
 val_epoch_loss_list = []
 
-scaler = GradScaler()
-total_start = time.time()
-for epoch in range(n_epochs):
-    model.train()
-    epoch_loss = 0
-    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=70)
-    progress_bar.set_description(f"Epoch {epoch}")
-    for step, batch in progress_bar:
-        images = batch["image"].to(device)
-        classes = batch["class"].to(device)
-        optimizer.zero_grad(set_to_none=True)
+if train==False:
+    model.load_state_dict(torch.load("./model.pt", map_location={'cuda:0': 'cpu'}))
+else:
+    scaler = GradScaler()
+    total_start = time.time()
+    for epoch in range(n_epochs):
+        model.train()
+        epoch_loss = 0
+        subset_2D = zip(batched_2d_slices.split(batch_size), slice_label.split(batch_size))
+        subset_2D_val = zip(batched_2d_slices_val.split(1), slice_label.split(1))  #
 
-        with autocast(enabled=True):
-            # Generate random noise
-            noise = torch.randn_like(images).to(device)
+        progress_bar = tqdm(enumerate(subset_2D), total=len(idx), ncols=10)
+        progress_bar.set_description(f"Epoch {epoch}")
+        for step, (a,b) in progress_bar:
+            print('step', step, a.shape, b.shape, b)
+            images = a.to(device)
+            classes = b.to(device)
+            optimizer.zero_grad(set_to_none=True)
+            timesteps = torch.randint(0, 1000, (len(images),)).to(device)
 
-            # Get model prediction
-            noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, condition=classes)
+            with autocast(enabled=True):
+                # Generate random noise
+                noise = torch.randn_like(images).to(device)
 
-            loss = F.mse_loss(noise_pred.float(), noise.float())
+                # Get model prediction
+                noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)  #remove the class conditioning
 
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
+                loss = F.mse_loss(noise_pred.float(), noise.float())
 
-        epoch_loss += loss.item()
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
 
-        progress_bar.set_postfix(
-            {
-                "loss": epoch_loss / (step + 1),
-            }
-        )
-    epoch_loss_list.append(epoch_loss / (step + 1))
+            epoch_loss += loss.item()
 
-    if (epoch + 1) % val_interval == 0:
-        model.eval()
-        val_epoch_loss = 0
-        for step, batch in enumerate(val_loader):
-            images = batch["image"].to(device)
-            classes = batch["class"].to(device)
-            with torch.no_grad():
-                with autocast(enabled=True):
-                    noise = torch.randn_like(images).to(device)
-                    noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, condition=classes)
-                    val_loss = F.mse_loss(noise_pred.float(), noise.float())
-
-            val_epoch_loss += val_loss.item()
             progress_bar.set_postfix(
                 {
-                    "val_loss": val_epoch_loss / (step + 1),
+                    "loss": epoch_loss / (step + 1),
                 }
             )
-        val_epoch_loss_list.append(val_epoch_loss / (step + 1))
+        epoch_loss_list.append(epoch_loss / (step + 1))
 
-total_time = time.time() - total_start
-print(f"train completed, total time: {total_time}.")
+        if (epoch) % val_interval == 0:
+            model.eval()
+            val_epoch_loss = 0
+            progress_bar_val = tqdm(enumerate(subset_2D_val), total=len(idx_val), ncols=70)
+            progress_bar.set_description(f"Epoch {epoch}")
+            for    step, (a, b) in progress_bar_val:
+                images = a.to(device)
+                classes = b.to(device)
+                timesteps = torch.randint(0, 1000, (len(images),)).to(device)#torch.from_numpy(np.arange(0, 1000)[::-1].copy())
+
+                with torch.no_grad():
+                    with autocast(enabled=True):
+                        noise = torch.randn_like(images).to(device)
+                        noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
+                        val_loss = F.mse_loss(noise_pred.float(), noise.float())
+
+                val_epoch_loss += val_loss.item()
+                progress_bar.set_postfix(
+                    {
+                        "val_loss": val_epoch_loss / (step + 1),
+                    }
+                )
+            val_epoch_loss_list.append(val_epoch_loss / (step + 1))
+
+    total_time = time.time() - total_start
+    print(f"train diffusion completed, total time: {total_time}.")
+
+    plt.style.use("seaborn-bright")
+    plt.title("Learning Curves Diffusion Model", fontsize=20)
+    plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, color="C0", linewidth=2.0, label="Train")
+    plt.plot(
+        np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
+        val_epoch_loss_list,
+        color="C1",
+        linewidth=2.0,
+        label="Validation",
+    )
+    plt.yticks(fontsize=12)
+    plt.xticks(fontsize=12)
+    plt.xlabel("Epochs", fontsize=16)
+    plt.ylabel("Loss", fontsize=16)
+    plt.legend(prop={"size": 14})
+    #plt.show()
+    #torch.save(model.state_dict(), "./model.pt")
+
+
+# %%
+### Model training of the Classification Model
+#Here, we are training our binary classification model for 5 epochs.
+
+# %%
+## First, we define the classification model
+
+
+# %%
+classifier = DiffusionModelEncoder(
+    spatial_dims=2,
+    in_channels=1,
+    out_channels=1,
+    num_channels=(64, 64, 64),
+   # attention_levels=(False, False, True),
+    num_res_blocks=1,
+    num_head_channels=64,
+    with_conditioning=False,
+  #  cross_attention_dim=1,
+)
+classifier.to(device)
+batch_size=6
+
+
+# %%
+n_epochs = 100
+val_interval = 1
+epoch_loss_list = []
+val_epoch_loss_list = []
+optimizer = torch.optim.Adam(params=classifier.parameters(), lr=2.5e-5)
+
+classifier.to(device)
+
+
+if train==False:
+    classifier.load_state_dict(torch.load("./classifier.pt", map_location={'cuda:0': 'cpu'}))
+else:
+    scaler = GradScaler()
+    total_start = time.time()
+    for epoch in range(n_epochs):
+        classifier.train()
+        epoch_loss = 0
+        subset_2D = zip(batched_2d_slices.split(batch_size), slice_label.split(batch_size))
+        subset_2D_val = zip(batched_2d_slices_val.split(1), slice_label.split(1))  #
+        progress_bar = tqdm(enumerate(subset_2D), total=len(idx), ncols=20)
+        progress_bar.set_description(f"Epoch {epoch}")
+
+
+        for step, (a,b) in progress_bar:
+            images = a.to(device)
+            classes = b.to(device)
+            optimizer.zero_grad(set_to_none=True)
+            timesteps = torch.randint(0, 1000, (len(images),)).to(device)
+
+            with autocast(enabled=True):
+                # Generate random noise
+                noise = 0*torch.randn_like(images).to(device)
+
+                # Get model prediction
+               # pred=classifier(images)
+
+                pred = inferer(inputs=images, diffusion_model=classifier, noise=noise, timesteps=timesteps)  #remove the class conditioning
+                print('pred', pred)
+              #  noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)  #remove the class conditioning
+                loss = F.binary_cross_entropy_with_logits(pred[:,0].float(), classes.float())
+                print('loss', loss)
+            #scaler.scale(loss).backward()
+           # scaler.step(optimizer)
+            loss.backward()
+            optimizer.step()
+            #scaler.update()
+
+            epoch_loss += loss.item()
+
+            progress_bar.set_postfix(
+                {
+                    "loss": epoch_loss / (step + 1),
+                }
+            )
+        epoch_loss_list.append(epoch_loss / (step + 1))
+
+        if (epoch + 1) % val_interval == 0:
+            classifier.eval()
+            val_epoch_loss = 0
+            progress_bar = tqdm(enumerate(subset_2D_val), total=len(idx), ncols=70)
+            progress_bar.set_description(f"Epoch {epoch}")
+            for step, (a,b) in progress_bar:
+                images = a.to(device)
+                classes = b.to(device)
+
+                timesteps = torch.randint(0, 1000, (len(images),)).to(device)#torch.from_numpy(np.arange(0, 1000)[::-1].copy())
+
+                with torch.no_grad():
+                    with autocast(enabled=True):
+                        noise = 0*torch.randn_like(images).to(device)
+                        pred = inferer(inputs=images, diffusion_model=classifier, noise=noise, timesteps=timesteps)
+                        val_loss = F.binary_cross_entropy_with_logits(pred[:,0].float(), classes.float())
+
+                val_epoch_loss += val_loss.item()
+                progress_bar.set_postfix(
+                    {
+                        "val_loss": val_epoch_loss / (step + 1),
+                    }
+                )
+            val_epoch_loss_list.append(val_epoch_loss / (step + 1))
+
+    total_time = time.time() - total_start
+    print(f"train completed, total time: {total_time}.")
+ #   torch.save(classifier.state_dict(), "./classifier.pt")
 # %% [markdown]
 # ### Learning curves
 
 # %% jupyter={"outputs_hidden": false}
-plt.style.use("seaborn-v0_8")
-plt.title("Learning Curves", fontsize=20)
-plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, color="C0", linewidth=2.0, label="Train")
-plt.plot(
-    np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
-    val_epoch_loss_list,
-    color="C1",
-    linewidth=2.0,
-    label="Validation",
-)
-plt.yticks(fontsize=12)
-plt.xticks(fontsize=12)
-plt.xlabel("Epochs", fontsize=16)
-plt.ylabel("Loss", fontsize=16)
-plt.legend(prop={"size": 14})
-plt.show()
+    plt.style.use("seaborn-bright")
+    plt.title("Learning Curves", fontsize=20)
+    plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, color="C0", linewidth=2.0, label="Train")
+    plt.plot(
+        np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
+        val_epoch_loss_list,
+        color="C1",
+        linewidth=2.0,
+        label="Validation",
+    )
+    plt.yticks(fontsize=12)
+    plt.xticks(fontsize=12)
+    plt.xlabel("Epochs", fontsize=16)
+    plt.ylabel("Loss", fontsize=16)
+    plt.legend(prop={"size": 14})
+    #plt.show()
 
 # %% [markdown]
 # ### Sampling process with classifier-free guidance
@@ -304,22 +488,41 @@ plt.show()
 
 # %% jupyter={"outputs_hidden": false}
 model.eval()
-guidance_scale = 7.0
+guidance_scale = 0
 conditioning = torch.cat([-1 * torch.ones(1, 1, 1).float(), torch.ones(1, 1, 1).float()], dim=0).to(device)
 
-noise = torch.randn((1, 1, 64, 64))
+# %% [markdown]
+# ### Pick an input slice to be transformed
+
+inputimg = batched_2d_slices_val[50][0,...]
+plt.figure("input")
+plt.imshow(inputimg, vmin=0, vmax=1, cmap="gray")
+plt.axis("off")
+plt.tight_layout()
+plt.show()
+
+
+noise = inputimg[None,None,...]#torch.randn((1, 1, 64, 64))
 noise = noise.to(device)
 scheduler.set_timesteps(num_inference_steps=1000)
-progress_bar = tqdm(scheduler.timesteps)
-for t in progress_bar:
+L=20
+progress_bar = tqdm(range(L))   #go back and forth L timesteps
+
+
+
+for t in progress_bar:  #go through the noising process
+    print('t noising', t)
+
     with autocast(enabled=True):
         with torch.no_grad():
-            noise_input = torch.cat([noise] * 2)
-            model_output = model(noise_input, timesteps=torch.Tensor((t,)).to(noise.device), context=conditioning)
-            noise_pred_uncond, noise_pred_text = model_output.chunk(2)
-            noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
 
-    noise, _ = scheduler.step(noise_pred, t, noise)
+            noise_input = noise
+            print('inputshape', noise_input.shape)
+            model_output = model(noise_input, timesteps=torch.Tensor((t,)).to(noise.device))
+          #  noise_pred_uncond, noise_pred_text = model_output.chunk(2)    #this is supposed to be epsilon
+            noise_pred = model_output  #this is supposed to be epsilon
+
+    noise, _ = scheduler.reversed_step(noise_pred, t, noise)
 
 plt.style.use("default")
 plt.imshow(noise[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
@@ -327,11 +530,59 @@ plt.tight_layout()
 plt.axis("off")
 plt.show()
 
+
+def cond_fn(x, t, y=None):  #compute the gradient
+    assert y is not None
+    with torch.enable_grad():
+        x_in = x.detach().requires_grad_(True)
+        logits = classifier(x_in, t)
+        log_probs = F.log_softmax(logits, dim=-1)
+        selected = log_probs[range(len(logits)), y.view(-1)]
+        a = th.autograd.grad(selected.sum(), x_in)[0]
+        return a, a * args.classifier_scale
+#desired class
+y=torch.tensor(0)
+scale=100
+
+for i in progress_bar:  #go through the denoising process
+    t=L-i
+    print('t denoising', t)
+    with autocast(enabled=True):
+        with torch.enable_grad():
+            noise_input = noise
+            print('inputshape', noise_input.shape)
+            model_output = model(noise_input, timesteps=torch.Tensor((t,)).to(noise.device))
+
+            x_in = noise_input.detach().requires_grad_(True)
+
+            logits = classifier(x_in, timesteps=torch.Tensor((t,)).to(noise.device))
+            print('logits', logits)
+            log_probs = F.log_softmax(logits, dim=-1)
+            selected = log_probs[range(len(logits)), y.view(-1)]
+            a = torch.autograd.grad(selected.sum(), x_in)[0]
+            #  noise_pred_uncond, noise_pred_text = model_output.chunk(2)    #this is supposed to be epsilon
+            noise_pred = model_output  # this is supposed to be epsilon
+            updated_noise=noise_pred - scale*a
+
+    noise, _ = scheduler.step(updated_noise, t, noise)
+
+plt.style.use("default")
+plt.imshow(noise[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
+plt.tight_layout()
+plt.axis("off")
+plt.show()
+
+
+diff=inputimg.cpu()-noise[0, 0].cpu()
+plt.style.use("default")
+plt.imshow(diff, cmap="jet")
+plt.tight_layout()
+plt.axis("off")
+plt.show()
 # %% [markdown]
 # ### Cleanup data directory
 #
 # Remove directory if a temporary was used.
 
 # %%
-if directory is None:
-    shutil.rmtree(root_dir)
+

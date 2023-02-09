@@ -38,7 +38,7 @@ from monai.networks.blocks import Convolution
 from monai.networks.layers.factories import Pool
 from torch import nn
 
-__all__ = ["DiffusionModelUNet"]
+__all__ = ["DiffusionModelEncoder"]
 
 
 def zero_module(module: nn.Module) -> nn.Module:
@@ -1420,7 +1420,7 @@ def get_up_block(
         )
 
 
-class DiffusionModelUNet(nn.Module):
+class DiffusionModelEncoder(nn.Module):
     """
     Unet network with timestep embedding and attention mechanisms for conditioning based on
     Rombach et al. "High-Resolution Image Synthesis with Latent Diffusion Models" https://arxiv.org/abs/2112.10752
@@ -1641,247 +1641,8 @@ class DiffusionModelUNet(nn.Module):
             h, res_samples = downsample_block(hidden_states=h, temb=emb, context=context)
             for residual in res_samples:
                 down_block_res_samples.append(residual)
-
-        # 5. mid
-        h = self.middle_block(hidden_states=h, temb=emb, context=context)
-
-        # 6. up
-        for upsample_block in self.up_blocks:
-            res_samples = down_block_res_samples[-len(upsample_block.resnets) :]
-            down_block_res_samples = down_block_res_samples[: -len(upsample_block.resnets)]
-            h = upsample_block(hidden_states=h, res_hidden_states_list=res_samples, temb=emb, context=context)
-
-        # 7. output block
-        h = self.out(h)
-
-        return h
-
-    
-    
-class DiffusionModelEncoder(nn.Module):
-    """
-    Unet network with timestep embedding and attention mechanisms for conditioning based on
-    Rombach et al. "High-Resolution Image Synthesis with Latent Diffusion Models" https://arxiv.org/abs/2112.10752
-    and Pinaya et al. "Brain Imaging Generation with Latent Diffusion Models" https://arxiv.org/abs/2209.07162
-
-    Args:
-        spatial_dims: number of spatial dimensions.
-        in_channels: number of input channels.
-        out_channels: number of output channels.
-        num_res_blocks: number of residual blocks (see ResnetBlock) per level.
-        num_channels: tuple of block output channels.
-        attention_levels: list of levels to add attention.
-        norm_num_groups: number of groups for the normalization.
-        norm_eps: epsilon for the normalization.
-        num_head_channels: number of channels in each attention head.
-        with_conditioning: if True add spatial transformers to perform conditioning.
-        transformer_num_layers: number of layers of Transformer blocks to use.
-        cross_attention_dim: number of context dimensions to use.
-        num_class_embeds: if specified (as an int), then this model will be class-conditional with `num_class_embeds`
-        classes.
-    """
-
-    def __init__(
-        self,
-        spatial_dims: int,
-        in_channels: int,
-        out_channels: int,
-        num_res_blocks: int,
-        num_channels: Sequence[int] = (32, 64, 64, 64),
-        attention_levels: Sequence[bool] = (False, False, True, True),
-        norm_num_groups: int = 32,
-        norm_eps: float = 1e-6,
-        num_head_channels: Union[int, Sequence[int]] = 8,
-        with_conditioning: bool = False,
-        transformer_num_layers: int = 1,
-        cross_attention_dim: Optional[int] = None,
-        num_class_embeds: Optional[int] = None,
-    ) -> None:
-        super().__init__()
-        if with_conditioning is True and cross_attention_dim is None:
-            raise ValueError(
-                (
-                    "DiffusionModelUNet expects dimension of the cross-attention conditioning (cross_attention_dim) "
-                    "when using with_conditioning."
-                )
-            )
-        if cross_attention_dim is not None and with_conditioning is False:
-            raise ValueError(
-                "DiffusionModelUNet expects with_conditioning=True when specifying the cross_attention_dim."
-            )
-
-        # All number of channels should be multiple of num_groups
-        if any((out_channel % norm_num_groups) != 0 for out_channel in num_channels):
-            raise ValueError("DiffusionModelUNet expects all num_channels being multiple of norm_num_groups")
-
-        if isinstance(num_head_channels, int):
-            num_head_channels = (num_head_channels,) * len(attention_levels)
-
-        if len(num_head_channels) != len(attention_levels):
-            raise ValueError(
-                "num_head_channels should have the same length as attention_levels. For the i levels without attention,"
-                " i.e. `attention_level[i]=False`, the num_head_channels[i] will be ignored."
-            )
-
-        self.in_channels = in_channels
-        self.block_out_channels = num_channels
-        self.out_channels = out_channels
-        self.num_res_blocks = num_res_blocks
-        self.attention_levels = attention_levels
-        self.num_head_channels = num_head_channels
-        self.with_conditioning = with_conditioning
-
-        # input
-        self.conv_in = Convolution(
-            spatial_dims=spatial_dims,
-            in_channels=in_channels,
-            out_channels=num_channels[0],
-            strides=1,
-            kernel_size=3,
-            padding=1,
-            conv_only=True,
-        )
-
-        # time
-        time_embed_dim = num_channels[0] * 4
-        self.time_embed = nn.Sequential(
-            nn.Linear(num_channels[0], time_embed_dim),
-            nn.SiLU(),
-            nn.Linear(time_embed_dim, time_embed_dim),
-        )
-
-        # class embedding
-        self.num_class_embeds = num_class_embeds
-        if num_class_embeds is not None:
-            self.class_embedding = nn.Embedding(num_class_embeds, time_embed_dim)
-
-        # down
-        self.down_blocks = nn.ModuleList([])
-        output_channel = num_channels[0]
-        for i in range(len(num_channels)):
-            input_channel = output_channel
-            output_channel = num_channels[i]
-            is_final_block = i == len(num_channels) - 1
-
-            down_block = get_down_block(
-                spatial_dims=spatial_dims,
-                in_channels=input_channel,
-                out_channels=output_channel,
-                temb_channels=time_embed_dim,
-                num_res_blocks=num_res_blocks,
-                norm_num_groups=norm_num_groups,
-                norm_eps=norm_eps,
-                add_downsample=not is_final_block,
-                with_attn=(attention_levels[i] and not with_conditioning),
-                with_cross_attn=(attention_levels[i] and with_conditioning),
-                num_head_channels=num_head_channels[i],
-                transformer_num_layers=transformer_num_layers,
-                cross_attention_dim=cross_attention_dim,
-            )
-
-            self.down_blocks.append(down_block)
-
-        # mid
-        self.middle_block = get_mid_block(
-            spatial_dims=spatial_dims,
-            in_channels=num_channels[-1],
-            temb_channels=time_embed_dim,
-            norm_num_groups=norm_num_groups,
-            norm_eps=norm_eps,
-            with_conditioning=with_conditioning,
-            num_head_channels=num_head_channels[-1],
-            transformer_num_layers=transformer_num_layers,
-            cross_attention_dim=cross_attention_dim,
-        )
-
-        # up
-        self.up_blocks = nn.ModuleList([])
-        reversed_block_out_channels = list(reversed(num_channels))
-        reversed_attention_levels = list(reversed(attention_levels))
-        reversed_num_head_channels = list(reversed(num_head_channels))
-        output_channel = reversed_block_out_channels[0]
-        for i in range(len(reversed_block_out_channels)):
-            prev_output_channel = output_channel
-            output_channel = reversed_block_out_channels[i]
-            input_channel = reversed_block_out_channels[min(i + 1, len(num_channels) - 1)]
-
-            is_final_block = i == len(num_channels) - 1
-
-            up_block = get_up_block(
-                spatial_dims=spatial_dims,
-                in_channels=input_channel,
-                prev_output_channel=prev_output_channel,
-                out_channels=output_channel,
-                temb_channels=time_embed_dim,
-                num_res_blocks=num_res_blocks + 1,
-                norm_num_groups=norm_num_groups,
-                norm_eps=norm_eps,
-                add_upsample=not is_final_block,
-                with_attn=(reversed_attention_levels[i] and not with_conditioning),
-                with_cross_attn=(reversed_attention_levels[i] and with_conditioning),
-                num_head_channels=reversed_num_head_channels[i],
-                transformer_num_layers=transformer_num_layers,
-                cross_attention_dim=cross_attention_dim,
-            )
-
-            self.up_blocks.append(up_block)
-        self.out = nn.Linear(16384, self.out_channels)
-        # out
-      #  self.out = nn.Sequential(
-        #    nn.GroupNorm(num_groups=norm_num_groups, num_channels=num_channels[0], eps=norm_eps, affine=True),
-        #    nn.SiLU(),
-        #    zero_module(
-          #      Convolution(
-          #          spatial_dims=spatial_dims,
-          #          in_channels=num_channels[0],
-           #         out_channels=out_channels,
-            #        strides=1,
-            #        kernel_size=3,
-          #          padding=1,
-            #        conv_only=True,
-            #    )
-         #   ),
-      #  )
-        
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        timesteps: torch.Tensor,
-        context: Optional[torch.Tensor] = None,
-        class_labels: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
-        """
-        Args:
-            x: input tensor (N, C, SpatialDims).
-            timesteps: timestep tensor (N,).
-            context: context tensor (N, 1, ContextDim).
-            class_labels: context tensor (N, ).
-        """
-        # 1. time
-        t_emb = get_timestep_embedding(timesteps, self.block_out_channels[0])
-        emb = self.time_embed(t_emb)
-
-        # 2. class
-        if self.num_class_embeds is not None:
-            if class_labels is None:
-                raise ValueError("class_labels should be provided when num_class_embeds > 0")
-            class_emb = self.class_embedding(class_labels)
-            emb = emb + class_emb
-
-        # 3. initial convolution
-        h = self.conv_in(x)
-
-        # 4. down
-        if context is not None and self.with_conditioning is False:
-            raise ValueError("model should have with_conditioning = True if context is provided")
-        down_block_res_samples: List[torch.Tensor] = [h]
-        for downsample_block in self.down_blocks:
-            h, res_samples = downsample_block(hidden_states=h, temb=emb, context=context)
-            for residual in res_samples:
-                down_block_res_samples.append(residual)
-        h=h.reshape(h.shape[0] ,-1)
-       
+        h=h.flatten()
+        print('h', h.shape)
 
         # # 5. mid
         # h = self.middle_block(hidden_states=h, temb=emb, context=context)
@@ -1894,7 +1655,7 @@ class DiffusionModelEncoder(nn.Module):
 
         # 7. output block
 
-        
+        self.out = nn.Linear(len(h), self.out_channels)
         output=self.out(h)
 
         return output

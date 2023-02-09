@@ -6,9 +6,9 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.14.1
+#       jupytext_version: 1.14.4
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: Python 3 (ipykernel)
 #     language: python
 #     name: python3
 # ---
@@ -66,8 +66,9 @@ from tqdm import tqdm
 from generative.inferers import DiffusionInferer
 
 # TODO: Add right import reference after deployed
-from generative.networks.nets import DiffusionModelUNet
-from generative.schedulers import DDPMScheduler
+
+from generative.networks.nets.diffusion_model_unet import DiffusionModelUNet
+from generative.networks.schedulers.ddpm import DDPMScheduler
 
 print_config()
 
@@ -231,6 +232,7 @@ for epoch in range(n_epochs):
     for step, batch in progress_bar:
         images = batch["image"].to(device)
         classes = batch["class"].to(device)
+        print('images', images.shape, 'classes', classes.shape, classes)
         optimizer.zero_grad(set_to_none=True)
 
         with autocast(enabled=True):
