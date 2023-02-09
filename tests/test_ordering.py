@@ -233,7 +233,7 @@ TEST_ORDERING_TYPE_FAILURE = [
                 OrderingTransformations.REFLECT.value,
             ),
         }
-    ],
+    ]
 ]
 
 TEST_ORDERING_TRANSFORMATION_FAILURE = [
@@ -251,7 +251,7 @@ TEST_ORDERING_TRANSFORMATION_FAILURE = [
                 "flip",
             ),
         }
-    ],
+    ]
 ]
 
 TEST_REVERT = [

@@ -1608,7 +1608,7 @@ class DiffusionModelUNet(nn.Module):
         spatial_dims: int,
         in_channels: int,
         out_channels: int,
-        num_res_blocks: int,
+        num_res_blocks: Sequence[int] | int = (2, 2, 2, 2),
         num_channels: Sequence[int] = (32, 64, 64, 64),
         attention_levels: Sequence[bool] = (False, False, True, True),
         norm_num_groups: int = 32,
@@ -1647,6 +1647,12 @@ class DiffusionModelUNet(nn.Module):
                 "num_head_channels should have the same length as attention_levels. For the i levels without attention,"
                 " i.e. `attention_level[i]=False`, the num_head_channels[i] will be ignored."
             )
+
+        if isinstance(num_res_blocks, int):
+            num_res_blocks = (num_res_blocks,) * len(num_channels)
+
+        if len(num_res_blocks) != len(num_channels):
+            raise ValueError("num_res_blocks should have the same length as num_channels.")
 
         self.in_channels = in_channels
         self.block_out_channels = num_channels
@@ -1691,7 +1697,7 @@ class DiffusionModelUNet(nn.Module):
                 in_channels=input_channel,
                 out_channels=output_channel,
                 temb_channels=time_embed_dim,
-                num_res_blocks=num_res_blocks,
+                num_res_blocks=num_res_blocks[i],
                 norm_num_groups=norm_num_groups,
                 norm_eps=norm_eps,
                 add_downsample=not is_final_block,
@@ -1723,6 +1729,7 @@ class DiffusionModelUNet(nn.Module):
         # up
         self.up_blocks = nn.ModuleList([])
         reversed_block_out_channels = list(reversed(num_channels))
+        reversed_num_res_blocks = list(reversed(num_res_blocks))
         reversed_attention_levels = list(reversed(attention_levels))
         reversed_num_head_channels = list(reversed(num_head_channels))
         output_channel = reversed_block_out_channels[0]
@@ -1739,7 +1746,7 @@ class DiffusionModelUNet(nn.Module):
                 prev_output_channel=prev_output_channel,
                 out_channels=output_channel,
                 temb_channels=time_embed_dim,
-                num_res_blocks=num_res_blocks + 1,
+                num_res_blocks=reversed_num_res_blocks[i] + 1,
                 norm_num_groups=norm_num_groups,
                 norm_eps=norm_eps,
                 add_upsample=not is_final_block,
