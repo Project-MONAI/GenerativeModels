@@ -13,7 +13,6 @@
 #
 # ### Setup environment
 
-# !python -c "import monai" || pip install -q "monai-weekly[pillow, tqdm, einops]"
 # !python -c "import matplotlib" || pip install -q matplotlib
 # %matplotlib inline
 
@@ -32,20 +31,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-import tempfile
 import shutil
+import tempfile
 import time
-
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from torch.nn import L1Loss
 from monai import transforms
 from monai.apps import MedNISTDataset
 from monai.config import print_config
 from monai.data import DataLoader, Dataset
 from monai.utils import first, set_determinism
+from torch.nn import L1Loss
 from tqdm import tqdm
 
 from generative.networks.nets import VQVAE
@@ -169,10 +167,7 @@ for epoch in range(n_epochs):
         epoch_loss += recons_loss.item()
 
         progress_bar.set_postfix(
-            {
-                "recons_loss": epoch_loss / (step + 1),
-                "quantization_loss": quantization_loss.item() / (step + 1),
-            }
+            {"recons_loss": epoch_loss / (step + 1), "quantization_loss": quantization_loss.item() / (step + 1)}
         )
     epoch_recon_loss_list.append(epoch_loss / (step + 1))
     epoch_quant_loss_list.append(quantization_loss.item() / (step + 1))
