@@ -13,7 +13,7 @@
 # TODO: Add Open in Colab
 #
 # ### Setup environment
-
+#
 # # %%
 # !python -c "import monai" || pip install -q "monai-weekly[pillow, tqdm, einops]"
 # !python -c "import matplotlib" || pip install -q matplotlib
@@ -133,11 +133,12 @@ model = VQVAE(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
-    num_res_layers=2,
-    num_levels=2,
     downsample_parameters=((2, 4, 1, 1), (2, 4, 1, 1)),
     upsample_parameters=((2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
+    num_res_layers=2,
+    num_levels=2,
     num_channels=256,
+    num_res_channels=128,
     num_embeddings=256,
     embedding_dim=32,
 )
