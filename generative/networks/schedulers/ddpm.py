@@ -8,12 +8,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+#
 # =========================================================================
 # Adapted from https://github.com/huggingface/diffusers
 # which has the following license:
 # https://github.com/huggingface/diffusers/blob/main/LICENSE
-
+#
 # Copyright 2022 UC Berkeley Team and The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,7 +30,6 @@
 # =========================================================================
 
 from __future__ import annotations
-
 
 import numpy as np
 import torch
@@ -180,11 +179,7 @@ class DDPMScheduler(nn.Module):
         return variance
 
     def step(
-        self,
-        model_output: torch.Tensor,
-        timestep: int,
-        sample: torch.Tensor,
-        generator: torch.Generator | None = None,
+        self, model_output: torch.Tensor, timestep: int, sample: torch.Tensor, generator: torch.Generator | None = None
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Predict the sample at the previous timestep by reversing the SDE. Core function to propagate the diffusion
