@@ -8,12 +8,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+#
 # =========================================================================
 # Adapted from https://github.com/photosynthesis-team/piq
 # which has the following license:
 # https://github.com/photosynthesis-team/piq/blob/master/LICENSE
-
+#
 # Copyright 2023 photosynthesis-team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");

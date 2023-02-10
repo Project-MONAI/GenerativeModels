@@ -8,7 +8,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Callable, Optional, Union
+
+from __future__ import annotations
+
+from collections.abc import Callable
 
 import torch
 from monai.metrics.regression import RegressionMetric
@@ -40,9 +43,9 @@ class MMD(RegressionMetric):
 
     def __init__(
         self,
-        y_transform: Optional[Callable] = None,
-        y_pred_transform: Optional[Callable] = None,
-        reduction: Union[MetricReduction, str] = MetricReduction.MEAN,
+        y_transform: Callable | None = None,
+        y_pred_transform: Callable | None = None,
+        reduction: MetricReduction | str = MetricReduction.MEAN,
         get_not_nans: bool = False,
     ) -> None:
         super().__init__(reduction=reduction, get_not_nans=get_not_nans)
