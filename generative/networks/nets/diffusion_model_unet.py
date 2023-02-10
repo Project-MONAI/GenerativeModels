@@ -39,6 +39,7 @@ import torch
 import torch.nn.functional as F
 from monai.networks.blocks import Convolution, MLPBlock
 from monai.networks.layers.factories import Pool
+from monai.utils import ensure_tuple_rep
 from torch import nn
 
 # To install xformers, use pip install xformers==0.0.16rc401
@@ -1642,7 +1643,7 @@ class DiffusionModelUNet(nn.Module):
             raise ValueError("DiffusionModelUNet expects num_channels being same size of attention_levels")
 
         if isinstance(num_head_channels, int):
-            num_head_channels = (num_head_channels,) * len(attention_levels)
+            num_head_channels = ensure_tuple_rep(num_head_channels, len(attention_levels))
 
         if len(num_head_channels) != len(attention_levels):
             raise ValueError(
@@ -1651,7 +1652,7 @@ class DiffusionModelUNet(nn.Module):
             )
 
         if isinstance(num_res_blocks, int):
-            num_res_blocks = (num_res_blocks,) * len(num_channels)
+            num_res_blocks = ensure_tuple_rep(num_res_blocks, len(num_channels))
 
         if len(num_res_blocks) != len(num_channels):
             raise ValueError("num_res_blocks should have the same length as num_channels.")

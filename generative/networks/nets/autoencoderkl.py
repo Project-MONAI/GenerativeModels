@@ -19,6 +19,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from monai.networks.blocks import Convolution
+from monai.utils import ensure_tuple_rep
 
 # To install xformers, use pip install xformers==0.0.16rc401
 if importlib.util.find_spec("xformers") is not None:
@@ -608,7 +609,7 @@ class AutoencoderKL(nn.Module):
             raise ValueError("AutoencoderKL expects num_channels being same size of attention_levels")
 
         if isinstance(num_res_blocks, int):
-            num_res_blocks = (num_res_blocks,) * len(num_channels)
+            num_res_blocks = ensure_tuple_rep(num_res_blocks, len(num_channels))
 
         if len(num_res_blocks) != len(num_channels):
             raise ValueError("num_res_blocks should have the same length as num_channels.")
