@@ -117,13 +117,11 @@ class PNDMScheduler(nn.Module):
         self.cur_sample = None
         self.ets = []
 
-        # settable values
-        self.num_inference_steps = None
-        self._timesteps = np.arange(0, num_train_timesteps)[::-1].copy()
-        self.prk_timesteps = torch.Tensor([])
-        self.plms_timesteps = torch.Tensor([])
-        self.timesteps = torch.Tensor([])
 
+        self._timesteps = np.arange(0, num_train_timesteps)[::-1].copy()
+
+        # default the number of inference timesteps to the number of train steps
+        self.set_timesteps(num_train_timesteps)
     def set_timesteps(self, num_inference_steps: int, device: str | torch.device | None = None) -> None:
         """
         Sets the discrete timesteps used for the diffusion chain. Supporting function to be run before inference.
