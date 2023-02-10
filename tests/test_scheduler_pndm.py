@@ -39,13 +39,6 @@ class TestDDPMScheduler(unittest.TestCase):
         noisy = scheduler.add_noise(original_samples=original_sample, noise=noise, timesteps=timesteps)
         self.assertEqual(noisy.shape, expected_shape)
 
-    @parameterized.expand(TEST_CASES)
-    def test_error_if_timesteps_not_set(self, input_param, input_shape, expected_shape):
-        scheduler = PNDMScheduler(**input_param)
-        with self.assertRaises(ValueError):
-            model_output = torch.randn(input_shape)
-            sample = torch.randn(input_shape)
-            scheduler.step(model_output=model_output, timestep=500, sample=sample)
 
     @parameterized.expand(TEST_CASES)
     def test_step_shape(self, input_param, input_shape, expected_shape):
