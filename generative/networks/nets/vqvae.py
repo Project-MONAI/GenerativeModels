@@ -17,6 +17,7 @@ import torch
 import torch.nn as nn
 from monai.networks.blocks import Convolution
 from monai.networks.layers import Act
+from monai.utils import ensure_tuple_rep
 
 from generative.networks.layers.vector_quantizer import EMAQuantizer, VectorQuantizer
 
@@ -159,9 +160,9 @@ class VQVAE(nn.Module):
         self.spatial_dims = spatial_dims
 
         if isinstance(num_channels, int):
-            num_channels = [num_channels] * num_levels
+            num_channels = ensure_tuple_rep(num_channels, num_levels)
         if isinstance(num_res_channels, int):
-            num_res_channels = [num_res_channels] * num_levels
+            num_res_channels = ensure_tuple_rep(num_res_channels, num_levels)
 
         assert (
             num_levels == len(downsample_parameters)
