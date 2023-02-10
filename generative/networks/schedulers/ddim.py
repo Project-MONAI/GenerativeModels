@@ -8,12 +8,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+#
 # =========================================================================
 # Adapted from https://github.com/huggingface/diffusers
 # which has the following license:
 # https://github.com/huggingface/diffusers/blob/main/LICENSE
-
+#
 # Copyright 2022 UC Berkeley Team and The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,7 +29,7 @@
 # limitations under the License.
 # =========================================================================
 
-from typing import Optional, Tuple, Union
+from __future__ import annotations
 
 import numpy as np
 import torch
@@ -110,7 +110,7 @@ class DDIMScheduler(nn.Module):
         self.clip_sample = clip_sample
         self.steps_offset = steps_offset
 
-    def set_timesteps(self, num_inference_steps: int, device: Optional[Union[str, torch.device]] = None) -> None:
+    def set_timesteps(self, num_inference_steps: int, device: str | torch.device | None = None) -> None:
         """
         Sets the discrete timesteps used for the diffusion chain. Supporting function to be run before inference.
 
@@ -149,8 +149,8 @@ class DDIMScheduler(nn.Module):
         timestep: int,
         sample: torch.Tensor,
         eta: float = 0.0,
-        generator: Optional[torch.Generator] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        generator: torch.Generator | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Predict the sample at the previous timestep by reversing the SDE. Core function to propagate the diffusion
         process from the learned model outputs (most often the predicted noise).

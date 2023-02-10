@@ -9,7 +9,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Optional, Sequence, Tuple, Union
+from __future__ import annotations
+
+from collections.abc import Sequence
 
 import torch
 import torch.nn as nn
@@ -54,10 +56,10 @@ class MultiScalePatchDiscriminator(nn.Sequential):
         in_channels: int,
         out_channels: int,
         kernel_size: int,
-        activation: Union[str, tuple] = "PRELU",
-        norm: Union[str, tuple] = "INSTANCE",
+        activation: str | tuple = "PRELU",
+        norm: str | tuple = "INSTANCE",
         bias: bool = False,
-        dropout: Union[float, tuple] = 0.0,
+        dropout: float | tuple = 0.0,
         minimum_size_im: int = 256,
         last_conv_kernel_size: int = 1,
     ) -> None:
@@ -91,7 +93,7 @@ class MultiScalePatchDiscriminator(nn.Sequential):
 
             self.add_module("discriminator_%d" % i_, subnet_d)
 
-    def forward(self, i: torch.Tensor) -> Tuple[List[torch.Tensor], List[List[torch.Tensor]]]:
+    def forward(self, i: torch.Tensor) -> tuple[list[torch.Tensor], list[list[torch.Tensor]]]:
         """
 
         Args:
@@ -101,10 +103,10 @@ class MultiScalePatchDiscriminator(nn.Sequential):
             of each discriminator.
         """
 
-        out: List[torch.Tensor] = []
-        intermediate_features: List[List[torch.Tensor]] = []
+        out: list[torch.Tensor] = []
+        intermediate_features: list[list[torch.Tensor]] = []
         for disc in self.children():
-            out_d: List[torch.Tensor] = disc(i)
+            out_d: list[torch.Tensor] = disc(i)
             out.append(out_d[-1])
             intermediate_features.append(out_d[:-1])
 
@@ -144,12 +146,12 @@ class PatchDiscriminator(nn.Sequential):
         in_channels: int,
         out_channels: int,
         kernel_size: int,
-        activation: Union[str, tuple] = "PRELU",
-        norm: Union[str, tuple] = "INSTANCE",
+        activation: str | tuple = "PRELU",
+        norm: str | tuple = "INSTANCE",
         bias: bool = False,
-        padding: Union[int, Sequence[int]] = 1,
-        dropout: Union[float, tuple] = 0.0,
-        last_conv_kernel_size: Optional[int] = None,
+        padding: int | Sequence[int] = 1,
+        dropout: float | tuple = 0.0,
+        last_conv_kernel_size: int | None = None,
     ) -> None:
 
         super().__init__()
@@ -217,7 +219,7 @@ class PatchDiscriminator(nn.Sequential):
 
         self.apply(self.initialise_weights)
 
-    def forward(self, x: torch.Tensor) -> List[torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> list[torch.Tensor]:
         """
 
         Args:
