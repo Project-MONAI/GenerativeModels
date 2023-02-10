@@ -9,7 +9,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Sequence, Tuple
+from typing import Sequence
 
 import torch
 from torch import nn
@@ -84,7 +84,7 @@ class EMAQuantizer(nn.Module):
         )
 
     @torch.cuda.amp.autocast(enabled=False)
-    def quantize(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def quantize(self, inputs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Given an input it projects it to the quantized space and returns additional tensors needed for EMA loss.
 
@@ -158,7 +158,7 @@ class EMAQuantizer(nn.Module):
         else:
             pass
 
-    def forward(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, inputs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         flat_input, encodings, encoding_indices = self.quantize(inputs)
         quantized = self.embed(encoding_indices)
 
@@ -205,7 +205,7 @@ class VectorQuantizer(torch.nn.Module):
 
         self.perplexity: torch.Tensor = torch.rand(1)
 
-    def forward(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, inputs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         quantized, loss, encoding_indices = self.quantizer(inputs)
 
         # Perplexity calculations

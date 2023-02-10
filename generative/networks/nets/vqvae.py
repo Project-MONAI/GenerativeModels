@@ -9,7 +9,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Sequence, Tuple, Union
+from __future__ import annotations
+
+from collections.abc import Sequence
 
 import torch
 import torch.nn as nn
@@ -45,9 +47,9 @@ class VQVAEResidualUnit(nn.Module):
         num_channels: int,
         num_res_channels: int,
         adn_ordering: str = "NDA",
-        act: Optional[Union[Tuple, str]] = "RELU",
-        dropout: Optional[Union[Tuple, str, float]] = None,
-        dropout_dim: Optional[int] = 1,
+        act: tuple | str | None = "RELU",
+        dropout: tuple | str | float | None = None,
+        dropout_dim: int | None = 1,
         bias: bool = True,
     ) -> None:
         super().__init__()
@@ -129,8 +131,8 @@ class VQVAE(nn.Module):
         in_channels: int,
         out_channels: int,
         num_levels: int = 3,
-        downsample_parameters: Tuple[Tuple[int, int, int, int], ...] = ((2, 4, 1, 1), (2, 4, 1, 1), (2, 4, 1, 1)),
-        upsample_parameters: Tuple[Tuple[int, int, int, int, int], ...] = (
+        downsample_parameters: tuple[tuple[int, int, int, int], ...] = ((2, 4, 1, 1), (2, 4, 1, 1), (2, 4, 1, 1)),
+        upsample_parameters: tuple[tuple[int, int, int, int, int], ...] = (
             (2, 4, 1, 1, 0),
             (2, 4, 1, 1, 0),
             (2, 4, 1, 1, 0),
@@ -145,9 +147,9 @@ class VQVAE(nn.Module):
         decay: float = 0.5,
         epsilon: float = 1e-5,
         adn_ordering: str = "NDA",
-        dropout: Optional[Union[Tuple, str, float]] = 0.1,
-        act: Optional[Union[Tuple, str]] = "RELU",
-        output_act: Optional[Union[Tuple, str]] = None,
+        dropout: tuple | str | float | None = 0.1,
+        act: tuple | str | None = "RELU",
+        output_act: tuple | str | None = None,
         ddp_sync: bool = True,
     ):
         super().__init__()
@@ -345,7 +347,7 @@ class VQVAE(nn.Module):
     def encode(self, images: torch.Tensor) -> torch.Tensor:
         return self.encoder(images)
 
-    def quantize(self, encodings: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def quantize(self, encodings: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         x_loss, x = self.quantizer(encodings)
         return x, x_loss
 
@@ -358,7 +360,7 @@ class VQVAE(nn.Module):
     def decode_samples(self, embedding_indices: torch.Tensor) -> torch.Tensor:
         return self.decode(self.quantizer.embed(embedding_indices))
 
-    def forward(self, images: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, images: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         quantizations, quantization_losses = self.quantize(self.encode(images))
         reconstruction = self.decode(quantizations)
 

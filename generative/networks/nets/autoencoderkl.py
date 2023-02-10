@@ -9,9 +9,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import importlib.util
 import math
-from typing import Optional, Sequence, Tuple
+from collections.abc import Sequence
 
 import torch
 import torch.nn as nn
@@ -190,7 +192,7 @@ class AttentionBlock(nn.Module):
         self,
         spatial_dims: int,
         num_channels: int,
-        num_head_channels: Optional[int] = None,
+        num_head_channels: int | None = None,
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
     ) -> None:
@@ -655,7 +657,7 @@ class AutoencoderKL(nn.Module):
         )
         self.latent_channels = latent_channels
 
-    def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def encode(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Forwards an image through the spatial encoder, obtaining the latent mean and sigma representations.
 
@@ -717,7 +719,7 @@ class AutoencoderKL(nn.Module):
         dec = self.decoder(z)
         return dec
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         z_mu, z_sigma = self.encode(x)
         z = self.sampling(z_mu, z_sigma)
         reconstruction = self.decode(z)
