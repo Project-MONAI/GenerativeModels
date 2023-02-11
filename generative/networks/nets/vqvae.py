@@ -290,12 +290,10 @@ class VQVAE(nn.Module):
         num_channels: Sequence[int] | int = (96, 96, 192),
         num_res_layers: int = 3,
         num_res_channels: Sequence[int] | int = (96, 96, 192),
-        downsample_parameters: Sequence[Sequence[int, int, int, int], ...] = ((2, 4, 1, 1), (2, 4, 1, 1), (2, 4, 1, 1)),
-        upsample_parameters: Sequence[Sequence[int, int, int, int, int], ...] = (
-            (2, 4, 1, 1, 0),
-            (2, 4, 1, 1, 0),
-            (2, 4, 1, 1, 0),
-        ),
+        downsample_parameters: Sequence[Sequence[int, int, int, int], ...]
+        | Sequence[int, int, int, int] = ((2, 4, 1, 1), (2, 4, 1, 1), (2, 4, 1, 1)),
+        upsample_parameters: Sequence[Sequence[int, int, int, int, int], ...]
+        | Sequence[int, int, int, int] = ((2, 4, 1, 1, 0), (2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
         num_embeddings: int = 32,
         embedding_dim: int = 64,
         embedding_init: str = "normal",
@@ -325,6 +323,26 @@ class VQVAE(nn.Module):
                 "`num_res_channels` should be a single integer or a tuple of integers with the same length as "
                 "`num_channels`."
             )
+
+        if not all(isinstance(values, (int, Sequence)) for values in downsample_parameters):
+            raise ValueError("`downsample_parameters` should be a single tuple of integer or a tuple of tuples.")
+
+        if not all(isinstance(values, (int, Sequence)) for values in upsample_parameters):
+            raise ValueError("`upsample_parameters` should be a single tuple of integer or a tuple of tuples.")
+
+        if all(isinstance(values, int) for values in upsample_parameters):
+            upsample_parameters = (upsample_parameters,) * len(num_channels)
+
+        if all(isinstance(values, int) for values in downsample_parameters):
+            downsample_parameters = (downsample_parameters,) * len(num_channels)
+
+        for parameter in downsample_parameters:
+            if len(parameter) != 4:
+                raise ValueError("`downsample_parameters` should be a tuple of tuples with 4 integers.")
+
+        for parameter in upsample_parameters:
+            if len(parameter) != 5:
+                raise ValueError("`upsample_parameters` should be a tuple of tuples with 5 integers.")
 
         if len(downsample_parameters) != len(num_channels):
             raise ValueError(
