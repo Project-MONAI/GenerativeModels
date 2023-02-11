@@ -11,7 +11,7 @@
 
 
 import math
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union, Sequence
 
 import torch
 import torch.nn as nn
@@ -432,6 +432,8 @@ class VQVAETransformerInferer(Inferer):
         inputs: torch.Tensor,
         vqvae_model: Callable[..., torch.Tensor],
         transformer_model: Callable[..., torch.Tensor],
+        ordering: Callable[..., torch.Tensor],
+        starting_token: int,
         condition: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
@@ -441,10 +443,19 @@ class VQVAETransformerInferer(Inferer):
             inputs: input image to which the latent representation will be extracted and noise is added.
             vqvae_model: first stage model.
             transformer_model: autoregressive transformer model.
+            ordering: ordering of the quantised latent representation.
+            starting_token: token to start the sequence to be inputted in the transformer model, the "Begin Of Sentence"
+             (BOS) token.
             condition: conditioning for network input.
         """
         with torch.no_grad():
-            latent = vqvae_model.encode_stage_2_inputs(inputs)
+            latent = vqvae_model.index_quantize(inputs)
+
+        latent = latent.reshape(latent.shape[0], -1)
+        latent = latent[:, ordering.get_sequence_ordering()]
+
+        latent = F.pad(latent, (1, 0), "constant", starting_token)
+        latent = latent.long()
 
         prediction = transformer_model(x=latent, context=condition)
 
@@ -453,8 +464,11 @@ class VQVAETransformerInferer(Inferer):
     @torch.no_grad()
     def sample(
         self,
+        sampled_image_shape: Sequence[int, int, int] | Sequence[int, int],
+        starting_tokens: torch.Tensor,
         vqvae_model: Callable[..., torch.Tensor],
         transformer_model: Callable[..., torch.Tensor],
+        ordering: Callable[..., torch.Tensor],
         conditioning: Optional[torch.Tensor] = None,
         temperature: float = 1.0,
         top_k: int | None =None,
@@ -464,6 +478,8 @@ class VQVAETransformerInferer(Inferer):
         Sampling function for the VQVAE + Transformer model.
 
         Args:
+            sampled_image_shape: shape of the sampled image.
+            starting_tokens: starting tokens for the sampling.
             vqvae_model: first stage model.
             transformer_model: model to sample from.
             conditioning: Conditioning for network input.
@@ -471,23 +487,23 @@ class VQVAETransformerInferer(Inferer):
             top_k: top k sampling.
             verbose: if true, prints the progression bar of the sampling process.
         """
-        # TODO: define number of steps based on the size of the image
-        steps = 100
-        latent = []
+        seq_len = math.prod(sampled_image_shape)
+
         if verbose and has_tqdm:
-            progress_bar = tqdm(steps)
+            progress_bar = tqdm(seq_len)
         else:
-            progress_bar = iter(steps)
+            progress_bar = iter(seq_len)
 
-        # start_ids = encode(start)
-        # x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
-        #
-
-        for _ in range(steps):
+        latent_seq = starting_tokens
+        for _ in progress_bar:
             # if the sequence context is growing too long we must crop it at block_size
-            # idx_cond = idx if idx.size(1) <= self.config.block_size else idx[:, -self.config.block_size:]
+            if latent_seq.size(1) <= transformer_model.max_seq_len:
+                idx_cond = latent_seq
+            else:
+                idx_cond = latent_seq[:, -transformer_model.max_seq_len:]
+
             # forward the model to get the logits for the index in the sequence
-            logits = transformer_model(x=latent, context=conditioning)
+            logits = transformer_model(x=idx_cond, context=conditioning)
             # pluck the logits at the final step and scale by desired temperature
             logits = logits[:, -1, :] / temperature
             # optionally crop the logits to only the top k options
@@ -500,7 +516,9 @@ class VQVAETransformerInferer(Inferer):
             # sample from the distribution
             idx_next = torch.multinomial(probs, num_samples=1)
             # append sampled index to the running sequence and continue
-            idx = torch.cat((idx, idx_next), dim=1)
+            latent_seq = torch.cat((latent_seq, idx_next), dim=1)
 
-        image = vqvae_model.decode_stage_2_outputs(latent)
-        return image
+        latent_seq = latent_seq[:, 1:]
+        latent = latent_seq.view(-1, ordering.get_revert_sequence_ordering())
+
+        return vqvae_model.decode_stage_2_outputs(latent)
