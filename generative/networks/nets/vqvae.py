@@ -95,13 +95,11 @@ class Encoder(nn.Module):
         num_channels: number of channels at each level.
         num_res_layers: number of sequential residual layers at each level.
         num_res_channels: number of channels in the residual layers at each level.
-        upsample_parameters: A Tuple of Tuples for defining the upsampling convolutions. Each Tuple should hold the
-            following information stride (int), kernel_size (int), dilation (int), padding (int), output_padding (int).
-            If use_subpixel_conv is True, only the stride will be used for the last conv as the scale_factor.
+        downsample_parameters: A Tuple of Tuples for defining the downsampling convolutions. Each Tuple should hold the
+            following information stride (int), kernel_size (int), dilation (int) and padding (int).
         adn_ordering: a string representing the ordering of activation, normalization, and dropout, e.g. "NDA".
         dropout: dropout ratio.
         act: activation type and arguments.
-
     """
     def __init__(
         self,
@@ -191,8 +189,9 @@ class Decoder(nn.Module):
         num_channels: number of channels at each level.
         num_res_layers: number of sequential residual layers at each level.
         num_res_channels: number of channels in the residual layers at each level.
-        downsample_parameters: A Tuple of Tuples for defining the downsampling convolutions. Each Tuple should hold the
-            following information stride (int), kernel_size (int), dilation (int) and padding (int).
+        upsample_parameters: A Tuple of Tuples for defining the upsampling convolutions. Each Tuple should hold the
+            following information stride (int), kernel_size (int), dilation (int), padding (int), output_padding (int).
+            If use_subpixel_conv is True, only the stride will be used for the last conv as the scale_factor.
         adn_ordering: a string representing the ordering of activation, normalization, and dropout, e.g. "NDA".
         dropout: dropout ratio.
         act: activation type and arguments.
