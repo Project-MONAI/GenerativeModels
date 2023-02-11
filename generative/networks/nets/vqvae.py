@@ -38,7 +38,6 @@ class VQVAEResidualUnit(nn.Module):
         adn_ordering : a string representing the ordering of activation, normalization, and dropout. Defaults to "NDA".
         act: activation type and arguments. Defaults to RELU.
         dropout: dropout ratio. Defaults to no dropout.
-        dropout_dim: dimension along which to apply dropout. Defaults to 1.
         bias: whether to have a bias term. Defaults to True.
     """
 
@@ -50,7 +49,6 @@ class VQVAEResidualUnit(nn.Module):
         adn_ordering: str = "NDA",
         act: tuple | str | None = "RELU",
         dropout: tuple | str | float | None = None,
-        dropout_dim: int | None = 1,
         bias: bool = True,
     ) -> None:
         super().__init__()
@@ -61,7 +59,6 @@ class VQVAEResidualUnit(nn.Module):
         self.adn_ordering = adn_ordering
         self.act = act
         self.dropout = dropout
-        self.dropout_dim = dropout_dim
         self.bias = bias
 
         self.conv1 = Convolution(
@@ -72,7 +69,6 @@ class VQVAEResidualUnit(nn.Module):
             act=self.act,
             norm=None,
             dropout=self.dropout,
-            dropout_dim=self.dropout_dim,
             bias=self.bias,
         )
 
@@ -80,12 +76,8 @@ class VQVAEResidualUnit(nn.Module):
             spatial_dims=self.spatial_dims,
             in_channels=self.num_res_channels,
             out_channels=self.num_channels,
-            adn_ordering=self.adn_ordering,
-            act=None,
-            norm=None,
-            dropout=None,
-            dropout_dim=self.dropout_dim,
             bias=self.bias,
+            conv_only=True,
         )
 
     def forward(self, x):
