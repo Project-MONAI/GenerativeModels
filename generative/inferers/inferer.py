@@ -16,9 +16,9 @@ from collections.abc import Callable
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from monai.inferers import Inferer
 from monai.utils import optional_import
-import torch.nn.functional as F
 
 tqdm, has_tqdm = optional_import("tqdm", name="tqdm")
 
@@ -469,7 +469,7 @@ class VQVAETransformerInferer(Inferer):
         ordering: Callable[..., torch.Tensor],
         conditioning: Optional[torch.Tensor] = None,
         temperature: float = 1.0,
-        top_k: int | None =None,
+        top_k: int | None = None,
         verbose: Optional[bool] = True,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
         """
@@ -498,7 +498,7 @@ class VQVAETransformerInferer(Inferer):
             if latent_seq.size(1) <= transformer_model.max_seq_len:
                 idx_cond = latent_seq
             else:
-                idx_cond = latent_seq[:, -transformer_model.max_seq_len:]
+                idx_cond = latent_seq[:, -transformer_model.max_seq_len :]
 
             # forward the model to get the logits for the index in the sequence
             logits = transformer_model(x=idx_cond, context=conditioning)
@@ -507,7 +507,7 @@ class VQVAETransformerInferer(Inferer):
             # optionally crop the logits to only the top k options
             if top_k is not None:
                 v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-                logits[logits < v[:, [-1]]] = -float('Inf')
+                logits[logits < v[:, [-1]]] = -float("Inf")
             # apply softmax to convert logits to (normalized) probabilities
             probs = F.softmax(logits, dim=-1)
             # either sample from the distribution or take the most likely element
