@@ -8,12 +8,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+#
 # =========================================================================
 # Adapted from https://github.com/huggingface/diffusers
 # which has the following license:
 # https://github.com/huggingface/diffusers/blob/main/LICENSE
-
+#
 # Copyright 2022 UC Berkeley Team and The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,7 +29,9 @@
 # limitations under the License.
 # =========================================================================
 
-from typing import Any, Optional, Tuple, Union
+from __future__ import annotations
+
+from typing import Any
 
 import numpy as np
 import torch
@@ -115,14 +117,12 @@ class PNDMScheduler(nn.Module):
         self.cur_sample = None
         self.ets = []
 
-        # settable values
-        self.num_inference_steps = None
         self._timesteps = np.arange(0, num_train_timesteps)[::-1].copy()
-        self.prk_timesteps = torch.Tensor([])
-        self.plms_timesteps = torch.Tensor([])
-        self.timesteps = torch.Tensor([])
 
-    def set_timesteps(self, num_inference_steps: int, device: Optional[Union[str, torch.device]] = None) -> None:
+        # default the number of inference timesteps to the number of train steps
+        self.set_timesteps(num_train_timesteps)
+
+    def set_timesteps(self, num_inference_steps: int, device: str | torch.device | None = None) -> None:
         """
         Sets the discrete timesteps used for the diffusion chain. Supporting function to be run before inference.
 
@@ -169,11 +169,8 @@ class PNDMScheduler(nn.Module):
         self.counter = 0
 
     def step(
-        self,
-        model_output: torch.FloatTensor,
-        timestep: int,
-        sample: torch.FloatTensor,
-    ) -> Tuple[torch.Tensor, Any]:
+        self, model_output: torch.FloatTensor, timestep: int, sample: torch.FloatTensor
+    ) -> tuple[torch.Tensor, Any]:
         """
         Predict the sample at the previous timestep by reversing the SDE. Core function to propagate the diffusion
         process from the learned model outputs (most often the predicted noise).
@@ -193,12 +190,7 @@ class PNDMScheduler(nn.Module):
         else:
             return self.step_plms(model_output=model_output, timestep=timestep, sample=sample), None
 
-    def step_prk(
-        self,
-        model_output: torch.FloatTensor,
-        timestep: int,
-        sample: torch.FloatTensor,
-    ) -> torch.Tensor:
+    def step_prk(self, model_output: torch.FloatTensor, timestep: int, sample: torch.FloatTensor) -> torch.Tensor:
         """
         Step function propagating the sample with the Runge-Kutta method. RK takes 4 forward passes to approximate the
         solution to the differential equation.
@@ -331,12 +323,7 @@ class PNDMScheduler(nn.Module):
 
         return prev_sample
 
-    def add_noise(
-        self,
-        original_samples: torch.Tensor,
-        noise: torch.Tensor,
-        timesteps: torch.Tensor,
-    ) -> torch.Tensor:
+    def add_noise(self, original_samples: torch.Tensor, noise: torch.Tensor, timesteps: torch.Tensor) -> torch.Tensor:
         """
         Add noise to the original samples.
 

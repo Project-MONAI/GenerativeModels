@@ -9,7 +9,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Tuple, Union
+from __future__ import annotations
 
 import torch
 import torch.nn.functional as F
@@ -42,9 +42,9 @@ class JukeboxLoss(_Loss):
     def __init__(
         self,
         spatial_dims: int,
-        fft_signal_size: Optional[Tuple[int]] = None,
+        fft_signal_size: tuple[int] | None = None,
         fft_norm: str = "ortho",
-        reduction: Union[LossReduction, str] = LossReduction.MEAN,
+        reduction: LossReduction | str = LossReduction.MEAN,
     ) -> None:
         super().__init__(reduction=LossReduction(reduction).value)
 
@@ -80,12 +80,7 @@ class JukeboxLoss(_Loss):
         Returns:
             fourier transformation amplitude
         """
-        img_fft = fftn(
-            images,
-            s=self.fft_signal_size,
-            dim=self.fft_dim,
-            norm=self.fft_norm,
-        )
+        img_fft = fftn(images, s=self.fft_signal_size, dim=self.fft_dim, norm=self.fft_norm)
 
         amplitude = torch.sqrt(torch.real(img_fft) ** 2 + torch.imag(img_fft) ** 2)
 

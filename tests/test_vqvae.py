@@ -9,16 +9,68 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import unittest
 
 import torch
 from monai.networks import eval_mode
 from parameterized import parameterized
-from tests.utils import test_script_save
 
 from generative.networks.nets.vqvae import VQVAE
+from tests.utils import test_script_save
 
 TEST_CASES = [
+    [
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_levels": 2,
+            "downsample_parameters": [(2, 4, 1, 1)] * 2,
+            "upsample_parameters": [(2, 4, 1, 1, 0)] * 2,
+            "num_res_layers": 1,
+            "num_channels": 8,
+            "num_res_channels": [8, 8],
+            "num_embeddings": 16,
+            "embedding_dim": 8,
+            "embedding_init": "normal",
+            "commitment_cost": 0.25,
+            "decay": 0.5,
+            "epsilon": 1e-5,
+            "adn_ordering": "NDA",
+            "dropout": 0.1,
+            "act": "RELU",
+            "output_act": None,
+        },
+        (1, 1, 16, 16),
+        (1, 1, 16, 16),
+    ],
+    [
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_levels": 2,
+            "downsample_parameters": [(2, 4, 1, 1)] * 2,
+            "upsample_parameters": [(2, 4, 1, 1, 0)] * 2,
+            "num_res_layers": 1,
+            "num_channels": 8,
+            "num_res_channels": 8,
+            "num_embeddings": 16,
+            "embedding_dim": 8,
+            "embedding_init": "normal",
+            "commitment_cost": 0.25,
+            "decay": 0.5,
+            "epsilon": 1e-5,
+            "adn_ordering": "NDA",
+            "dropout": 0.1,
+            "act": "RELU",
+            "output_act": None,
+        },
+        (1, 1, 16, 16),
+        (1, 1, 16, 16),
+    ],
     [
         {
             "spatial_dims": 2,

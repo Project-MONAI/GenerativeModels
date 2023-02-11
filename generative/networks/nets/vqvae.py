@@ -9,12 +9,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Sequence, Tuple, Union
+from __future__ import annotations
+
+from collections.abc import Sequence
 
 import torch
 import torch.nn as nn
 from monai.networks.blocks import Convolution
 from monai.networks.layers import Act
+from monai.utils import ensure_tuple_rep
 
 from generative.networks.layers.vector_quantizer import EMAQuantizer, VectorQuantizer
 
@@ -25,7 +28,8 @@ class VQVAEResidualUnit(nn.Module):
     """
     Implementation of the ResidualLayer used in the VQVAE network as originally used in Morphology-preserving
     Autoregressive 3D Generative Modelling of the Brain by Tudosiu et al. (https://arxiv.org/pdf/2209.03177.pdf) and
-    the original implementation that can be found at https://github.com/AmigoLab/SynthAnatomy/blob/main/src/networks/vqvae/baseline.py#L150.
+    the original implementation that can be found at
+    https://github.com/AmigoLab/SynthAnatomy/blob/main/src/networks/vqvae/baseline.py#L150.
 
     Args:
         spatial_dims: number of spatial spatial_dims of the input data.
@@ -44,9 +48,9 @@ class VQVAEResidualUnit(nn.Module):
         num_channels: int,
         num_res_channels: int,
         adn_ordering: str = "NDA",
-        act: Optional[Union[Tuple, str]] = "RELU",
-        dropout: Optional[Union[Tuple, str, float]] = None,
-        dropout_dim: Optional[int] = 1,
+        act: tuple | str | None = "RELU",
+        dropout: tuple | str | float | None = None,
+        dropout_dim: int | None = 1,
         bias: bool = True,
     ) -> None:
         super().__init__()
@@ -99,26 +103,24 @@ class VQVAE(nn.Module):
         spatial_dims: number of spatial spatial_dims.
         in_channels: number of input channels.
         out_channels: number of output channels.
-        num_levels: number of levels that the network has. Defaults to 3.
+        num_levels: number of levels that the network has.
         downsample_parameters: A Tuple of Tuples for defining the downsampling convolutions. Each Tuple should hold the
-            following information stride (int), kernel_size (int), dilation(int) and padding (int).
-            Defaults to ((2,4,1,1),(2,4,1,1),(2,4,1,1)).
+            following information stride (int), kernel_size (int), dilation (int) and padding (int).
         upsample_parameters: A Tuple of Tuples for defining the upsampling convolutions. Each Tuple should hold the
-            following information stride (int), kernel_size (int), dilation(int), padding (int), output_padding (int).
+            following information stride (int), kernel_size (int), dilation (int), padding (int), output_padding (int).
             If use_subpixel_conv is True, only the stride will be used for the last conv as the scale_factor.
-            Defaults to ((2,4,1,1,0),(2,4,1,1,0),(2,4,1,1,0)).
-        num_res_layers: number of sequential residual layers at each level. Defaults to 3.
-        num_channels: number of channels at the deepest level, besides that is num_channels//2 . Defaults to 192.
-        num_res_channels: number of channels in the residual layers. Defaults to 64.
-        num_embeddings: VectorQuantization number of atomic elements in the codebook. Defaults to 32.
-        embedding_dim: VectorQuantization number of channels of the input and atomic elements. Defaults to 64.
-        commitment_cost: VectorQuantization commitment_cost. Defaults to 0.25.
-        decay: VectorQuantization decay. Defaults to 0.5.
-        epsilon: VectorQuantization epsilon. Defaults to 1e-5 as.
-        adn_ordering: a string representing the ordering of activation, normalization, and dropout. Defaults to "NDA".
-        act: activation type and arguments. Defaults to Relu.
-        dropout: dropout ratio. Defaults to 0.1.
-        ddp_sync: whether to synchronize the codebook across processes. Defaults to True.
+        num_res_layers: number of sequential residual layers at each level.
+        num_channels: number of channels at each level.
+        num_res_channels: number of channels in the residual layers at each level.
+        num_embeddings: VectorQuantization number of atomic elements in the codebook.
+        embedding_dim: VectorQuantization number of channels of the input and atomic elements.
+        commitment_cost: VectorQuantization commitment_cost.
+        decay: VectorQuantization decay.
+        epsilon: VectorQuantization epsilon.
+        adn_ordering: a string representing the ordering of activation, normalization, and dropout, e.g. "NDA".
+        act: activation type and arguments.
+        dropout: dropout ratio.
+        ddp_sync: whether to synchronize the codebook across processes.
     """
 
     # < Python 3.9 TorchScript requirement for ModuleList
@@ -130,15 +132,15 @@ class VQVAE(nn.Module):
         in_channels: int,
         out_channels: int,
         num_levels: int = 3,
-        downsample_parameters: Tuple[Tuple[int, int, int, int], ...] = ((2, 4, 1, 1), (2, 4, 1, 1), (2, 4, 1, 1)),
-        upsample_parameters: Tuple[Tuple[int, int, int, int, int], ...] = (
+        downsample_parameters: tuple[tuple[int, int, int, int], ...] = ((2, 4, 1, 1), (2, 4, 1, 1), (2, 4, 1, 1)),
+        upsample_parameters: tuple[tuple[int, int, int, int, int], ...] = (
             (2, 4, 1, 1, 0),
             (2, 4, 1, 1, 0),
             (2, 4, 1, 1, 0),
         ),
         num_res_layers: int = 3,
-        num_channels: Sequence[int] = (96, 96, 192),
-        num_res_channels: Sequence[int] = (96, 96, 192),
+        num_channels: Sequence[int] | int = (96, 96, 192),
+        num_res_channels: Sequence[int] | int = (96, 96, 192),
         num_embeddings: int = 32,
         embedding_dim: int = 64,
         embedding_init: str = "normal",
@@ -146,9 +148,9 @@ class VQVAE(nn.Module):
         decay: float = 0.5,
         epsilon: float = 1e-5,
         adn_ordering: str = "NDA",
-        dropout: Optional[Union[Tuple, str, float]] = 0.1,
-        act: Optional[Union[Tuple, str]] = "RELU",
-        output_act: Optional[Union[Tuple, str]] = None,
+        dropout: tuple | str | float | None = 0.1,
+        act: tuple | str | None = "RELU",
+        output_act: tuple | str | None = None,
         ddp_sync: bool = True,
     ):
         super().__init__()
@@ -156,6 +158,11 @@ class VQVAE(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.spatial_dims = spatial_dims
+
+        if isinstance(num_channels, int):
+            num_channels = ensure_tuple_rep(num_channels, num_levels)
+        if isinstance(num_res_channels, int):
+            num_res_channels = ensure_tuple_rep(num_res_channels, num_levels)
 
         assert (
             num_levels == len(downsample_parameters)
@@ -165,7 +172,7 @@ class VQVAE(nn.Module):
         ), (
             f"downsample_parameters, upsample_parameters, num_channels and num_res_channels must have the same number of"
             f" elements as num_levels. But got {len(downsample_parameters)}, {len(upsample_parameters)}, "
-            f"{len(num_res_channels)} and {len(num_res_channels)} instead of {num_levels}."
+            f"{len(num_channels)} and {len(num_res_channels)} instead of {num_levels}."
         )
 
         self.num_levels = num_levels
@@ -341,7 +348,7 @@ class VQVAE(nn.Module):
     def encode(self, images: torch.Tensor) -> torch.Tensor:
         return self.encoder(images)
 
-    def quantize(self, encodings: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def quantize(self, encodings: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         x_loss, x = self.quantizer(encodings)
         return x, x_loss
 
@@ -354,7 +361,7 @@ class VQVAE(nn.Module):
     def decode_samples(self, embedding_indices: torch.Tensor) -> torch.Tensor:
         return self.decode(self.quantizer.embed(embedding_indices))
 
-    def forward(self, images: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, images: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         quantizations, quantization_losses = self.quantize(self.encode(images))
         reconstruction = self.decode(quantizations)
 

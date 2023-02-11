@@ -6,9 +6,9 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.14.1
+#       jupytext_version: 1.14.4
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: Python 3 (ipykernel)
 #     language: python
 #     name: python3
 # ---
@@ -175,12 +175,7 @@ model = DiffusionModelUNet(
 )
 model.to(device)
 
-scheduler = DDPMScheduler(
-    prediction_type="v_prediction",
-    num_train_timesteps=1000,
-    beta_start=0.00085,
-    beta_end=0.0120,
-)
+scheduler = DDPMScheduler(prediction_type="v_prediction", num_train_timesteps=1000, beta_start=0.00085, beta_end=0.0120)
 
 optimizer = torch.optim.Adam(params=model.parameters(), lr=1.0e-4)
 
@@ -227,11 +222,7 @@ for epoch in range(n_epochs):
 
         epoch_loss += loss.item()
 
-        progress_bar.set_postfix(
-            {
-                "loss": epoch_loss / (step + 1),
-            }
-        )
+        progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
     epoch_loss_list.append(epoch_loss / (step + 1))
 
     if (epoch + 1) % val_interval == 0:
@@ -250,11 +241,7 @@ for epoch in range(n_epochs):
                     val_loss = F.mse_loss(noise_pred.float(), target.float())
 
             val_epoch_loss += val_loss.item()
-            progress_bar.set_postfix(
-                {
-                    "val_loss": val_epoch_loss / (step + 1),
-                }
-            )
+            progress_bar.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
         val_epoch_loss_list.append(val_epoch_loss / (step + 1))
 
         # Sampling image during training
