@@ -103,7 +103,6 @@ class VQVAE(nn.Module):
         spatial_dims: number of spatial spatial_dims.
         in_channels: number of input channels.
         out_channels: number of output channels.
-        num_levels: number of levels that the network has.
         downsample_parameters: A Tuple of Tuples for defining the downsampling convolutions. Each Tuple should hold the
             following information stride (int), kernel_size (int), dilation (int) and padding (int).
         upsample_parameters: A Tuple of Tuples for defining the upsampling convolutions. Each Tuple should hold the
@@ -131,16 +130,15 @@ class VQVAE(nn.Module):
         spatial_dims: int,
         in_channels: int,
         out_channels: int,
-        num_levels: int = 3,
+        num_channels: Sequence[int] | int = (96, 96, 192),
+        num_res_layers: int = 3,
+        num_res_channels: Sequence[int] | int = (96, 96, 192),
         downsample_parameters: tuple[tuple[int, int, int, int], ...] = ((2, 4, 1, 1), (2, 4, 1, 1), (2, 4, 1, 1)),
         upsample_parameters: tuple[tuple[int, int, int, int, int], ...] = (
             (2, 4, 1, 1, 0),
             (2, 4, 1, 1, 0),
             (2, 4, 1, 1, 0),
         ),
-        num_res_layers: int = 3,
-        num_channels: Sequence[int] | int = (96, 96, 192),
-        num_res_channels: Sequence[int] | int = (96, 96, 192),
         num_embeddings: int = 32,
         embedding_dim: int = 64,
         embedding_init: str = "normal",
@@ -158,28 +156,30 @@ class VQVAE(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.spatial_dims = spatial_dims
+        self.num_channels = num_channels
 
-        if isinstance(num_channels, int):
-            num_channels = ensure_tuple_rep(num_channels, num_levels)
         if isinstance(num_res_channels, int):
-            num_res_channels = ensure_tuple_rep(num_res_channels, num_levels)
+            num_res_channels = ensure_tuple_rep(num_res_channels, len(num_channels))
 
-        assert (
-            num_levels == len(downsample_parameters)
-            and num_levels == len(upsample_parameters)
-            and num_levels == len(num_channels)
-            and num_levels == len(num_res_channels)
-        ), (
-            f"downsample_parameters, upsample_parameters, num_channels and num_res_channels must have the same number of"
-            f" elements as num_levels. But got {len(downsample_parameters)}, {len(upsample_parameters)}, "
-            f"{len(num_channels)} and {len(num_res_channels)} instead of {num_levels}."
-        )
+        if len(num_res_channels) != len(num_channels):
+            raise ValueError(
+                "`num_res_channels` should be a single integer or a tuple of integers with the same length as "
+                "`num_channels`."
+            )
 
-        self.num_levels = num_levels
+        if len(downsample_parameters) != len(num_channels):
+            raise ValueError(
+                "`downsample_parameters` should be a tuple of tuples with the same length as `num_channels`."
+            )
+
+        if len(upsample_parameters) != len(num_channels):
+            raise ValueError(
+                "`upsample_parameters` should be a tuple of tuples with the same length as `num_channels`."
+            )
+
         self.downsample_parameters = downsample_parameters
         self.upsample_parameters = upsample_parameters
         self.num_res_layers = num_res_layers
-        self.num_channels = num_channels
         self.num_res_channels = num_res_channels
 
         self.dropout = dropout
@@ -204,7 +204,7 @@ class VQVAE(nn.Module):
     def construct_encoder(self) -> torch.nn.Sequential:
         encoder = []
 
-        for idx in range(self.num_levels):
+        for idx in range(len(self.num_channels)):
             encoder.append(
                 Convolution(
                     spatial_dims=self.spatial_dims,
@@ -303,7 +303,7 @@ class VQVAE(nn.Module):
             )
         ]
 
-        for idx in range(self.num_levels):
+        for idx in range(len(self.num_channels)):
             for _ in range(self.num_res_layers):
                 decoder.append(
                     VQVAEResidualUnit(
@@ -322,18 +322,18 @@ class VQVAE(nn.Module):
                 Convolution(
                     spatial_dims=self.spatial_dims,
                     in_channels=decoder_num_channels[idx],
-                    out_channels=self.out_channels if idx == self.num_levels - 1 else decoder_num_channels[idx + 1],
+                    out_channels=self.out_channels if idx == len(self.num_channels) - 1 else decoder_num_channels[idx + 1],
                     strides=self.upsample_parameters[idx][0],
                     kernel_size=self.upsample_parameters[idx][1],
                     adn_ordering=self.adn_ordering,
                     act=self.act,
-                    dropout=self.dropout if idx != self.num_levels - 1 else None,
+                    dropout=self.dropout if idx != len(self.num_channels) - 1 else None,
                     norm=None,
                     dropout_dim=1,
                     dilation=self.upsample_parameters[idx][2],
                     groups=1,
                     bias=True,
-                    conv_only=idx == self.num_levels - 1,
+                    conv_only=idx == len(self.num_channels) - 1,
                     is_transposed=True,
                     padding=self.upsample_parameters[idx][3],
                     output_padding=self.upsample_parameters[idx][4],
