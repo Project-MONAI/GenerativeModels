@@ -85,6 +85,24 @@ class VQVAEResidualUnit(nn.Module):
 
 
 class Encoder(nn.Module):
+    """
+    Encoder module for VQ-VAE.
+
+    Args:
+        spatial_dims: number of spatial spatial_dims.
+        in_channels: number of input channels.
+        out_channels: VectorQuantization number of channels of the input and atomic elements.
+        num_channels: number of channels at each level.
+        num_res_layers: number of sequential residual layers at each level.
+        num_res_channels: number of channels in the residual layers at each level.
+        upsample_parameters: A Tuple of Tuples for defining the upsampling convolutions. Each Tuple should hold the
+            following information stride (int), kernel_size (int), dilation (int), padding (int), output_padding (int).
+            If use_subpixel_conv is True, only the stride will be used for the last conv as the scale_factor.
+        adn_ordering: a string representing the ordering of activation, normalization, and dropout, e.g. "NDA".
+        dropout: dropout ratio.
+        act: activation type and arguments.
+
+    """
     def __init__(
         self,
         spatial_dims: int,
@@ -163,6 +181,23 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
+    """
+    Decoder module for VQ-VAE.
+
+    Args:
+        spatial_dims: number of spatial spatial_dims.
+        in_channels: VectorQuantization number of channels of the input and atomic elements.
+        out_channels: number of output channels.
+        num_channels: number of channels at each level.
+        num_res_layers: number of sequential residual layers at each level.
+        num_res_channels: number of channels in the residual layers at each level.
+        downsample_parameters: A Tuple of Tuples for defining the downsampling convolutions. Each Tuple should hold the
+            following information stride (int), kernel_size (int), dilation (int) and padding (int).
+        adn_ordering: a string representing the ordering of activation, normalization, and dropout, e.g. "NDA".
+        dropout: dropout ratio.
+        act: activation type and arguments.
+        output_act: activation type and arguments for the output.
+    """
     def __init__(
         self,
         spatial_dims: int,
@@ -276,6 +311,7 @@ class VQVAE(nn.Module):
         adn_ordering: a string representing the ordering of activation, normalization, and dropout, e.g. "NDA".
         act: activation type and arguments.
         dropout: dropout ratio.
+        output_act: activation type and arguments for the output.
         ddp_sync: whether to synchronize the codebook across processes.
     """
 
