@@ -59,6 +59,7 @@ class DiffusionInferer(Inferer):
 
         return prediction
 
+    @torch.no_grad()
     def sample(
         self,
         input_noise: torch.Tensor,
@@ -89,10 +90,9 @@ class DiffusionInferer(Inferer):
         intermediates = []
         for t in progress_bar:
             # 1. predict noise model_output
-            with torch.no_grad():
-                model_output = diffusion_model(
-                    image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning
-                )
+            model_output = diffusion_model(
+                image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning
+            )
 
             # 2. compute previous image: x_t -> x_t-1
             image, _ = scheduler.step(model_output, t, image)
@@ -310,6 +310,7 @@ class LatentDiffusionInferer(DiffusionInferer):
 
         return prediction
 
+    @torch.no_grad()
     def sample(
         self,
         input_noise: torch.Tensor,
@@ -347,16 +348,12 @@ class LatentDiffusionInferer(DiffusionInferer):
         else:
             latent = outputs
 
-        with torch.no_grad():
-            image = autoencoder_model.decode_stage_2_outputs(latent / self.scale_factor)
+        image = autoencoder_model.decode_stage_2_outputs(latent / self.scale_factor)
 
         if save_intermediates:
             intermediates = []
             for latent_intermediate in latent_intermediates:
-                with torch.no_grad():
-                    intermediates.append(
-                        autoencoder_model.decode_stage_2_outputs(latent_intermediate / self.scale_factor)
-                    )
+                intermediates.append(autoencoder_model.decode_stage_2_outputs(latent_intermediate / self.scale_factor))
             return image, intermediates
 
         else:
