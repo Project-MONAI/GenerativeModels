@@ -3,7 +3,7 @@
 </p>
 
 # MONAI Generative Models
-Prototyping repo for generative models to be integrated into MONAI core.
+Prototyping repository for generative models to be integrated into MONAI core.
 ## Features
 * Network architectures: Diffusion Model, Autoencoder-KL, VQ-VAE, (Multi-scale) Patch-GAN discriminator.
 * Diffusion Model Schedulers: DDPM, DDIM, and PNDM.

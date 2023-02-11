@@ -9,8 +9,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import warnings
-from typing import List, Optional, Union
 
 import torch
 from monai.networks.layers.utils import get_act_layer
@@ -45,7 +46,7 @@ class PatchAdversarialLoss(_Loss):
 
     def __init__(
         self,
-        reduction: Union[LossReduction, str] = LossReduction.MEAN,
+        reduction: LossReduction | str = LossReduction.MEAN,
         criterion: str = AdversarialCriterions.LEAST_SQUARE.value,
     ) -> None:
         super().__init__(reduction=LossReduction(reduction).value)
@@ -101,8 +102,8 @@ class PatchAdversarialLoss(_Loss):
         return zero_label_tensor.expand_as(input)
 
     def forward(
-        self, input: Union[torch.FloatTensor, list], target_is_real: bool, for_discriminator: bool
-    ) -> Union[torch.Tensor, List[torch.Tensor]]:
+        self, input: torch.FloatTensor | list, target_is_real: bool, for_discriminator: bool
+    ) -> torch.Tensor | list[torch.Tensor]:
 
         """
 
@@ -152,7 +153,7 @@ class PatchAdversarialLoss(_Loss):
 
         return loss
 
-    def forward_single(self, input: torch.FloatTensor, target: torch.FloatTensor) -> Optional[torch.Tensor]:
+    def forward_single(self, input: torch.FloatTensor, target: torch.FloatTensor) -> torch.Tensor | None:
         if (
             self.criterion == AdversarialCriterions.BCE.value
             or self.criterion == AdversarialCriterions.LEAST_SQUARE.value

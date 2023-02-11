@@ -9,9 +9,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
 
 import math
-from typing import Callable, List, Optional, Tuple, Union, Sequence
+from collections.abc import Callable
 
 import torch
 import torch.nn as nn
@@ -42,7 +43,7 @@ class DiffusionInferer(Inferer):
         diffusion_model: Callable[..., torch.Tensor],
         noise: torch.Tensor,
         timesteps: torch.Tensor,
-        condition: Optional[torch.Tensor] = None,
+        condition: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Implements the forward pass for a supervised training iteration.
@@ -59,16 +60,17 @@ class DiffusionInferer(Inferer):
 
         return prediction
 
+    @torch.no_grad()
     def sample(
         self,
         input_noise: torch.Tensor,
         diffusion_model: Callable[..., torch.Tensor],
-        scheduler: Optional[Callable[..., torch.Tensor]] = None,
-        save_intermediates: Optional[bool] = False,
-        intermediate_steps: Optional[int] = 100,
-        conditioning: Optional[torch.Tensor] = None,
-        verbose: Optional[bool] = True,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
+        scheduler: Callable[..., torch.Tensor] | None = None,
+        save_intermediates: bool | None = False,
+        intermediate_steps: int | None = 100,
+        conditioning: torch.Tensor | None = None,
+        verbose: bool | None = True,
+    ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Args:
             input_noise: random noise, of the same shape as the desired sample.
@@ -89,10 +91,9 @@ class DiffusionInferer(Inferer):
         intermediates = []
         for t in progress_bar:
             # 1. predict noise model_output
-            with torch.no_grad():
-                model_output = diffusion_model(
-                    image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning
-                )
+            model_output = diffusion_model(
+                image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning
+            )
 
             # 2. compute previous image: x_t -> x_t-1
             image, _ = scheduler.step(model_output, t, image)
@@ -108,13 +109,13 @@ class DiffusionInferer(Inferer):
         self,
         inputs: torch.Tensor,
         diffusion_model: Callable[..., torch.Tensor],
-        scheduler: Optional[Callable[..., torch.Tensor]] = None,
-        save_intermediates: Optional[bool] = False,
-        conditioning: Optional[torch.Tensor] = None,
-        original_input_range: Optional[Tuple] = (0, 255),
-        scaled_input_range: Optional[Tuple] = (0, 1),
-        verbose: Optional[bool] = True,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
+        scheduler: Callable[..., torch.Tensor] | None = None,
+        save_intermediates: bool | None = False,
+        conditioning: torch.Tensor | None = None,
+        original_input_range: tuple | None = (0, 255),
+        scaled_input_range: tuple | None = (0, 1),
+        verbose: bool | None = True,
+    ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Computes the likelihoods for an input.
 
@@ -229,8 +230,8 @@ class DiffusionInferer(Inferer):
         inputs: torch.Tensor,
         means: torch.Tensor,
         log_scales: torch.Tensor,
-        original_input_range: Optional[Tuple] = (0, 255),
-        scaled_input_range: Optional[Tuple] = (0, 1),
+        original_input_range: tuple | None = (0, 255),
+        scaled_input_range: tuple | None = (0, 1),
     ) -> torch.Tensor:
         """
         Compute the log-likelihood of a Gaussian distribution discretizing to a
@@ -288,7 +289,7 @@ class LatentDiffusionInferer(DiffusionInferer):
         diffusion_model: Callable[..., torch.Tensor],
         noise: torch.Tensor,
         timesteps: torch.Tensor,
-        condition: Optional[torch.Tensor] = None,
+        condition: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Implements the forward pass for a supervised training iteration.
@@ -310,17 +311,18 @@ class LatentDiffusionInferer(DiffusionInferer):
 
         return prediction
 
+    @torch.no_grad()
     def sample(
         self,
         input_noise: torch.Tensor,
         autoencoder_model: Callable[..., torch.Tensor],
         diffusion_model: Callable[..., torch.Tensor],
-        scheduler: Optional[Callable[..., torch.Tensor]] = None,
-        save_intermediates: Optional[bool] = False,
-        intermediate_steps: Optional[int] = 100,
-        conditioning: Optional[torch.Tensor] = None,
-        verbose: Optional[bool] = True,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
+        scheduler: Callable[..., torch.Tensor] | None = None,
+        save_intermediates: bool | None = False,
+        intermediate_steps: int | None = 100,
+        conditioning: torch.Tensor | None = None,
+        verbose: bool | None = True,
+    ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Args:
             input_noise: random noise, of the same shape as the desired latent representation.
@@ -347,16 +349,12 @@ class LatentDiffusionInferer(DiffusionInferer):
         else:
             latent = outputs
 
-        with torch.no_grad():
-            image = autoencoder_model.decode_stage_2_outputs(latent / self.scale_factor)
+        image = autoencoder_model.decode_stage_2_outputs(latent / self.scale_factor)
 
         if save_intermediates:
             intermediates = []
             for latent_intermediate in latent_intermediates:
-                with torch.no_grad():
-                    intermediates.append(
-                        autoencoder_model.decode_stage_2_outputs(latent_intermediate / self.scale_factor)
-                    )
+                intermediates.append(autoencoder_model.decode_stage_2_outputs(latent_intermediate / self.scale_factor))
             return image, intermediates
 
         else:
@@ -368,15 +366,15 @@ class LatentDiffusionInferer(DiffusionInferer):
         inputs: torch.Tensor,
         autoencoder_model: Callable[..., torch.Tensor],
         diffusion_model: Callable[..., torch.Tensor],
-        scheduler: Optional[Callable[..., torch.Tensor]] = None,
-        save_intermediates: Optional[bool] = False,
-        conditioning: Optional[torch.Tensor] = None,
-        original_input_range: Optional[Tuple] = (0, 255),
-        scaled_input_range: Optional[Tuple] = (0, 1),
-        verbose: Optional[bool] = True,
-        resample_latent_likelihoods: Optional[bool] = False,
-        resample_interpolation_mode: Optional[str] = "bilinear",
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
+        scheduler: Callable[..., torch.Tensor] | None = None,
+        save_intermediates: bool | None = False,
+        conditioning: torch.Tensor | None = None,
+        original_input_range: tuple | None = (0, 255),
+        scaled_input_range: tuple | None = (0, 1),
+        verbose: bool | None = True,
+        resample_latent_likelihoods: bool | None = False,
+        resample_interpolation_mode: str | None = "bilinear",
+    ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Computes the likelihoods of the latent representations of the input.
 

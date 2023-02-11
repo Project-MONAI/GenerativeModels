@@ -9,6 +9,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import unittest
 
 import torch
@@ -25,6 +27,17 @@ UNCOND_CASES_2D = [
             "in_channels": 1,
             "out_channels": 1,
             "num_res_blocks": 1,
+            "num_channels": (8, 8, 8),
+            "attention_levels": (False, False, False),
+            "norm_num_groups": 8,
+        }
+    ],
+    [
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_res_blocks": (1, 1, 2),
             "num_channels": (8, 8, 8),
             "attention_levels": (False, False, False),
             "norm_num_groups": 8,
@@ -265,6 +278,18 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
                 num_channels=(8, 8, 8),
                 attention_levels=(False, False, False),
                 num_head_channels=(0, 2),
+                norm_num_groups=8,
+            )
+
+    def test_num_res_blocks_with_different_length_num_channels(self):
+        with self.assertRaises(ValueError):
+            DiffusionModelUNet(
+                spatial_dims=2,
+                in_channels=1,
+                out_channels=1,
+                num_res_blocks=(1, 1),
+                num_channels=(8, 8, 8),
+                attention_levels=(False, False, False),
                 norm_num_groups=8,
             )
 

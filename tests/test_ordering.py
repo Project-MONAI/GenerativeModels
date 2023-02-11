@@ -9,6 +9,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import unittest
 
 import numpy as np
@@ -233,7 +235,7 @@ TEST_ORDERING_TYPE_FAILURE = [
                 OrderingTransformations.REFLECT.value,
             ),
         }
-    ],
+    ]
 ]
 
 TEST_ORDERING_TRANSFORMATION_FAILURE = [
@@ -251,7 +253,7 @@ TEST_ORDERING_TRANSFORMATION_FAILURE = [
                 "flip",
             ),
         }
-    ],
+    ]
 ]
 
 TEST_REVERT = [
