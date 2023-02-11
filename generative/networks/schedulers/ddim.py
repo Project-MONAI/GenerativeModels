@@ -103,7 +103,6 @@ class DDIMScheduler(nn.Module):
         # standard deviation of the initial noise distribution
         self.init_noise_sigma = 1.0
 
-
         self.timesteps = torch.from_numpy(np.arange(0, num_train_timesteps)[::-1].astype(np.int64))
 
         self.clip_sample = clip_sample
