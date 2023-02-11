@@ -1656,7 +1656,8 @@ class DiffusionModelUNet(nn.Module):
 
         if len(num_res_blocks) != len(num_channels):
             raise ValueError(
-                "`num_res_blocks` should be a single integer or a tuple of integers with the same length as `num_channels`."
+                "`num_res_blocks` should be a single integer or a tuple of integers with the same length as "
+                "`num_channels`."
             )
 
         self.in_channels = in_channels
