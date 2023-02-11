@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 import torch
 import torch.nn as nn
@@ -432,7 +432,7 @@ class VQVAETransformerInferer(Inferer):
         transformer_model: Callable[..., torch.Tensor],
         ordering: Callable[..., torch.Tensor],
         starting_token: int,
-        condition: Optional[torch.Tensor] = None,
+        condition: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Implements the forward pass for a supervised training iteration.
@@ -467,11 +467,11 @@ class VQVAETransformerInferer(Inferer):
         vqvae_model: Callable[..., torch.Tensor],
         transformer_model: Callable[..., torch.Tensor],
         ordering: Callable[..., torch.Tensor],
-        conditioning: Optional[torch.Tensor] = None,
+        conditioning: torch.Tensor | None = None,
         temperature: float = 1.0,
         top_k: int | None = None,
-        verbose: Optional[bool] = True,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
+        verbose: bool | None = True,
+    ) -> torch.Tensor:
         """
         Sampling function for the VQVAE + Transformer model.
 

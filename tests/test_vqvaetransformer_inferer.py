@@ -9,14 +9,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import unittest
 
 import torch
 from parameterized import parameterized
 
-from generative.inferers import DiffusionInferer
-from generative.networks.nets import DiffusionModelUNet
-from generative.networks.schedulers import DDIMScheduler, DDPMScheduler
+from generative.inferers import VQVAETransformerInferer
+from generative.networks.nets import VQVAE, DecoderOnlyTransformer
+from generative.utils.ordering import Ordering, OrderingType
 
 TEST_CASES = [
     [
@@ -24,141 +26,87 @@ TEST_CASES = [
             "spatial_dims": 2,
             "in_channels": 1,
             "out_channels": 1,
-            "num_channels": [8],
-            "norm_num_groups": 8,
-            "attention_levels": [True],
-            "num_res_blocks": 1,
-            "num_head_channels": 8,
+            "num_levels": 2,
+            "downsample_parameters": ((2, 4, 1, 1),) * 2,
+            "upsample_parameters": ((2, 4, 1, 1, 0),) * 2,
+            "num_res_layers": 1,
+            "num_channels": 8,
+            "num_res_channels": [8, 8],
+            "num_embeddings": 16,
+            "embedding_dim": 8,
+        },
+        {
+            "num_tokens": 16 + 1,
+            "max_seq_len": 4 + 1,
+            "attn_layers_dim": 4,
+            "attn_layers_depth": 2,
+            "attn_layers_heads": 1,
+            "with_cross_attention": False,
+        },
+        {
+            "ordering_type": OrderingType.RASTER_SCAN.value,
+            "spatial_dims": 2,
+            "dimensions": (2, 2, 2),
         },
         (2, 1, 8, 8),
+        (2, 5, 17),
     ],
     [
         {
             "spatial_dims": 3,
             "in_channels": 1,
             "out_channels": 1,
-            "num_channels": [8],
-            "norm_num_groups": 8,
-            "attention_levels": [True],
-            "num_res_blocks": 1,
-            "num_head_channels": 8,
+            "num_levels": 2,
+            "downsample_parameters": ((2, 4, 1, 1),) * 2,
+            "upsample_parameters": ((2, 4, 1, 1, 0),) * 2,
+            "num_res_layers": 1,
+            "num_channels": 8,
+            "num_res_channels": [8, 8],
+            "num_embeddings": 16,
+            "embedding_dim": 8,
+        },
+        {
+            "num_tokens": 16 + 1,
+            "max_seq_len": 9 + 1,
+            "attn_layers_dim": 4,
+            "attn_layers_depth": 2,
+            "attn_layers_heads": 1,
+            "with_cross_attention": False,
+        },
+        {
+            "ordering_type": OrderingType.RASTER_SCAN.value,
+            "spatial_dims": 3,
+            "dimensions": (2, 2, 2, 2),
         },
         (2, 1, 8, 8, 8),
+        (2, 9, 17),
     ],
 ]
 
-
-class TestDiffusionSamplingInferer(unittest.TestCase):
+class TestVQVAETransformerInferer(unittest.TestCase):
     @parameterized.expand(TEST_CASES)
-    def test_call(self, model_params, input_shape):
+    def test_prediction_shape(self, stage_1_params, stage_2_params, ordering_params, input_shape, latent_shape):
+        stage_1 = VQVAE(**stage_1_params)
+        stage_2 = DecoderOnlyTransformer(**stage_2_params)
+        ordering = Ordering(**ordering_params)
 
-        model = DiffusionModelUNet(**model_params)
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        model.to(device)
-        model.eval()
+        stage_1.to(device)
+        stage_2.to(device)
+        stage_1.eval()
+        stage_2.eval()
+
         input = torch.randn(input_shape).to(device)
-        noise = torch.randn(input_shape).to(device)
-        scheduler = DDPMScheduler(num_train_timesteps=10)
-        inferer = DiffusionInferer(scheduler=scheduler)
-        scheduler.set_timesteps(num_inference_steps=10)
-        timesteps = torch.randint(0, scheduler.num_train_timesteps, (input_shape[0],), device=input.device).long()
-        sample = inferer(inputs=input, noise=noise, diffusion_model=model, timesteps=timesteps)
-        self.assertEqual(sample.shape, input_shape)
 
-    @parameterized.expand(TEST_CASES)
-    def test_sample_intermediates(self, model_params, input_shape):
-        model = DiffusionModelUNet(**model_params)
-        device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        model.to(device)
-        model.eval()
-        noise = torch.randn(input_shape).to(device)
-        scheduler = DDPMScheduler(num_train_timesteps=10)
-        inferer = DiffusionInferer(scheduler=scheduler)
-        scheduler.set_timesteps(num_inference_steps=10)
-        sample, intermediates = inferer.sample(
-            input_noise=noise, diffusion_model=model, scheduler=scheduler, save_intermediates=True, intermediate_steps=1
+        inferer = VQVAETransformerInferer()
+        prediction = inferer(
+            inputs=input,
+            vqvae_model=stage_1,
+            transformer_model=stage_2,
+            ordering=ordering,
+            starting_token=16,  # from stage_1 num_embeddings
         )
-        self.assertEqual(len(intermediates), 10)
-
-    @parameterized.expand(TEST_CASES)
-    def test_ddpm_sampler(self, model_params, input_shape):
-        model = DiffusionModelUNet(**model_params)
-        device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        model.to(device)
-        model.eval()
-        noise = torch.randn(input_shape).to(device)
-        scheduler = DDPMScheduler(num_train_timesteps=1000)
-        inferer = DiffusionInferer(scheduler=scheduler)
-        scheduler.set_timesteps(num_inference_steps=10)
-        sample, intermediates = inferer.sample(
-            input_noise=noise, diffusion_model=model, scheduler=scheduler, save_intermediates=True, intermediate_steps=1
-        )
-        self.assertEqual(len(intermediates), 10)
-
-    @parameterized.expand(TEST_CASES)
-    def test_ddim_sampler(self, model_params, input_shape):
-        model = DiffusionModelUNet(**model_params)
-        device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        model.to(device)
-        model.eval()
-        noise = torch.randn(input_shape).to(device)
-        scheduler = DDIMScheduler(num_train_timesteps=1000)
-        inferer = DiffusionInferer(scheduler=scheduler)
-        scheduler.set_timesteps(num_inference_steps=10)
-        sample, intermediates = inferer.sample(
-            input_noise=noise, diffusion_model=model, scheduler=scheduler, save_intermediates=True, intermediate_steps=1
-        )
-        self.assertEqual(len(intermediates), 10)
-
-    @parameterized.expand(TEST_CASES)
-    def test_sampler_conditioned(self, model_params, input_shape):
-        model_params["with_conditioning"] = True
-        model_params["cross_attention_dim"] = 3
-        model = DiffusionModelUNet(**model_params)
-        device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        model.to(device)
-        model.eval()
-        noise = torch.randn(input_shape).to(device)
-        scheduler = DDIMScheduler(num_train_timesteps=1000)
-        inferer = DiffusionInferer(scheduler=scheduler)
-        scheduler.set_timesteps(num_inference_steps=10)
-        conditioning = torch.randn([input_shape[0], 1, 3]).to(device)
-        sample, intermediates = inferer.sample(
-            input_noise=noise,
-            diffusion_model=model,
-            scheduler=scheduler,
-            save_intermediates=True,
-            intermediate_steps=1,
-            conditioning=conditioning,
-        )
-        self.assertEqual(len(intermediates), 10)
-
-    @parameterized.expand(TEST_CASES)
-    def test_get_likelihood(self, model_params, input_shape):
-        model = DiffusionModelUNet(**model_params)
-        device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        model.to(device)
-        model.eval()
-        input = torch.randn(input_shape).to(device)
-        scheduler = DDPMScheduler(num_train_timesteps=10)
-        inferer = DiffusionInferer(scheduler=scheduler)
-        scheduler.set_timesteps(num_inference_steps=10)
-        likelihood, intermediates = inferer.get_likelihood(
-            inputs=input, diffusion_model=model, scheduler=scheduler, save_intermediates=True
-        )
-        self.assertEqual(intermediates[0].shape, input.shape)
-        self.assertEqual(likelihood.shape[0], input.shape[0])
-
-    def test_normal_cdf(self):
-        from scipy.stats import norm
-
-        scheduler = DDPMScheduler(num_train_timesteps=10)
-        inferer = DiffusionInferer(scheduler=scheduler)
-
-        x = torch.linspace(-10, 10, 20)
-        cdf_approx = inferer._approx_standard_normal_cdf(x)
-        cdf_true = norm.cdf(x)
-        torch.testing.assert_allclose(cdf_approx, cdf_true, atol=1e-3, rtol=1e-5)
+        self.assertEqual(prediction.shape, latent_shape)
 
 
 if __name__ == "__main__":
