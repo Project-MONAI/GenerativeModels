@@ -186,8 +186,8 @@ class TestVQVAE(unittest.TestCase):
                 out_channels=1,
                 num_channels=(16, 16),
                 num_res_channels=(16, 16, 16),
-                downsample_parameters = ((2, 4, 1, 1),) * 2,
-                upsample_parameters = ((2, 4, 1, 1, 0),) * 2,
+                downsample_parameters=((2, 4, 1, 1),) * 2,
+                upsample_parameters=((2, 4, 1, 1, 0),) * 2,
             )
 
     def test_num_channels_not_same_size_of_downsample_parameters(self):
@@ -198,8 +198,8 @@ class TestVQVAE(unittest.TestCase):
                 out_channels=1,
                 num_channels=(16, 16),
                 num_res_channels=(16, 16),
-                downsample_parameters = ((2, 4, 1, 1),) * 3,
-                upsample_parameters = ((2, 4, 1, 1, 0),) * 2,
+                downsample_parameters=((2, 4, 1, 1),) * 3,
+                upsample_parameters=((2, 4, 1, 1, 0),) * 2,
             )
 
     def test_num_channels_not_same_size_of_upsample_parameters(self):
@@ -210,8 +210,8 @@ class TestVQVAE(unittest.TestCase):
                 out_channels=1,
                 num_channels=(16, 16),
                 num_res_channels=(16, 16),
-                downsample_parameters = ((2, 4, 1, 1),) * 2,
-                upsample_parameters = ((2, 4, 1, 1, 0),) * 3,
+                downsample_parameters=((2, 4, 1, 1),) * 2,
+                upsample_parameters=((2, 4, 1, 1, 0),) * 3,
             )
 
     def test_encode_shape(self):

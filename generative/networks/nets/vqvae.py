@@ -322,7 +322,9 @@ class VQVAE(nn.Module):
                 Convolution(
                     spatial_dims=self.spatial_dims,
                     in_channels=decoder_num_channels[idx],
-                    out_channels=self.out_channels if idx == len(self.num_channels) - 1 else decoder_num_channels[idx + 1],
+                    out_channels=self.out_channels
+                    if idx == len(self.num_channels) - 1
+                    else decoder_num_channels[idx + 1],
                     strides=self.upsample_parameters[idx][0],
                     kernel_size=self.upsample_parameters[idx][1],
                     adn_ordering=self.adn_ordering,
