@@ -279,9 +279,6 @@ class VQVAE(nn.Module):
         ddp_sync: whether to synchronize the codebook across processes.
     """
 
-    # < Python 3.9 TorchScript requirement for ModuleList
-    __constants__ = ["encoder", "quantizer", "decoder"]
-
     def __init__(
         self,
         spatial_dims: int,
