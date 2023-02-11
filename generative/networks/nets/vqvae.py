@@ -91,7 +91,7 @@ class Encoder(nn.Module):
     Args:
         spatial_dims: number of spatial spatial_dims.
         in_channels: number of input channels.
-        out_channels: VectorQuantization number of channels of the input and atomic elements.
+        out_channels: number of channels in the latent space (embedding_dim).
         num_channels: number of channels at each level.
         num_res_layers: number of sequential residual layers at each level.
         num_res_channels: number of channels in the residual layers at each level.
@@ -101,6 +101,7 @@ class Encoder(nn.Module):
         dropout: dropout ratio.
         act: activation type and arguments.
     """
+
     def __init__(
         self,
         spatial_dims: int,
@@ -184,7 +185,7 @@ class Decoder(nn.Module):
 
     Args:
         spatial_dims: number of spatial spatial_dims.
-        in_channels: VectorQuantization number of channels of the input and atomic elements.
+        in_channels: number of channels in the latent space (embedding_dim).
         out_channels: number of output channels.
         num_channels: number of channels at each level.
         num_res_layers: number of sequential residual layers at each level.
@@ -197,6 +198,7 @@ class Decoder(nn.Module):
         act: activation type and arguments.
         output_act: activation type and arguments for the output.
     """
+
     def __init__(
         self,
         spatial_dims: int,
