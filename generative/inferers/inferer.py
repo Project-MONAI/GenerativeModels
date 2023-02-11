@@ -17,6 +17,7 @@ import torch
 import torch.nn as nn
 from monai.inferers import Inferer
 from monai.utils import optional_import
+import torch.nn.functional as F
 
 tqdm, has_tqdm = optional_import("tqdm", name="tqdm")
 
@@ -420,6 +421,7 @@ class LatentDiffusionInferer(DiffusionInferer):
 
 class VQVAETransformerInferer(Inferer):
     """
+    Class to perform inference with a VQVAE + Transformer model.
     """
 
     def __init__(self) -> None:
@@ -438,7 +440,7 @@ class VQVAETransformerInferer(Inferer):
         Args:
             inputs: input image to which the latent representation will be extracted and noise is added.
             vqvae_model: first stage model.
-            transformer_model: transformer model.
+            transformer_model: autoregressive transformer model.
             condition: conditioning for network input.
         """
         with torch.no_grad():
@@ -448,11 +450,14 @@ class VQVAETransformerInferer(Inferer):
 
         return prediction
 
+    @torch.no_grad()
     def sample(
         self,
         vqvae_model: Callable[..., torch.Tensor],
         transformer_model: Callable[..., torch.Tensor],
         conditioning: Optional[torch.Tensor] = None,
+        temperature: float = 1.0,
+        top_k: int | None =None,
         verbose: Optional[bool] = True,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
         """
@@ -462,6 +467,40 @@ class VQVAETransformerInferer(Inferer):
             vqvae_model: first stage model.
             transformer_model: model to sample from.
             conditioning: Conditioning for network input.
+            temperature: temperature for sampling.
+            top_k: top k sampling.
             verbose: if true, prints the progression bar of the sampling process.
         """
-        pass
+        # TODO: define number of steps based on the size of the image
+        steps = 100
+        latent = []
+        if verbose and has_tqdm:
+            progress_bar = tqdm(steps)
+        else:
+            progress_bar = iter(steps)
+
+        # start_ids = encode(start)
+        # x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
+        #
+
+        for _ in range(steps):
+            # if the sequence context is growing too long we must crop it at block_size
+            # idx_cond = idx if idx.size(1) <= self.config.block_size else idx[:, -self.config.block_size:]
+            # forward the model to get the logits for the index in the sequence
+            logits = transformer_model(x=latent, context=conditioning)
+            # pluck the logits at the final step and scale by desired temperature
+            logits = logits[:, -1, :] / temperature
+            # optionally crop the logits to only the top k options
+            if top_k is not None:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                logits[logits < v[:, [-1]]] = -float('Inf')
+            # apply softmax to convert logits to (normalized) probabilities
+            probs = F.softmax(logits, dim=-1)
+            # either sample from the distribution or take the most likely element
+            # sample from the distribution
+            idx_next = torch.multinomial(probs, num_samples=1)
+            # append sampled index to the running sequence and continue
+            idx = torch.cat((idx, idx_next), dim=1)
+
+        image = vqvae_model.decode_stage_2_outputs(latent)
+        return image
