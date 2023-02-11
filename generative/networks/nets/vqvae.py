@@ -92,6 +92,171 @@ class VQVAEResidualUnit(nn.Module):
         return torch.nn.functional.relu(x + self.conv2(self.conv1(x)), True)
 
 
+class Encoder(nn.Module):
+    def __init__(
+        self,
+        spatial_dims: int,
+        in_channels: int,
+        out_channels: int,
+        num_channels: Sequence[int],
+        num_res_layers: int,
+        num_res_channels: Sequence[int],
+        downsample_parameters: Sequence[Sequence[int, int, int, int], ...],
+        adn_ordering: str,
+        dropout: tuple | str | float | None,
+        act: tuple | str | None,
+    ) -> None:
+        super().__init__()
+        self.spatial_dims = spatial_dims
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.num_channels = num_channels
+        self.num_res_layers = num_res_layers
+        self.num_res_channels = num_res_channels
+        self.downsample_parameters = downsample_parameters
+        self.adn_ordering = adn_ordering
+        self.dropout = dropout
+        self.act = act
+
+        blocks = []
+
+        for i in range(len(self.num_channels)):
+            blocks.append(
+                Convolution(
+                    spatial_dims=self.spatial_dims,
+                    in_channels=self.in_channels if i == 0 else self.num_channels[i - 1],
+                    out_channels=self.num_channels[i],
+                    strides=self.downsample_parameters[i][0],
+                    kernel_size=self.downsample_parameters[i][1],
+                    adn_ordering=self.adn_ordering,
+                    act=self.act,
+                    norm=None,
+                    dropout=None if i == 0 else self.dropout,
+                    dropout_dim=1,
+                    dilation=self.downsample_parameters[i][2],
+                    padding=self.downsample_parameters[i][3],
+                )
+            )
+
+            for _ in range(self.num_res_layers):
+                blocks.append(
+                    VQVAEResidualUnit(
+                        spatial_dims=self.spatial_dims,
+                        num_channels=self.num_channels[i],
+                        num_res_channels=self.num_res_channels[i],
+                        adn_ordering=self.adn_ordering,
+                        act=self.act,
+                        dropout=self.dropout,
+                    )
+                )
+
+        blocks.append(
+            Convolution(
+                spatial_dims=self.spatial_dims,
+                in_channels=self.num_channels[len(self.num_channels) - 1],
+                out_channels=self.out_channels,
+                strides=1,
+                kernel_size=3,
+                padding=1,
+                conv_only=True,
+            )
+        )
+
+        self.blocks = nn.ModuleList(blocks)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for block in self.blocks:
+            x = block(x)
+        return x
+
+
+class Decoder(nn.Module):
+    def __init__(
+        self,
+        spatial_dims: int,
+        in_channels: int,
+        out_channels: int,
+        num_channels: Sequence[int],
+        num_res_layers: int,
+        num_res_channels: Sequence[int],
+        upsample_parameters: Sequence[Sequence[int, int, int, int], ...],
+        adn_ordering: str,
+        dropout: tuple | str | float | None,
+        act: tuple | str | None,
+        output_act: tuple | str | None,
+    ) -> None:
+        super().__init__()
+        self.spatial_dims = spatial_dims
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.num_channels = num_channels
+        self.num_res_layers = num_res_layers
+        self.num_res_channels = num_res_channels
+        self.upsample_parameters = upsample_parameters
+        self.adn_ordering = adn_ordering
+        self.dropout = dropout
+        self.act = act
+        self.output_act = output_act
+
+        reversed_num_channels = list(reversed(self.num_channels))
+
+        blocks = []
+        blocks.append(
+            Convolution(
+                spatial_dims=self.spatial_dims,
+                in_channels=self.in_channels,
+                out_channels=reversed_num_channels[0],
+                strides=1,
+                kernel_size=3,
+                padding=1,
+                conv_only=True,
+            )
+        )
+
+        reversed_num_res_channels = list(reversed(self.num_res_channels))
+        for i in range(len(self.num_channels)):
+            for _ in range(self.num_res_layers):
+                blocks.append(
+                    VQVAEResidualUnit(
+                        spatial_dims=self.spatial_dims,
+                        num_channels=reversed_num_channels[i],
+                        num_res_channels=reversed_num_res_channels[i],
+                        adn_ordering=self.adn_ordering,
+                        act=self.act,
+                        dropout=self.dropout,
+                    )
+                )
+
+            blocks.append(
+                Convolution(
+                    spatial_dims=self.spatial_dims,
+                    in_channels=reversed_num_channels[i],
+                    out_channels=self.out_channels if i == len(self.num_channels) - 1 else reversed_num_channels[i + 1],
+                    strides=self.upsample_parameters[i][0],
+                    kernel_size=self.upsample_parameters[i][1],
+                    adn_ordering=self.adn_ordering,
+                    act=self.act,
+                    dropout=self.dropout if i != len(self.num_channels) - 1 else None,
+                    norm=None,
+                    dilation=self.upsample_parameters[i][2],
+                    conv_only=i == len(self.num_channels) - 1,
+                    is_transposed=True,
+                    padding=self.upsample_parameters[i][3],
+                    output_padding=self.upsample_parameters[i][4],
+                )
+            )
+
+        if self.output_act:
+            blocks.append(Act[self.output_act]())
+
+        self.blocks = nn.ModuleList(blocks)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for block in self.blocks:
+            x = block(x)
+        return x
+
+
 class VQVAE(nn.Module):
     """
     Single bottleneck implementation of Vector-Quantised Variational Autoencoder (VQ-VAE) as originally used in
@@ -133,8 +298,8 @@ class VQVAE(nn.Module):
         num_channels: Sequence[int] | int = (96, 96, 192),
         num_res_layers: int = 3,
         num_res_channels: Sequence[int] | int = (96, 96, 192),
-        downsample_parameters: tuple[tuple[int, int, int, int], ...] = ((2, 4, 1, 1), (2, 4, 1, 1), (2, 4, 1, 1)),
-        upsample_parameters: tuple[tuple[int, int, int, int, int], ...] = (
+        downsample_parameters: Sequence[Sequence[int, int, int, int], ...] = ((2, 4, 1, 1), (2, 4, 1, 1), (2, 4, 1, 1)),
+        upsample_parameters: Sequence[Sequence[int, int, int, int, int], ...] = (
             (2, 4, 1, 1, 0),
             (2, 4, 1, 1, 0),
             (2, 4, 1, 1, 0),
@@ -157,6 +322,8 @@ class VQVAE(nn.Module):
         self.out_channels = out_channels
         self.spatial_dims = spatial_dims
         self.num_channels = num_channels
+        self.num_embeddings = num_embeddings
+        self.embedding_dim = embedding_dim
 
         if isinstance(num_res_channels, int):
             num_res_channels = ensure_tuple_rep(num_res_channels, len(num_channels))
@@ -177,175 +344,48 @@ class VQVAE(nn.Module):
                 "`upsample_parameters` should be a tuple of tuples with the same length as `num_channels`."
             )
 
-        self.downsample_parameters = downsample_parameters
-        self.upsample_parameters = upsample_parameters
         self.num_res_layers = num_res_layers
         self.num_res_channels = num_res_channels
 
-        self.dropout = dropout
-        self.act = act
-        self.adn_ordering = adn_ordering
-
-        self.output_act = output_act
-
-        self.num_embeddings = num_embeddings
-        self.embedding_dim = embedding_dim
-        self.embedding_init = embedding_init
-        self.commitment_cost = commitment_cost
-        self.decay = decay
-        self.epsilon = epsilon
-
-        self.ddp_sync = ddp_sync
-
-        self.encoder = self.construct_encoder()
-        self.quantizer = self.construct_quantizer()
-        self.decoder = self.construct_decoder()
-
-    def construct_encoder(self) -> torch.nn.Sequential:
-        encoder = []
-
-        for idx in range(len(self.num_channels)):
-            encoder.append(
-                Convolution(
-                    spatial_dims=self.spatial_dims,
-                    in_channels=self.in_channels if idx == 0 else self.num_channels[idx - 1],
-                    out_channels=self.num_channels[idx],
-                    strides=self.downsample_parameters[idx][0],
-                    kernel_size=self.downsample_parameters[idx][1],
-                    adn_ordering=self.adn_ordering,
-                    act=self.act,
-                    norm=None,
-                    dropout=None if idx == 0 else self.dropout,
-                    dropout_dim=1,
-                    dilation=self.downsample_parameters[idx][2],
-                    groups=1,
-                    bias=True,
-                    conv_only=False,
-                    is_transposed=False,
-                    padding=self.downsample_parameters[idx][3],
-                    output_padding=None,
-                )
-            )
-
-            for _ in range(self.num_res_layers):
-                encoder.append(
-                    VQVAEResidualUnit(
-                        spatial_dims=self.spatial_dims,
-                        num_channels=self.num_channels[idx],
-                        num_res_channels=self.num_res_channels[idx],
-                        adn_ordering=self.adn_ordering,
-                        act=self.act,
-                        dropout=self.dropout,
-                        dropout_dim=1,
-                        bias=True,
-                    )
-                )
-
-        encoder.append(
-            Convolution(
-                spatial_dims=self.spatial_dims,
-                in_channels=self.num_channels[len(self.num_channels) - 1],
-                out_channels=self.embedding_dim,
-                strides=1,
-                kernel_size=3,
-                adn_ordering=self.adn_ordering,
-                act=None,
-                norm=None,
-                dropout=None,
-                dropout_dim=1,
-                dilation=1,
-                bias=True,
-                conv_only=True,
-                is_transposed=False,
-                padding=1,
-                output_padding=None,
-            )
+        self.encoder = Encoder(
+            spatial_dims=spatial_dims,
+            in_channels=in_channels,
+            out_channels=embedding_dim,
+            num_channels=num_channels,
+            num_res_layers=num_res_layers,
+            num_res_channels=num_res_channels,
+            downsample_parameters=downsample_parameters,
+            adn_ordering=adn_ordering,
+            dropout=dropout,
+            act=act,
         )
 
-        return torch.nn.Sequential(*encoder)
+        self.decoder = Decoder(
+            spatial_dims=spatial_dims,
+            in_channels=embedding_dim,
+            out_channels=out_channels,
+            num_channels=num_channels,
+            num_res_layers=num_res_layers,
+            num_res_channels=num_res_channels,
+            upsample_parameters=upsample_parameters,
+            adn_ordering=adn_ordering,
+            dropout=dropout,
+            act=act,
+            output_act=output_act,
+        )
 
-    # TODO: Include lucidrains' vector quantizer as an option
-    def construct_quantizer(self) -> torch.nn.Module:
-        return VectorQuantizer(
+        self.quantizer = VectorQuantizer(
             quantizer=EMAQuantizer(
-                spatial_dims=self.spatial_dims,
-                num_embeddings=self.num_embeddings,
-                embedding_dim=self.embedding_dim,
-                commitment_cost=self.commitment_cost,
-                decay=self.decay,
-                epsilon=self.epsilon,
-                embedding_init=self.embedding_init,
-                ddp_sync=self.ddp_sync,
+                spatial_dims=spatial_dims,
+                num_embeddings=num_embeddings,
+                embedding_dim=embedding_dim,
+                commitment_cost=commitment_cost,
+                decay=decay,
+                epsilon=epsilon,
+                embedding_init=embedding_init,
+                ddp_sync=ddp_sync,
             )
         )
-
-    def construct_decoder(self) -> torch.nn.Sequential:
-        decoder_num_channels = list(reversed(self.num_channels))
-        decoder_num_res_channels = list(reversed(self.num_res_channels))
-
-        decoder = [
-            Convolution(
-                spatial_dims=self.spatial_dims,
-                in_channels=self.embedding_dim,
-                out_channels=decoder_num_channels[0],
-                strides=1,
-                kernel_size=3,
-                adn_ordering=self.adn_ordering,
-                act=None,
-                dropout=None,
-                norm=None,
-                dropout_dim=1,
-                dilation=1,
-                bias=True,
-                is_transposed=False,
-                padding=1,
-                output_padding=None,
-            )
-        ]
-
-        for idx in range(len(self.num_channels)):
-            for _ in range(self.num_res_layers):
-                decoder.append(
-                    VQVAEResidualUnit(
-                        spatial_dims=self.spatial_dims,
-                        num_channels=decoder_num_channels[idx],
-                        num_res_channels=decoder_num_res_channels[idx],
-                        adn_ordering=self.adn_ordering,
-                        act=self.act,
-                        dropout=self.dropout,
-                        dropout_dim=1,
-                        bias=True,
-                    )
-                )
-
-            decoder.append(
-                Convolution(
-                    spatial_dims=self.spatial_dims,
-                    in_channels=decoder_num_channels[idx],
-                    out_channels=self.out_channels
-                    if idx == len(self.num_channels) - 1
-                    else decoder_num_channels[idx + 1],
-                    strides=self.upsample_parameters[idx][0],
-                    kernel_size=self.upsample_parameters[idx][1],
-                    adn_ordering=self.adn_ordering,
-                    act=self.act,
-                    dropout=self.dropout if idx != len(self.num_channels) - 1 else None,
-                    norm=None,
-                    dropout_dim=1,
-                    dilation=self.upsample_parameters[idx][2],
-                    groups=1,
-                    bias=True,
-                    conv_only=idx == len(self.num_channels) - 1,
-                    is_transposed=True,
-                    padding=self.upsample_parameters[idx][3],
-                    output_padding=self.upsample_parameters[idx][4],
-                )
-            )
-
-        if self.output_act:
-            decoder.append(Act[self.output_act]())
-
-        return torch.nn.Sequential(*decoder)
 
     def encode(self, images: torch.Tensor) -> torch.Tensor:
         return self.encoder(images)
