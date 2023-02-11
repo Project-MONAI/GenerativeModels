@@ -48,7 +48,7 @@ class VQVAEResidualUnit(nn.Module):
         num_res_channels: int,
         adn_ordering: str = "NDA",
         act: tuple | str | None = "RELU",
-        dropout: tuple | str | float | None = None,
+        dropout: float = None,
         bias: bool = True,
     ) -> None:
         super().__init__()
@@ -111,7 +111,7 @@ class Encoder(nn.Module):
         num_res_channels: Sequence[int],
         downsample_parameters: Sequence[Sequence[int, int, int, int], ...],
         adn_ordering: str,
-        dropout: tuple | str | float | None,
+        dropout: float,
         act: tuple | str | None,
     ) -> None:
         super().__init__()
@@ -207,7 +207,7 @@ class Decoder(nn.Module):
         num_res_channels: Sequence[int],
         upsample_parameters: Sequence[Sequence[int, int, int, int], ...],
         adn_ordering: str,
-        dropout: tuple | str | float | None,
+        dropout: float,
         act: tuple | str | None,
         output_act: tuple | str | None,
     ) -> None:
@@ -285,10 +285,9 @@ class Decoder(nn.Module):
 
 class VQVAE(nn.Module):
     """
-    Single bottleneck implementation of Vector-Quantised Variational Autoencoder (VQ-VAE) as originally used in
-    Morphology-preserving Autoregressive 3D Generative Modelling of the Brain by Tudosiu et al.
-    (https://arxiv.org/pdf/2209.03177.pdf) and the original implementation that can be found at
-    https://github.com/AmigoLab/SynthAnatomy/blob/main/src/networks/vqvae/baseline.py#L163/
+    Vector-Quantised Variational Autoencoder (VQ-VAE) used in Morphology-preserving Autoregressive 3D Generative
+    Modelling of the Brain by Tudosiu et al. (https://arxiv.org/pdf/2209.03177.pdf) and the original implementation
+    that can be found at https://github.com/AmigoLab/SynthAnatomy/blob/main/src/networks/vqvae/baseline.py#L163/
 
     Args:
         spatial_dims: number of spatial spatial_dims.
@@ -333,7 +332,7 @@ class VQVAE(nn.Module):
         decay: float = 0.5,
         epsilon: float = 1e-5,
         adn_ordering: str = "NDA",
-        dropout: tuple | str | float | None = 0.1,
+        dropout: float = 0.0,
         act: tuple | str | None = "RELU",
         output_act: tuple | str | None = None,
         ddp_sync: bool = True,
