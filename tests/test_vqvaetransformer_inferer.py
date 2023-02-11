@@ -43,11 +43,7 @@ TEST_CASES = [
             "attn_layers_heads": 1,
             "with_cross_attention": False,
         },
-        {
-            "ordering_type": OrderingType.RASTER_SCAN.value,
-            "spatial_dims": 2,
-            "dimensions": (2, 2, 2),
-        },
+        {"ordering_type": OrderingType.RASTER_SCAN.value, "spatial_dims": 2, "dimensions": (2, 2, 2)},
         (2, 1, 8, 8),
         (2, 5, 17),
     ],
@@ -73,15 +69,12 @@ TEST_CASES = [
             "attn_layers_heads": 1,
             "with_cross_attention": False,
         },
-        {
-            "ordering_type": OrderingType.RASTER_SCAN.value,
-            "spatial_dims": 3,
-            "dimensions": (2, 2, 2, 2),
-        },
+        {"ordering_type": OrderingType.RASTER_SCAN.value, "spatial_dims": 3, "dimensions": (2, 2, 2, 2)},
         (2, 1, 8, 8, 8),
         (2, 9, 17),
     ],
 ]
+
 
 class TestVQVAETransformerInferer(unittest.TestCase):
     @parameterized.expand(TEST_CASES)
@@ -107,6 +100,49 @@ class TestVQVAETransformerInferer(unittest.TestCase):
             starting_token=16,  # from stage_1 num_embeddings
         )
         self.assertEqual(prediction.shape, latent_shape)
+
+    def test_sample(self):
+        stage_1 = VQVAE(
+            spatial_dims=2,
+            in_channels=1,
+            out_channels=1,
+            num_levels=2,
+            downsample_parameters=((2, 4, 1, 1),) * 2,
+            upsample_parameters=((2, 4, 1, 1, 0),) * 2,
+            num_res_layers=1,
+            num_channels=8,
+            num_res_channels=(8, 8),
+            num_embeddings=16,
+            embedding_dim=8,
+        )
+        stage_2 = DecoderOnlyTransformer(
+            num_tokens=16 + 1,
+            max_seq_len=4 + 1,
+            attn_layers_dim=4,
+            attn_layers_depth=2,
+            attn_layers_heads=1,
+            with_cross_attention=False,
+        )
+        ordering = Ordering(ordering_type=OrderingType.RASTER_SCAN.value, spatial_dims=2, dimensions=(2, 2, 2))
+
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        stage_1.to(device)
+        stage_2.to(device)
+        stage_1.eval()
+        stage_2.eval()
+
+        inferer = VQVAETransformerInferer()
+
+        starting_token = 16  # from stage_1 num_embeddings
+
+        sample = inferer.sample(
+            latent_spatial_dim=(2, 2),
+            starting_tokens=starting_token * torch.ones((2, 1), device=device),
+            vqvae_model=stage_1,
+            transformer_model=stage_2,
+            ordering=ordering,
+        )
+        self.assertEqual(sample.shape, (2, 1, 8, 8))
 
 
 if __name__ == "__main__":

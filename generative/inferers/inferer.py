@@ -443,7 +443,7 @@ class VQVAETransformerInferer(Inferer):
             transformer_model: autoregressive transformer model.
             ordering: ordering of the quantised latent representation.
             starting_token: token to start the sequence to be inputted in the transformer model, the "Begin Of Sentence"
-             (BOS) token.
+             (BOS) token. It must be vqvae_model.num_embeddings value.
             condition: conditioning for network input.
         """
         with torch.no_grad():
@@ -462,7 +462,7 @@ class VQVAETransformerInferer(Inferer):
     @torch.no_grad()
     def sample(
         self,
-        sampled_image_shape: Sequence[int, int, int] | Sequence[int, int],
+        latent_spatial_dim: Sequence[int, int, int] | Sequence[int, int],
         starting_tokens: torch.Tensor,
         vqvae_model: Callable[..., torch.Tensor],
         transformer_model: Callable[..., torch.Tensor],
@@ -476,8 +476,8 @@ class VQVAETransformerInferer(Inferer):
         Sampling function for the VQVAE + Transformer model.
 
         Args:
-            sampled_image_shape: shape of the sampled image.
-            starting_tokens: starting tokens for the sampling.
+            latent_spatial_dim: shape of the sampled image.
+            starting_tokens: starting tokens for the sampling. It must be vqvae_model.num_embeddings value.
             vqvae_model: first stage model.
             transformer_model: model to sample from.
             conditioning: Conditioning for network input.
@@ -485,14 +485,14 @@ class VQVAETransformerInferer(Inferer):
             top_k: top k sampling.
             verbose: if true, prints the progression bar of the sampling process.
         """
-        seq_len = math.prod(sampled_image_shape)
+        seq_len = math.prod(latent_spatial_dim)
 
         if verbose and has_tqdm:
-            progress_bar = tqdm(seq_len)
+            progress_bar = tqdm(range(seq_len))
         else:
-            progress_bar = iter(seq_len)
+            progress_bar = iter(range(seq_len))
 
-        latent_seq = starting_tokens
+        latent_seq = starting_tokens.long()
         for _ in progress_bar:
             # if the sequence context is growing too long we must crop it at block_size
             if latent_seq.size(1) <= transformer_model.max_seq_len:
@@ -510,6 +510,8 @@ class VQVAETransformerInferer(Inferer):
                 logits[logits < v[:, [-1]]] = -float("Inf")
             # apply softmax to convert logits to (normalized) probabilities
             probs = F.softmax(logits, dim=-1)
+            # remove the chance to be sampled the BOS token
+            probs[:, vqvae_model.num_embeddings] = 0
             # either sample from the distribution or take the most likely element
             # sample from the distribution
             idx_next = torch.multinomial(probs, num_samples=1)
@@ -517,6 +519,7 @@ class VQVAETransformerInferer(Inferer):
             latent_seq = torch.cat((latent_seq, idx_next), dim=1)
 
         latent_seq = latent_seq[:, 1:]
-        latent = latent_seq.view(-1, ordering.get_revert_sequence_ordering())
+        latent_seq = latent_seq[:, ordering.get_revert_sequence_ordering()]
+        latent = latent_seq.reshape((starting_tokens.shape[0],) + latent_spatial_dim)
 
-        return vqvae_model.decode_stage_2_outputs(latent)
+        return vqvae_model.decode_samples(latent)
