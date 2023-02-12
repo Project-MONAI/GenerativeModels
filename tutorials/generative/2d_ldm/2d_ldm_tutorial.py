@@ -47,7 +47,7 @@ from monai.utils import first, set_determinism
 from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
-from generative.inferers import DiffusionInferer
+from generative.inferers import LatentDiffusionInferer
 from generative.losses.adversarial_loss import PatchAdversarialLoss
 from generative.losses.perceptual import PerceptualLoss
 from generative.networks.nets import AutoencoderKL, DiffusionModelUNet, PatchDiscriminator
@@ -316,7 +316,7 @@ scale_factor = 1 / torch.std(z)
 
 # We define the inferer using the scale factor:
 
-inferer = DiffusionInferer(scheduler, scale_factor=scale_factor)
+inferer = LatentDiffusionInferer(scheduler, scale_factor=scale_factor)
 
 # It takes about ~80 min to train the model.
 
@@ -339,14 +339,14 @@ for epoch in range(n_epochs):
     for step, batch in progress_bar:
         images = batch["image"].to(device)
         optimizer.zero_grad(set_to_none=True)
-
         with autocast(enabled=True):
             z_mu, z_sigma = autoencoderkl.encode(images)
             z = autoencoderkl.sampling(z_mu, z_sigma)
-
             noise = torch.randn_like(z).to(device)
             timesteps = torch.randint(0, inferer.scheduler.num_train_timesteps, (z.shape[0],), device=z.device).long()
-            noise_pred = inferer(inputs=z, diffusion_model=unet, noise=noise, timesteps=timesteps)
+            noise_pred = inferer(
+                inputs=images, diffusion_model=unet, noise=noise, timesteps=timesteps, autoencoder_model=autoencoderkl
+            )
             loss = F.mse_loss(noise_pred.float(), noise.float())
 
         scaler.scale(loss).backward()
@@ -377,7 +377,13 @@ for epoch in range(n_epochs):
                     timesteps = torch.randint(
                         0, inferer.scheduler.num_train_timesteps, (z.shape[0],), device=z.device
                     ).long()
-                    noise_pred = inferer(inputs=z, diffusion_model=unet, noise=noise, timesteps=timesteps)
+                    noise_pred = inferer(
+                        inputs=images,
+                        diffusion_model=unet,
+                        noise=noise,
+                        timesteps=timesteps,
+                        autoencoder_model=autoencoderkl,
+                    )
 
                     loss = F.mse_loss(noise_pred.float(), noise.float())
 
@@ -391,8 +397,9 @@ for epoch in range(n_epochs):
         z = z.to(device)
         scheduler.set_timesteps(num_inference_steps=1000)
         with autocast(enabled=True):
-            z = inferer.sample(input_noise=z, diffusion_model=unet, scheduler=scheduler)
-            decoded = autoencoderkl.decode(z)
+            decoded = inferer.sample(
+                input_noise=z, diffusion_model=unet, scheduler=scheduler, autoencoder_model=autoencoderkl
+            )
 
         plt.figure(figsize=(2, 2))
         plt.style.use("default")
@@ -419,7 +426,12 @@ with torch.no_grad():
 
     noise = torch.randn_like(z).to(device)
     image, intermediates = inferer.sample(
-        input_noise=z, diffusion_model=unet, scheduler=scheduler, save_intermediates=True, intermediate_steps=100
+        input_noise=z,
+        diffusion_model=unet,
+        scheduler=scheduler,
+        save_intermediates=True,
+        intermediate_steps=100,
+        autoencoder_model=autoencoderkl,
     )
 
 
@@ -429,8 +441,7 @@ with torch.no_grad():
 decoded_images = []
 for image in intermediates:
     with torch.no_grad():
-        decoded = autoencoderkl.decode(image)
-        decoded_images.append(decoded)
+        decoded_images.append(image)
 plt.figure(figsize=(10, 12))
 chain = torch.cat(decoded_images, dim=-1)
 plt.style.use("default")
