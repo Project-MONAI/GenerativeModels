@@ -57,7 +57,7 @@ print(root_dir)
 # ## Download the training set
 
 # +
-batch_size = 2
+batch_size = 4
 channel = 0  # 0 = Flair
 assert channel in [0, 1, 2, 3], "Choose a valid channel"
 
@@ -83,12 +83,12 @@ train_ds = DecathlonDataset(
     task="Task01_BrainTumour",
     section="training",  # validation
     cache_rate=1.0,  # you may need a few Gb of RAM... Set to 0 otherwise
-    num_workers=4,
-    download=False,  # Set download to True if the dataset hasnt been downloaded yet
+    num_workers=8,
+    download=True,  # Set download to True if the dataset hasnt been downloaded yet
     seed=0,
     transform=train_transforms,
 )
-train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=4)
+train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=8)
 print(f'Image shape {train_ds[0]["image"].shape}')
 # -
 
@@ -307,7 +307,7 @@ ax.imshow(img[img.shape[0] // 2, ...], cmap="gray")
 # +
 with torch.no_grad():
     with autocast(enabled=True):
-        z = autoencoderkl.encode_stage_2_inputs(check_data["image"].to(device))
+        z = autoencoder.encode_stage_2_inputs(check_data["image"].to(device))
 
 print(f"Scaling factor set to {1/torch.std(z)}")
 scale_factor = 1 / torch.std(z)
