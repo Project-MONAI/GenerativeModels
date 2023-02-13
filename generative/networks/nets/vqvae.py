@@ -35,7 +35,6 @@ class VQVAEResidualUnit(nn.Module):
         spatial_dims: number of spatial spatial_dims of the input data.
         num_channels: number of input channels.
         num_res_channels: number of channels in the residual layers.
-        adn_ordering : a string representing the ordering of activation, normalization, and dropout. Defaults to "NDA".
         act: activation type and arguments. Defaults to RELU.
         dropout: dropout ratio. Defaults to no dropout.
         bias: whether to have a bias term. Defaults to True.
@@ -46,7 +45,6 @@ class VQVAEResidualUnit(nn.Module):
         spatial_dims: int,
         num_channels: int,
         num_res_channels: int,
-        adn_ordering: str = "NDA",
         act: tuple | str | None = "RELU",
         dropout: float = None,
         bias: bool = True,
@@ -56,7 +54,6 @@ class VQVAEResidualUnit(nn.Module):
         self.spatial_dims = spatial_dims
         self.num_channels = num_channels
         self.num_res_channels = num_res_channels
-        self.adn_ordering = adn_ordering
         self.act = act
         self.dropout = dropout
         self.bias = bias
@@ -65,9 +62,8 @@ class VQVAEResidualUnit(nn.Module):
             spatial_dims=self.spatial_dims,
             in_channels=self.num_channels,
             out_channels=self.num_res_channels,
-            adn_ordering=self.adn_ordering,
+            adn_ordering="DA",
             act=self.act,
-            norm=None,
             dropout=self.dropout,
             bias=self.bias,
         )
@@ -97,7 +93,6 @@ class Encoder(nn.Module):
         num_res_channels: number of channels in the residual layers at each level.
         downsample_parameters: A Tuple of Tuples for defining the downsampling convolutions. Each Tuple should hold the
             following information stride (int), kernel_size (int), dilation (int) and padding (int).
-        adn_ordering: a string representing the ordering of activation, normalization, and dropout, e.g. "NDA".
         dropout: dropout ratio.
         act: activation type and arguments.
     """
@@ -111,7 +106,6 @@ class Encoder(nn.Module):
         num_res_layers: int,
         num_res_channels: Sequence[int],
         downsample_parameters: Sequence[Sequence[int, int, int, int], ...],
-        adn_ordering: str,
         dropout: float,
         act: tuple | str | None,
     ) -> None:
@@ -123,7 +117,6 @@ class Encoder(nn.Module):
         self.num_res_layers = num_res_layers
         self.num_res_channels = num_res_channels
         self.downsample_parameters = downsample_parameters
-        self.adn_ordering = adn_ordering
         self.dropout = dropout
         self.act = act
 
@@ -137,9 +130,8 @@ class Encoder(nn.Module):
                     out_channels=self.num_channels[i],
                     strides=self.downsample_parameters[i][0],
                     kernel_size=self.downsample_parameters[i][1],
-                    adn_ordering=self.adn_ordering,
+                    adn_ordering="DA",
                     act=self.act,
-                    norm=None,
                     dropout=None if i == 0 else self.dropout,
                     dropout_dim=1,
                     dilation=self.downsample_parameters[i][2],
@@ -153,7 +145,6 @@ class Encoder(nn.Module):
                         spatial_dims=self.spatial_dims,
                         num_channels=self.num_channels[i],
                         num_res_channels=self.num_res_channels[i],
-                        adn_ordering=self.adn_ordering,
                         act=self.act,
                         dropout=self.dropout,
                     )
@@ -193,7 +184,6 @@ class Decoder(nn.Module):
         upsample_parameters: A Tuple of Tuples for defining the upsampling convolutions. Each Tuple should hold the
             following information stride (int), kernel_size (int), dilation (int), padding (int), output_padding (int).
             If use_subpixel_conv is True, only the stride will be used for the last conv as the scale_factor.
-        adn_ordering: a string representing the ordering of activation, normalization, and dropout, e.g. "NDA".
         dropout: dropout ratio.
         act: activation type and arguments.
         output_act: activation type and arguments for the output.
@@ -208,7 +198,6 @@ class Decoder(nn.Module):
         num_res_layers: int,
         num_res_channels: Sequence[int],
         upsample_parameters: Sequence[Sequence[int, int, int, int], ...],
-        adn_ordering: str,
         dropout: float,
         act: tuple | str | None,
         output_act: tuple | str | None,
@@ -221,7 +210,6 @@ class Decoder(nn.Module):
         self.num_res_layers = num_res_layers
         self.num_res_channels = num_res_channels
         self.upsample_parameters = upsample_parameters
-        self.adn_ordering = adn_ordering
         self.dropout = dropout
         self.act = act
         self.output_act = output_act
@@ -249,7 +237,6 @@ class Decoder(nn.Module):
                         spatial_dims=self.spatial_dims,
                         num_channels=reversed_num_channels[i],
                         num_res_channels=reversed_num_res_channels[i],
-                        adn_ordering=self.adn_ordering,
                         act=self.act,
                         dropout=self.dropout,
                     )
@@ -262,7 +249,7 @@ class Decoder(nn.Module):
                     out_channels=self.out_channels if i == len(self.num_channels) - 1 else reversed_num_channels[i + 1],
                     strides=self.upsample_parameters[i][0],
                     kernel_size=self.upsample_parameters[i][1],
-                    adn_ordering=self.adn_ordering,
+                    adn_ordering="DA",
                     act=self.act,
                     dropout=self.dropout if i != len(self.num_channels) - 1 else None,
                     norm=None,
@@ -308,7 +295,6 @@ class VQVAE(nn.Module):
         commitment_cost: VectorQuantization commitment_cost.
         decay: VectorQuantization decay.
         epsilon: VectorQuantization epsilon.
-        adn_ordering: a string representing the ordering of activation, normalization, and dropout, e.g. "NDA".
         act: activation type and arguments.
         dropout: dropout ratio.
         output_act: activation type and arguments for the output.
@@ -333,7 +319,6 @@ class VQVAE(nn.Module):
         commitment_cost: float = 0.25,
         decay: float = 0.5,
         epsilon: float = 1e-5,
-        adn_ordering: str = "NDA",
         dropout: float = 0.0,
         act: tuple | str | None = "RELU",
         output_act: tuple | str | None = None,
@@ -398,7 +383,6 @@ class VQVAE(nn.Module):
             num_res_layers=num_res_layers,
             num_res_channels=num_res_channels,
             downsample_parameters=downsample_parameters,
-            adn_ordering=adn_ordering,
             dropout=dropout,
             act=act,
         )
@@ -411,7 +395,6 @@ class VQVAE(nn.Module):
             num_res_layers=num_res_layers,
             num_res_channels=num_res_channels,
             upsample_parameters=upsample_parameters,
-            adn_ordering=adn_ordering,
             dropout=dropout,
             act=act,
             output_act=output_act,
