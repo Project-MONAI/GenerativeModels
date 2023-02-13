@@ -12,10 +12,11 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from monai.inferers import Inferer
 from monai.utils import optional_import
 
@@ -59,6 +60,7 @@ class DiffusionInferer(Inferer):
 
         return prediction
 
+    @torch.no_grad()
     def sample(
         self,
         input_noise: torch.Tensor,
@@ -89,10 +91,9 @@ class DiffusionInferer(Inferer):
         intermediates = []
         for t in progress_bar:
             # 1. predict noise model_output
-            with torch.no_grad():
-                model_output = diffusion_model(
-                    image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning
-                )
+            model_output = diffusion_model(
+                image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning
+            )
 
             # 2. compute previous image: x_t -> x_t-1
             image, _ = scheduler.step(model_output, t, image)
@@ -310,6 +311,7 @@ class LatentDiffusionInferer(DiffusionInferer):
 
         return prediction
 
+    @torch.no_grad()
     def sample(
         self,
         input_noise: torch.Tensor,
@@ -347,16 +349,12 @@ class LatentDiffusionInferer(DiffusionInferer):
         else:
             latent = outputs
 
-        with torch.no_grad():
-            image = autoencoder_model.decode_stage_2_outputs(latent / self.scale_factor)
+        image = autoencoder_model.decode_stage_2_outputs(latent / self.scale_factor)
 
         if save_intermediates:
             intermediates = []
             for latent_intermediate in latent_intermediates:
-                with torch.no_grad():
-                    intermediates.append(
-                        autoencoder_model.decode_stage_2_outputs(latent_intermediate / self.scale_factor)
-                    )
+                intermediates.append(autoencoder_model.decode_stage_2_outputs(latent_intermediate / self.scale_factor))
             return image, intermediates
 
         else:
@@ -417,3 +415,109 @@ class LatentDiffusionInferer(DiffusionInferer):
             intermediates = [resizer(x) for x in intermediates]
             outputs = (outputs[0], intermediates)
         return outputs
+
+
+class VQVAETransformerInferer(Inferer):
+    """
+    Class to perform inference with a VQVAE + Transformer model.
+    """
+
+    def __init__(self) -> None:
+        Inferer.__init__(self)
+
+    def __call__(
+        self,
+        inputs: torch.Tensor,
+        vqvae_model: Callable[..., torch.Tensor],
+        transformer_model: Callable[..., torch.Tensor],
+        ordering: Callable[..., torch.Tensor],
+        condition: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """
+        Implements the forward pass for a supervised training iteration.
+
+        Args:
+            inputs: input image to which the latent representation will be extracted.
+            vqvae_model: first stage model.
+            transformer_model: autoregressive transformer model.
+            ordering: ordering of the quantised latent representation.
+            condition: conditioning for network input.
+        """
+        with torch.no_grad():
+            latent = vqvae_model.index_quantize(inputs)
+
+        latent = latent.reshape(latent.shape[0], -1)
+        latent = latent[:, ordering.get_sequence_ordering()]
+
+        # Use the value from vqvae_model's num_embeddings as the starting token, the "Begin Of Sentence" (BOS) token.
+        # Note the transformer_model must have vqvae_model.num_embeddings + 1 defined as num_tokens.
+        latent = F.pad(latent, (1, 0), "constant", vqvae_model.num_embeddings)
+        latent = latent.long()
+
+        prediction = transformer_model(x=latent, context=condition)
+
+        return prediction
+
+    @torch.no_grad()
+    def sample(
+        self,
+        latent_spatial_dim: Sequence[int, int, int] | Sequence[int, int],
+        starting_tokens: torch.Tensor,
+        vqvae_model: Callable[..., torch.Tensor],
+        transformer_model: Callable[..., torch.Tensor],
+        ordering: Callable[..., torch.Tensor],
+        conditioning: torch.Tensor | None = None,
+        temperature: float = 1.0,
+        top_k: int | None = None,
+        verbose: bool | None = True,
+    ) -> torch.Tensor:
+        """
+        Sampling function for the VQVAE + Transformer model.
+
+        Args:
+            latent_spatial_dim: shape of the sampled image.
+            starting_tokens: starting tokens for the sampling. It must be vqvae_model.num_embeddings value.
+            vqvae_model: first stage model.
+            transformer_model: model to sample from.
+            conditioning: Conditioning for network input.
+            temperature: temperature for sampling.
+            top_k: top k sampling.
+            verbose: if true, prints the progression bar of the sampling process.
+        """
+        seq_len = math.prod(latent_spatial_dim)
+
+        if verbose and has_tqdm:
+            progress_bar = tqdm(range(seq_len))
+        else:
+            progress_bar = iter(range(seq_len))
+
+        latent_seq = starting_tokens.long()
+        for _ in progress_bar:
+            # if the sequence context is growing too long we must crop it at block_size
+            if latent_seq.size(1) <= transformer_model.max_seq_len:
+                idx_cond = latent_seq
+            else:
+                idx_cond = latent_seq[:, -transformer_model.max_seq_len :]
+
+            # forward the model to get the logits for the index in the sequence
+            logits = transformer_model(x=idx_cond, context=conditioning)
+            # pluck the logits at the final step and scale by desired temperature
+            logits = logits[:, -1, :] / temperature
+            # optionally crop the logits to only the top k options
+            if top_k is not None:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                logits[logits < v[:, [-1]]] = -float("Inf")
+            # apply softmax to convert logits to (normalized) probabilities
+            probs = F.softmax(logits, dim=-1)
+            # remove the chance to be sampled the BOS token
+            probs[:, vqvae_model.num_embeddings] = 0
+            # sample from the distribution
+            idx_next = torch.multinomial(probs, num_samples=1)
+            # append sampled index to the running sequence and continue
+            latent_seq = torch.cat((latent_seq, idx_next), dim=1)
+
+        latent_seq = latent_seq[:, 1:]
+        latent_seq = latent_seq[:, ordering.get_revert_sequence_ordering()]
+        latent = latent_seq.reshape((starting_tokens.shape[0],) + latent_spatial_dim)
+
+        return vqvae_model.decode_samples(latent)
