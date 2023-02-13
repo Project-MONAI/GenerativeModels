@@ -438,7 +438,7 @@ class VQVAETransformerInferer(Inferer):
         Implements the forward pass for a supervised training iteration.
 
         Args:
-            inputs: input image to which the latent representation will be extracted and noise is added.
+            inputs: input image to which the latent representation will be extracted.
             vqvae_model: first stage model.
             transformer_model: autoregressive transformer model.
             ordering: ordering of the quantised latent representation.
@@ -512,7 +512,6 @@ class VQVAETransformerInferer(Inferer):
             probs = F.softmax(logits, dim=-1)
             # remove the chance to be sampled the BOS token
             probs[:, vqvae_model.num_embeddings] = 0
-            # either sample from the distribution or take the most likely element
             # sample from the distribution
             idx_next = torch.multinomial(probs, num_samples=1)
             # append sampled index to the running sequence and continue
