@@ -92,13 +92,7 @@ class TestVQVAETransformerInferer(unittest.TestCase):
         input = torch.randn(input_shape).to(device)
 
         inferer = VQVAETransformerInferer()
-        prediction = inferer(
-            inputs=input,
-            vqvae_model=stage_1,
-            transformer_model=stage_2,
-            ordering=ordering,
-            starting_token=16,  # from stage_1 num_embeddings
-        )
+        prediction = inferer(inputs=input, vqvae_model=stage_1, transformer_model=stage_2, ordering=ordering)
         self.assertEqual(prediction.shape, latent_shape)
 
     def test_sample(self):

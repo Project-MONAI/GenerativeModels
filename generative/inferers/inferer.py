@@ -431,7 +431,6 @@ class VQVAETransformerInferer(Inferer):
         vqvae_model: Callable[..., torch.Tensor],
         transformer_model: Callable[..., torch.Tensor],
         ordering: Callable[..., torch.Tensor],
-        starting_token: int,
         condition: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
@@ -442,8 +441,6 @@ class VQVAETransformerInferer(Inferer):
             vqvae_model: first stage model.
             transformer_model: autoregressive transformer model.
             ordering: ordering of the quantised latent representation.
-            starting_token: token to start the sequence to be inputted in the transformer model, the "Begin Of Sentence"
-             (BOS) token. It must be vqvae_model.num_embeddings value.
             condition: conditioning for network input.
         """
         with torch.no_grad():
@@ -452,7 +449,9 @@ class VQVAETransformerInferer(Inferer):
         latent = latent.reshape(latent.shape[0], -1)
         latent = latent[:, ordering.get_sequence_ordering()]
 
-        latent = F.pad(latent, (1, 0), "constant", starting_token)
+        # Use the value from vqvae_model's num_embeddings as the starting token, the "Begin Of Sentence" (BOS) token.
+        # Note the transformer_model must have vqvae_model.num_embeddings + 1 defined as num_tokens.
+        latent = F.pad(latent, (1, 0), "constant", vqvae_model.num_embeddings)
         latent = latent.long()
 
         prediction = transformer_model(x=latent, context=condition)
