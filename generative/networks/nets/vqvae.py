@@ -23,6 +23,8 @@ from generative.networks.layers.vector_quantizer import EMAQuantizer, VectorQuan
 
 __all__ = ["VQVAE"]
 
+ActType = tuple | str | None
+
 
 class VQVAEResidualUnit(nn.Module):
     """
@@ -45,8 +47,8 @@ class VQVAEResidualUnit(nn.Module):
         spatial_dims: int,
         num_channels: int,
         num_res_channels: int,
-        act: tuple | str | None = "RELU",
-        dropout: float = None,
+        act: ActType = Act.RELU,
+        dropout: float = 0.0,
         bias: bool = True,
     ) -> None:
         super().__init__()
@@ -107,7 +109,7 @@ class Encoder(nn.Module):
         num_res_channels: Sequence[int],
         downsample_parameters: Sequence[Sequence[int, int, int, int], ...],
         dropout: float,
-        act: tuple | str | None,
+        act: ActType,
     ) -> None:
         super().__init__()
         self.spatial_dims = spatial_dims
@@ -199,8 +201,8 @@ class Decoder(nn.Module):
         num_res_channels: Sequence[int],
         upsample_parameters: Sequence[Sequence[int, int, int, int], ...],
         dropout: float,
-        act: tuple | str | None,
-        output_act: tuple | str | None,
+        act: ActType,
+        output_act: ActType,
     ) -> None:
         super().__init__()
         self.spatial_dims = spatial_dims
@@ -320,8 +322,8 @@ class VQVAE(nn.Module):
         decay: float = 0.5,
         epsilon: float = 1e-5,
         dropout: float = 0.0,
-        act: tuple | str | None = "RELU",
-        output_act: tuple | str | None = None,
+        act: ActType = Act.RELU,
+        output_act: ActType = None,
         ddp_sync: bool = True,
     ):
         super().__init__()
