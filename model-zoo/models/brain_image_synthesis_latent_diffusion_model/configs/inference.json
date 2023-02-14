@@ -11,13 +11,12 @@
         "spatial_dims": 3,
         "in_channels": 1,
         "out_channels": 1,
-        "num_channels": 64,
         "latent_channels": 3,
-        "ch_mult": [
-            1,
-            2,
-            2,
-            2
+        "num_channels": [
+            64,
+            128,
+            128,
+            128
         ],
         "num_res_blocks": 2,
         "norm_num_groups": 32,
@@ -31,7 +30,7 @@
         "with_encoder_nonlocal_attn": false,
         "with_decoder_nonlocal_attn": false
     },
-    "autoencoder": "$@network_def.to(@device)",
+    "autoencoder": "$@autoencoder_def.to(@device)",
     "diffusion_def": {
         "_target_": "generative.networks.nets.DiffusionModelUNet",
         "spatial_dims": 3,
@@ -61,18 +60,17 @@
         "cross_attention_dim": 4
     },
     "diffusion": "$@diffusion_def.to(@device)",
-    "evaluator": {
-        "_target_": "SupervisedEvaluator",
-        "device": "@device",
-        "val_data_loader": "@dataloader",
-        "network": "@network",
-        "inferer": "@inferer",
-        "postprocessing": "@postprocessing",
-        "val_handlers": "@handlers",
-        "amp": false
+    "scheduler": {
+        "_target_": "generative.networks.schedulers.DDIMScheduler",
+        "beta_start": 0.0001,
+        "beta_end": 0.02,
+        "beta_schedule": "scaled_linear"
+    },
+    "inferer": {
+        "_target_": "generative.inferers.LatentDiffusionInferer",
+        "scheduler": "$@scheduler"
     },
     "evaluating": [
-        "$setattr(torch.backends.cudnn, 'benchmark', True)",
-        "$@evaluator.run()"
+        "$@inferer.sample()"
     ]
 }
