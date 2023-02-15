@@ -549,7 +549,8 @@ class VQVAETransformerInferer(Inferer):
             condition: conditioning for network input.
             resample_latent_likelihoods: if true, resamples the intermediate likelihood maps to have the same spatial
                 dimension as the input images.
-            resample_interpolation_mode: if use resample_latent_likelihoods, select interpolation 'nearest', 'bilinear', or 'trilinear;
+            resample_interpolation_mode: if use resample_latent_likelihoods, select interpolation 'nearest', 'bilinear',
+                or 'trilinear;
         """
         if resample_interpolation_mode not in ("nearest", "bilinear", "trilinear"):
             raise ValueError(
