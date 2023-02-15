@@ -546,7 +546,7 @@ class VQVAETransformerInferer(Inferer):
                 dimension as the input images.
             resample_interpolation_mode: if use resample_latent_likelihoods, select interpolation 'nearest', 'bilinear', or 'trilinear;
         """
-        if resample_interpolation_mode not in ('nearest', 'bilinear', 'trilinear'):
+        if resample_interpolation_mode not in ("nearest", "bilinear", "trilinear"):
             raise ValueError(
                 f"resample_interpolation mode should be either nearest, bilinear, or trilinear, got {resample_interpolation_mode}"
             )
@@ -568,7 +568,7 @@ class VQVAETransformerInferer(Inferer):
         probs = probs.squeeze(2)
 
         # remove the probability of the starting token
-        probs = probs[:,1:]
+        probs = probs[:, 1:]
         probs = torch.log(probs)
 
         # reshape
@@ -576,6 +576,6 @@ class VQVAETransformerInferer(Inferer):
         probs_reshaped = probs.reshape((inputs.shape[0],) + latent_spatial_dim)
         if resample_latent_likelihoods:
             resizer = nn.Upsample(size=inputs.shape[2:], mode=resample_interpolation_mode)
-            probs_reshaped = resizer(probs_reshaped[:,None,...])
+            probs_reshaped = resizer(probs_reshaped[:, None, ...])
 
         return probs_reshaped
