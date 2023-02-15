@@ -535,7 +535,7 @@ class VQVAETransformerInferer(Inferer):
         transformer_model: Callable[..., torch.Tensor],
         ordering: Callable[..., torch.Tensor],
         condition: torch.Tensor | None = None,
-        resample_latent_likelihoods: bool | None = False,
+        resample_latent_likelihoods: bool = False,
         resample_interpolation_mode: str = "trilinear",
     ) -> torch.Tensor:
         """
