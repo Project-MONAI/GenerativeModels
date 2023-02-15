@@ -432,7 +432,8 @@ class VQVAETransformerInferer(Inferer):
         transformer_model: Callable[..., torch.Tensor],
         ordering: Callable[..., torch.Tensor],
         condition: torch.Tensor | None = None,
-    ) -> torch.Tensor:
+        return_latent: bool = False
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """
         Implements the forward pass for a supervised training iteration.
 
@@ -441,11 +442,13 @@ class VQVAETransformerInferer(Inferer):
             vqvae_model: first stage model.
             transformer_model: autoregressive transformer model.
             ordering: ordering of the quantised latent representation.
+            return_latent: also return latent sequence and spatial dim of the latent.
             condition: conditioning for network input.
         """
         with torch.no_grad():
             latent = vqvae_model.index_quantize(inputs)
 
+        latent_spatial_dim = tuple(latent.shape[1:])
         latent = latent.reshape(latent.shape[0], -1)
         latent = latent[:, ordering.get_sequence_ordering()]
 
@@ -455,8 +458,10 @@ class VQVAETransformerInferer(Inferer):
         latent = latent.long()
 
         prediction = transformer_model(x=latent, context=condition)
-
-        return prediction
+        if return_latent:
+            return prediction, latent, latent_spatial_dim
+        else:
+            return prediction
 
     @torch.no_grad()
     def sample(
@@ -531,10 +536,10 @@ class VQVAETransformerInferer(Inferer):
         ordering: Callable[..., torch.Tensor],
         condition: torch.Tensor | None = None,
         resample_latent_likelihoods: bool | None = False,
-        resample_interpolation_mode: str | None = "trilinear",
+        resample_interpolation_mode: str = "trilinear",
     ) -> torch.Tensor:
         """
-        Computes the likelihoods of the latent representations of the input.
+        Computes the log-likelihoods of the latent representations of the input.
 
         Args:
             inputs: input images, NxCxHxW[xD]
@@ -550,19 +555,7 @@ class VQVAETransformerInferer(Inferer):
             raise ValueError(
                 f"resample_interpolation mode should be either nearest, bilinear, or trilinear, got {resample_interpolation_mode}"
             )
-        with torch.no_grad():
-            latent = vqvae_model.index_quantize(inputs)
-
-        latent_spatial_dim = tuple(latent.shape[1:])
-        latent = latent.reshape(latent.shape[0], -1)
-        latent = latent[:, ordering.get_sequence_ordering()]
-
-        # Use the value from vqvae_model's num_embeddings as the starting token, the "Begin Of Sentence" (BOS) token.
-        # Note the transformer_model must have vqvae_model.num_embeddings + 1 defined as num_tokens.
-        latent = F.pad(latent, (1, 0), "constant", vqvae_model.num_embeddings)
-        latent = latent.long()
-
-        logits = transformer_model(x=latent, context=condition)
+        logits, latent, latent_spatial_dim = self(inputs=inputs, vqvae_model=vqvae_model, transformer_model=transformer_model, ordering = ordering, condition=condition, return_latent=True)
         all_probs = F.softmax(logits, dim=-1)
         probs = torch.gather(all_probs, 2, latent.unsqueeze(2))
         probs = probs.squeeze(2)
