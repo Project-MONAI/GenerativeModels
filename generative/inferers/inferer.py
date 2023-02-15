@@ -521,3 +521,61 @@ class VQVAETransformerInferer(Inferer):
         latent = latent_seq.reshape((starting_tokens.shape[0],) + latent_spatial_dim)
 
         return vqvae_model.decode_samples(latent)
+
+    @torch.no_grad()
+    def get_likelihood(
+        self,
+        inputs: torch.Tensor,
+        vqvae_model: Callable[..., torch.Tensor],
+        transformer_model: Callable[..., torch.Tensor],
+        ordering: Callable[..., torch.Tensor],
+        condition: torch.Tensor | None = None,
+        resample_latent_likelihoods: bool | None = False,
+        resample_interpolation_mode: str | None = "trilinear",
+    ) -> torch.Tensor:
+        """
+        Computes the likelihoods of the latent representations of the input.
+
+        Args:
+            inputs: input images, NxCxHxW[xD]
+            vqvae_model: first stage model.
+            transformer_model: autoregressive transformer model.
+            ordering: ordering of the quantised latent representation.
+            condition: conditioning for network input.
+            resample_latent_likelihoods: if true, resamples the intermediate likelihood maps to have the same spatial
+                dimension as the input images.
+            resample_interpolation_mode: if use resample_latent_likelihoods, select interpolation 'nearest', 'bilinear', or 'trilinear;
+        """
+        if resample_interpolation_mode not in ('nearest', 'bilinear', 'trilinear'):
+            raise ValueError(
+                f"resample_interpolation mode should be either nearest, bilinear, or trilinear, got {resample_interpolation_mode}"
+            )
+        with torch.no_grad():
+            latent = vqvae_model.index_quantize(inputs)
+
+        latent_spatial_dim = tuple(latent.shape[1:])
+        latent = latent.reshape(latent.shape[0], -1)
+        latent = latent[:, ordering.get_sequence_ordering()]
+
+        # Use the value from vqvae_model's num_embeddings as the starting token, the "Begin Of Sentence" (BOS) token.
+        # Note the transformer_model must have vqvae_model.num_embeddings + 1 defined as num_tokens.
+        latent = F.pad(latent, (1, 0), "constant", vqvae_model.num_embeddings)
+        latent = latent.long()
+
+        logits = transformer_model(x=latent, context=condition)
+        all_probs = F.softmax(logits, dim=-1)
+        probs = torch.gather(all_probs, 2, latent.unsqueeze(2))
+        probs = probs.squeeze(2)
+
+        # remove the probability of the starting token
+        probs = probs[:,1:]
+        probs = torch.log(probs)
+
+        # reshape
+        probs = probs[:, ordering.get_revert_sequence_ordering()]
+        probs_reshaped = probs.reshape((inputs.shape[0],) + latent_spatial_dim)
+        if resample_latent_likelihoods:
+            resizer = nn.Upsample(size=inputs.shape[2:], mode=resample_interpolation_mode)
+            probs_reshaped = resizer(probs_reshaped[:,None,...])
+
+        return probs_reshaped

@@ -45,6 +45,7 @@ TEST_CASES = [
         {"ordering_type": OrderingType.RASTER_SCAN.value, "spatial_dims": 2, "dimensions": (2, 2, 2)},
         (2, 1, 8, 8),
         (2, 5, 17),
+        (2,2,2)
     ],
     [
         {
@@ -70,13 +71,15 @@ TEST_CASES = [
         {"ordering_type": OrderingType.RASTER_SCAN.value, "spatial_dims": 3, "dimensions": (2, 2, 2, 2)},
         (2, 1, 8, 8, 8),
         (2, 9, 17),
+        (2, 2, 2, 2)
+
     ],
 ]
 
 
 class TestVQVAETransformerInferer(unittest.TestCase):
     @parameterized.expand(TEST_CASES)
-    def test_prediction_shape(self, stage_1_params, stage_2_params, ordering_params, input_shape, latent_shape):
+    def test_prediction_shape(self, stage_1_params, stage_2_params, ordering_params, input_shape, logits_shape, latent_shape):
         stage_1 = VQVAE(**stage_1_params)
         stage_2 = DecoderOnlyTransformer(**stage_2_params)
         ordering = Ordering(**ordering_params)
@@ -91,7 +94,7 @@ class TestVQVAETransformerInferer(unittest.TestCase):
 
         inferer = VQVAETransformerInferer()
         prediction = inferer(inputs=input, vqvae_model=stage_1, transformer_model=stage_2, ordering=ordering)
-        self.assertEqual(prediction.shape, latent_shape)
+        self.assertEqual(prediction.shape, logits_shape)
 
     def test_sample(self):
         stage_1 = VQVAE(
@@ -135,6 +138,40 @@ class TestVQVAETransformerInferer(unittest.TestCase):
         )
         self.assertEqual(sample.shape, (2, 1, 8, 8))
 
+    @parameterized.expand(TEST_CASES)
+    def test_get_likelihood(self, stage_1_params, stage_2_params, ordering_params, input_shape, logits_shape, latent_shape):
+        stage_1 = VQVAE(**stage_1_params)
+        stage_2 = DecoderOnlyTransformer(**stage_2_params)
+        ordering = Ordering(**ordering_params)
+
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        stage_1.to(device)
+        stage_2.to(device)
+        stage_1.eval()
+        stage_2.eval()
+
+        input = torch.randn(input_shape).to(device)
+
+        inferer = VQVAETransformerInferer()
+        likelihood = inferer.get_likelihood(inputs=input, vqvae_model=stage_1, transformer_model=stage_2, ordering=ordering)
+        self.assertEqual(likelihood.shape, latent_shape)
+    @parameterized.expand(TEST_CASES)
+    def test_get_likelihood_resampling(self, stage_1_params, stage_2_params, ordering_params, input_shape, logits_shape, latent_shape):
+        stage_1 = VQVAE(**stage_1_params)
+        stage_2 = DecoderOnlyTransformer(**stage_2_params)
+        ordering = Ordering(**ordering_params)
+
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        stage_1.to(device)
+        stage_2.to(device)
+        stage_1.eval()
+        stage_2.eval()
+
+        input = torch.randn(input_shape).to(device)
+
+        inferer = VQVAETransformerInferer()
+        likelihood = inferer.get_likelihood(inputs=input, vqvae_model=stage_1, transformer_model=stage_2, ordering=ordering, resample_latent_likelihoods=True, resample_interpolation_mode='nearest')
+        self.assertEqual(likelihood.shape, input_shape)
 
 if __name__ == "__main__":
     unittest.main()
