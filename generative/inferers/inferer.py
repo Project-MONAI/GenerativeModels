@@ -433,7 +433,7 @@ class VQVAETransformerInferer(Inferer):
         ordering: Callable[..., torch.Tensor],
         condition: torch.Tensor | None = None,
         return_latent: bool = False,
-    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor, tuple]:
         """
         Implements the forward pass for a supervised training iteration.
 
