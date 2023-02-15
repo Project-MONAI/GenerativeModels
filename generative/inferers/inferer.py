@@ -432,7 +432,7 @@ class VQVAETransformerInferer(Inferer):
         transformer_model: Callable[..., torch.Tensor],
         ordering: Callable[..., torch.Tensor],
         condition: torch.Tensor | None = None,
-        return_latent: bool = False
+        return_latent: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """
         Implements the forward pass for a supervised training iteration.
@@ -555,7 +555,14 @@ class VQVAETransformerInferer(Inferer):
             raise ValueError(
                 f"resample_interpolation mode should be either nearest, bilinear, or trilinear, got {resample_interpolation_mode}"
             )
-        logits, latent, latent_spatial_dim = self(inputs=inputs, vqvae_model=vqvae_model, transformer_model=transformer_model, ordering = ordering, condition=condition, return_latent=True)
+        logits, latent, latent_spatial_dim = self(
+            inputs=inputs,
+            vqvae_model=vqvae_model,
+            transformer_model=transformer_model,
+            ordering=ordering,
+            condition=condition,
+            return_latent=True,
+        )
         all_probs = F.softmax(logits, dim=-1)
         probs = torch.gather(all_probs, 2, latent.unsqueeze(2))
         probs = probs.squeeze(2)
