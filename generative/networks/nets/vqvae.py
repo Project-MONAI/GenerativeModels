@@ -23,8 +23,6 @@ from generative.networks.layers.vector_quantizer import EMAQuantizer, VectorQuan
 
 __all__ = ["VQVAE"]
 
-ActType = tuple | str | None
-
 
 class VQVAEResidualUnit(nn.Module):
     """
@@ -47,7 +45,7 @@ class VQVAEResidualUnit(nn.Module):
         spatial_dims: int,
         num_channels: int,
         num_res_channels: int,
-        act: ActType = Act.RELU,
+        act: tuple | str | None = Act.RELU,
         dropout: float = 0.0,
         bias: bool = True,
     ) -> None:
@@ -109,7 +107,7 @@ class Encoder(nn.Module):
         num_res_channels: Sequence[int],
         downsample_parameters: Sequence[Sequence[int, int, int, int], ...],
         dropout: float,
-        act: ActType,
+        act: tuple | str | None,
     ) -> None:
         super().__init__()
         self.spatial_dims = spatial_dims
@@ -185,7 +183,6 @@ class Decoder(nn.Module):
         num_res_channels: number of channels in the residual layers at each level.
         upsample_parameters: A Tuple of Tuples for defining the upsampling convolutions. Each Tuple should hold the
             following information stride (int), kernel_size (int), dilation (int), padding (int), output_padding (int).
-            If use_subpixel_conv is True, only the stride will be used for the last conv as the scale_factor.
         dropout: dropout ratio.
         act: activation type and arguments.
         output_act: activation type and arguments for the output.
@@ -201,8 +198,8 @@ class Decoder(nn.Module):
         num_res_channels: Sequence[int],
         upsample_parameters: Sequence[Sequence[int, int, int, int], ...],
         dropout: float,
-        act: ActType,
-        output_act: ActType,
+        act: tuple | str | None,
+        output_act: tuple | str | None,
     ) -> None:
         super().__init__()
         self.spatial_dims = spatial_dims
@@ -288,7 +285,6 @@ class VQVAE(nn.Module):
             following information stride (int), kernel_size (int), dilation (int) and padding (int).
         upsample_parameters: A Tuple of Tuples for defining the upsampling convolutions. Each Tuple should hold the
             following information stride (int), kernel_size (int), dilation (int), padding (int), output_padding (int).
-            If use_subpixel_conv is True, only the stride will be used for the last conv as the scale_factor.
         num_res_layers: number of sequential residual layers at each level.
         num_channels: number of channels at each level.
         num_res_channels: number of channels in the residual layers at each level.
@@ -322,8 +318,8 @@ class VQVAE(nn.Module):
         decay: float = 0.5,
         epsilon: float = 1e-5,
         dropout: float = 0.0,
-        act: ActType = Act.RELU,
-        output_act: ActType = None,
+        act: tuple | str | None = Act.RELU,
+        output_act: tuple | str | None = None,
         ddp_sync: bool = True,
     ):
         super().__init__()
