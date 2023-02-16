@@ -21,7 +21,6 @@ from torch.nn.modules.loss import _Loss
 
 
 class AdversarialCriterions(StrEnum):
-
     BCE = "bce"
     HINGE = "hinge"
     LEAST_SQUARE = "least_squares"
@@ -49,7 +48,7 @@ class PatchAdversarialLoss(_Loss):
         self,
         reduction: LossReduction | str = LossReduction.MEAN,
         criterion: str = AdversarialCriterions.LEAST_SQUARE.value,
-        no_activation_leastsq: bool = False
+        no_activation_leastsq: bool = False,
     ) -> None:
         super().__init__(reduction=LossReduction(reduction).value)
 
@@ -109,7 +108,6 @@ class PatchAdversarialLoss(_Loss):
     def forward(
         self, input: torch.FloatTensor | list, target_is_real: bool, for_discriminator: bool
     ) -> torch.Tensor | list[torch.Tensor]:
-
         """
 
         Args:
