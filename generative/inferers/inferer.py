@@ -117,7 +117,7 @@ class DiffusionInferer(Inferer):
         verbose: bool | None = True,
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
-        Computes the likelihoods for an input.
+        Computes the log-likelihoods for an input.
 
         Args:
             inputs: input images, NxCxHxW[xD]
@@ -376,7 +376,7 @@ class LatentDiffusionInferer(DiffusionInferer):
         resample_interpolation_mode: str | None = "bilinear",
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
-        Computes the likelihoods of the latent representations of the input.
+        Computes the log-likelihoods of the latent representations of the input.
 
         Args:
             inputs: input images, NxCxHxW[xD]
