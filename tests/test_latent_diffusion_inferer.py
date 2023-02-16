@@ -75,6 +75,33 @@ TEST_CASES = [
         (1, 1, 16, 16),
         (1, 3, 4, 4),
     ],
+    [
+        "VQVAE",
+        {
+            "spatial_dims": 3,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_channels": [4, 4],
+            "num_res_layers": 1,
+            "num_res_channels": [4, 4],
+            "downsample_parameters": ((2, 4, 1, 1), (2, 4, 1, 1)),
+            "upsample_parameters": ((2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
+            "num_embeddings": 16,
+            "embedding_dim": 3,
+        },
+        {
+            "spatial_dims": 3,
+            "in_channels": 3,
+            "out_channels": 3,
+            "num_channels": [8, 8],
+            "norm_num_groups": 8,
+            "attention_levels": [False, False],
+            "num_res_blocks": 1,
+            "num_head_channels": 8,
+        },
+        (1, 1, 16, 16, 16),
+        (1, 3, 4, 4, 4),
+    ],
 ]
 
 
