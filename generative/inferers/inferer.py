@@ -69,7 +69,7 @@ class DiffusionInferer(Inferer):
         save_intermediates: bool | None = False,
         intermediate_steps: int | None = 100,
         conditioning: torch.Tensor | None = None,
-        verbose: bool | None = True,
+        verbose: bool = True,
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Args:
@@ -114,7 +114,7 @@ class DiffusionInferer(Inferer):
         conditioning: torch.Tensor | None = None,
         original_input_range: tuple | None = (0, 255),
         scaled_input_range: tuple | None = (0, 1),
-        verbose: bool | None = True,
+        verbose: bool = True,
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Computes the likelihoods for an input.
@@ -321,7 +321,7 @@ class LatentDiffusionInferer(DiffusionInferer):
         save_intermediates: bool | None = False,
         intermediate_steps: int | None = 100,
         conditioning: torch.Tensor | None = None,
-        verbose: bool | None = True,
+        verbose: bool = True,
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Args:
@@ -371,7 +371,7 @@ class LatentDiffusionInferer(DiffusionInferer):
         conditioning: torch.Tensor | None = None,
         original_input_range: tuple | None = (0, 255),
         scaled_input_range: tuple | None = (0, 1),
-        verbose: bool | None = True,
+        verbose: bool = True,
         resample_latent_likelihoods: bool | None = False,
         resample_interpolation_mode: str | None = "bilinear",
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
@@ -474,7 +474,7 @@ class VQVAETransformerInferer(Inferer):
         conditioning: torch.Tensor | None = None,
         temperature: float = 1.0,
         top_k: int | None = None,
-        verbose: bool | None = True,
+        verbose: bool = True,
     ) -> torch.Tensor:
         """
         Sampling function for the VQVAE + Transformer model.
