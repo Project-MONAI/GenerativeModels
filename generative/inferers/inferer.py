@@ -372,8 +372,8 @@ class LatentDiffusionInferer(DiffusionInferer):
         original_input_range: tuple | None = (0, 255),
         scaled_input_range: tuple | None = (0, 1),
         verbose: bool | None = True,
-        resample_latent_likelihoods: bool | None = False,
-        resample_interpolation_mode: str | None = "nearest",
+        resample_latent_likelihoods: bool = False,
+        resample_interpolation_mode: str = "nearest",
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Computes the log-likelihoods of the latent representations of the input.
