@@ -1,3 +1,6 @@
+# This defines the training script for the network
+
+# choose a new directory for every run
 output_dir: $datetime.datetime.now().strftime('./results/output_%y%m%d_%H%M%S')
 dataset_dir: ./data
 
@@ -47,7 +50,6 @@ train_transforms:
   padding_mode: "zeros"
   prob: '@rand_prob'
   
-
 train_ds:
   _target_: Dataset
   data: $@train_datalist
@@ -111,12 +113,7 @@ evaluator:
       _target_: MeanAbsoluteError
       output_transform: $monai.handlers.from_engine([@pred, @label])
   metric_cmp_fn: '$scripts.inv_metric_cmp_fn'
-  val_handlers: '@val_handlers'
-
-# metriclogger:
-#   _target_: MetricLogger
-#   evaluator: '@evaluator'
-#   _disabled_: '@is_not_rank0'
+  val_handlers: '$list(filter(bool, @val_handlers))'
   
 handlers:
 - _target_: CheckpointLoader
@@ -128,20 +125,10 @@ handlers:
   validator: '@evaluator'
   epoch_level: true
   interval: '@val_interval'
-# - '@metriclogger'
-# - _target_: StatsHandler
-#   name: train_log
-#   tag_name: train_loss
-#   output_transform: $monai.handlers.from_engine(['loss'], first=True)
-#   _disabled_: '@is_not_rank0'
-# - _target_: LogfileHandler
-#   output_dir: '@output_dir'
-#   _disabled_: '@is_not_rank0'
 - _target_: CheckpointSaver
   save_dir: '@output_dir'
   save_dict:
     model: '@network'
-    # logger: '@metriclogger'
   save_interval: '@save_interval'
   save_final: true
   epoch_level: true

@@ -1,3 +1,5 @@
+# This file defines common definitions used in training and inference, most importantly the definition definition
+
 imports: 
 - $import os
 - $import datetime
@@ -15,7 +17,6 @@ is_dist: '$dist.is_initialized()'
 rank: '$dist.get_rank() if @is_dist else 0'
 is_not_rank0: '$@rank > 0'
 device: '$torch.device(f"cuda:{@rank}" if torch.cuda.is_available() else "cpu")'
-softdevice: $torch.device('cpu')
 
 network_def:
   _target_: generative.networks.nets.DiffusionModelUNet
@@ -26,12 +27,12 @@ network_def:
   attention_levels: [false, true, true]
   num_res_blocks: 1
   num_head_channels: 128
+  
 network: $@network_def.to(@device)  
 
 bundle_root: .
 ckpt_path: $@bundle_root + '/models/model.pt'
 use_amp: true
-
 image_dim: 64
 image_size: [1, '@image_dim', '@image_dim']
 num_train_timesteps: 1000

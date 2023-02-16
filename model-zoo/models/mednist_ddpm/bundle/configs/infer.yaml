@@ -1,14 +1,18 @@
-inter_steps: '$@num_train_timesteps//10'
+# This defines an inference script for generating a random image to a Pytorch file
+
 batch_size: 1
 num_workers: 0
-noise: $torch.rand(1,1,@image_dim,@image_dim)
 
-out_file: ""
+noise: $torch.rand(1,1,@image_dim,@image_dim)  # create a random image every time this program is run
 
-sample: '$lambda x: @inferer.sample(input_noise=x,diffusion_model=@network,scheduler=@scheduler,save_intermediates=False)'
+out_file: ""  # where to save the tensor to
 
-load_state: '$@network.load_state_dict(torch.load(@ckpt_path))'
+# using a lambda this defines a simple sampling function used below
+sample: '$lambda x: @inferer.sample(input_noise=x, diffusion_model=@network, scheduler=@scheduler)'
 
+load_state: '$@network.load_state_dict(torch.load(@ckpt_path))'  # command to load the saved model weights
+
+# program to load the model weights, run `sample`, and store results to `out_file`
 testing:
 - '@load_state'
 - '$torch.save(@sample(@noise.to(@device)), @out_file)'

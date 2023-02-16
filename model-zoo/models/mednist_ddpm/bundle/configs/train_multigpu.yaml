@@ -1,4 +1,5 @@
-# device: $torch.device(f'cuda:{dist.get_rank()}')
+# This can be mixed in with the training script to enable multi-GPU training
+
 network:
   _target_: torch.nn.parallel.DistributedDataParallel
   module: $@network_def.to(@device)
@@ -10,27 +11,20 @@ tsampler:
   dataset: '@train_ds'
   even_divisible: true
   shuffle: true
-train_dataloader#sampler: '@tsampler'
-train_dataloader#shuffle: false
+train_loader#sampler: '@tsampler'
+train_loader#shuffle: false
 
 vsampler:
   _target_: DistributedSampler
-  dataset: '@eval_ds'
+  dataset: '@val_ds'
   even_divisible: false
   shuffle: false
-eval_dataloader#sampler: '@vsampler'
-
-# trainer#train_handlers: '$@handlers[: 2 if dist.get_rank() > 0 else None]'
-# evaluator#val_handlers: '$None if @is_not_rank0 else @val_handlers'
-
-# trainer#train_handlers: '$@handlers[1 if @is_not_rank0 else 0:]'
+val_loader#sampler: '@vsampler'
 
 training: 
 - $import torch.distributed as dist
 - $dist.init_process_group(backend='nccl')
-- $print(@device)
 - $torch.cuda.set_device(@device)
 - $monai.utils.set_determinism(seed=123),
-# - $print(@network)
 - $@trainer.run()
 - $dist.destroy_process_group()
