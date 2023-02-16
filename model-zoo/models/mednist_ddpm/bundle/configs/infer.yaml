@@ -1,0 +1,14 @@
+inter_steps: '$@num_train_timesteps//10'
+batch_size: 1
+num_workers: 0
+noise: $torch.rand(1,1,@image_dim,@image_dim)
+
+out_file: ""
+
+sample: '$lambda x: @inferer.sample(input_noise=x,diffusion_model=@network,scheduler=@scheduler,save_intermediates=False)'
+
+load_state: '$@network.load_state_dict(torch.load(@ckpt_path))'
+
+testing:
+- '@load_state'
+- '$torch.save(@sample(@noise.to(@device)), @out_file)'
