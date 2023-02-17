@@ -19,7 +19,7 @@
 # This tutorial illustrates how to use MONAI for training a Vector Quantized Variational Autoencoder (VQVAE)[1] and a transformer model on 2D images.
 #
 # This is a two step process:
-# - We will train our VQVAE model to be able to reconstruct the input images.  
+# - We will train our VQVAE model to be able to reconstruct the input images.
 # - This will be followed by using the trained VQVAE model to encode images to feed into the transformer network to train.
 #
 # We will work with the MedNIST dataset available on MONAI
@@ -49,7 +49,6 @@ import time
 
 import matplotlib.pyplot as plt
 import numpy as np
-import random
 import torch
 from torch.nn import L1Loss, CrossEntropyLoss
 import torch.nn.functional as F
@@ -191,7 +190,7 @@ for epoch in range(n_epochs):
         reconstruction, quantization_loss = vqvae_model(images=images)
 
         recons_loss = l1_loss(reconstruction.float(), images.float())
-        
+
         loss = recons_loss + quantization_loss
 
         loss.backward()
@@ -221,7 +220,7 @@ for epoch in range(n_epochs):
 
                 reconstruction, quantization_loss = vqvae_model(images=images)
 
-                # get the first sample from the first validation batch for 
+                # get the first sample from the first validation batch for
                 # visualizing how the training evolves
                 if val_step == 1:
                     intermediary_images.append(reconstruction[:n_example_images, 0])
@@ -335,7 +334,7 @@ transformer_model = DecoderOnlyTransformer(
         num_tokens= 256,   # must be equal to num_embeddings input of VQVAE
         max_seq_len=spatial_shape[0]*spatial_shape[1],
         attn_layers_dim=64,
-        attn_layers_depth=8,
+        attn_layers_depth=12,
         attn_layers_heads=8,
 )
 transformer_model.to(device)
@@ -417,7 +416,7 @@ for epoch in range(n_epochs):
         # Pad input to give start of sequence token
         quantizations = F.pad(quantizations, (1, 0), "constant", 255)  # pad with 0 i.e. vocab size of vqvae
         quantizations = quantizations.long()
-        
+
         quantizations_input = convert_tensor(quantizations[:, :-1], device, non_blocking=True)
         quantizations_target = convert_tensor(quantizations[:, 1:], device, non_blocking=True)
 
@@ -440,7 +439,7 @@ for epoch in range(n_epochs):
         )
     epoch_ce_loss_list.append(epoch_loss / (step + 1))
 
-    
+
     if (epoch + 1) % val_interval == 0:
         transformer_model.eval()
         val_loss = 0
