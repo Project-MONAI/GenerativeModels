@@ -1,21 +1,18 @@
+from __future__ import annotations
+
 import torch
-from torch.cuda.amp import autocast
 from monai.utils import optional_import
+from torch.cuda.amp import autocast
 
 tqdm, has_tqdm = optional_import("tqdm", name="tqdm")
 
-class Sampler():
+
+class Sampler:
     def __init__(self) -> None:
         super().__init__()
 
     @torch.no_grad()
-    def sampling_fn(
-            self,
-            input_noise,
-            autoencoder_model,
-            diffusion_model,
-            scheduler,
-    ):
+    def sampling_fn(self, input_noise, autoencoder_model, diffusion_model, scheduler):
         if has_tqdm:
             progress_bar = tqdm(scheduler.timesteps)
         else:
@@ -31,7 +28,7 @@ class Sampler():
                     model_output = diffusion_model(
                         torch.cat((image, cond_concat), dim=1),
                         timesteps=torch.Tensor((t,)).to(input_noise.device).long(),
-                        context=conditioning
+                        context=conditioning,
                     )
                     image, _ = scheduler.step(model_output, t, image)
 
