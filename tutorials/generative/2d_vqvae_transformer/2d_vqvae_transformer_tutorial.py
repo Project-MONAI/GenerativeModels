@@ -212,7 +212,11 @@ for epoch in range(n_epochs):
         vqvae_model.eval()
         val_loss = 0
         with torch.no_grad():
+            k = 0
             for val_step, batch in enumerate(val_loader, start=1):
+                k += 1
+                if k == 3:
+                    break
                 images = batch["image"].to(device)
 
                 reconstruction, quantization_loss = vqvae_model(images=images)
@@ -325,11 +329,13 @@ revert_sequence_ordering = ordering.get_revert_sequence_ordering()
 # ## Define Network, optimizer and losses
 
 # %%
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 transformer_model = DecoderOnlyTransformer(
         num_tokens= 256,   # must be equal to num_embeddings input of VQVAE
         max_seq_len=spatial_shape[0]*spatial_shape[1],
         attn_layers_dim=64,
-        attn_layers_depth=16,
+        attn_layers_depth=8,
         attn_layers_heads=8,
 )
 transformer_model.to(device)
@@ -346,36 +352,41 @@ ce_loss = CrossEntropyLoss()
 @torch.no_grad()
 def generate(
     net,
-    start_tokens,
+    vqvae_model,
+    starting_tokens,
     seq_len,
     **kwargs
 ):
-    num_dims = len(start_tokens.shape)
+    
+    progress_bar = iter(range(seq_len))
 
-    if num_dims == 1:
-        start_tokens = start_tokens[None, :]
+    latent_seq = starting_tokens.long()
+    for _ in progress_bar:
+        # if the sequence context is growing too long we must crop it at block_size
+        if latent_seq.size(1) <= net.max_seq_len:
+            idx_cond = latent_seq
+        else:
+            idx_cond = latent_seq[:, -net.max_seq_len :]
 
-    b, t = start_tokens.shape
+        # forward the model to get the logits for the index in the sequence
+        logits = net(x=idx_cond)
+        # pluck the logits at the final step and scale by desired temperature
+        logits = logits[:, -1, :]
+        # optionally crop the logits to only the top k options
 
-    net.eval()
-
-    out = start_tokens
-
-    for _ in range(seq_len):
-        x = out[:, -seq_len:]
-
-        logits = net(x, **kwargs)[:, -1]
+        
+        # apply softmax to convert logits to (normalized) probabilities
         probs = F.softmax(logits, dim=-1)
-        sample = torch.multinomial(probs, 1)
-        out = torch.cat((out, sample), dim=-1)
+        # remove the chance to be sampled the BOS token
+        probs[:, vqvae_model.num_embeddings-1] = 0
 
-    out = out[:, t:]
+        # sample from the distribution
+        idx_next = torch.multinomial(probs, num_samples=1)
+        latent_seq = torch.cat((latent_seq, idx_next), dim=1)
 
-    if num_dims == 1:
-        out = out.squeeze(0)
-
-    return out
-
+    latent_seq = latent_seq[:, 1:]
+            
+    return latent_seq
 
 # %% [markdown]
 # ### Transformer Model Training
@@ -396,6 +407,7 @@ for epoch in range(n_epochs):
     progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=110)
     progress_bar.set_description(f"Epoch {epoch}")
     for step, batch in progress_bar:
+
         images = batch["image"].to(device)
         # Encode images using vqvae and transformer to 1D sequence
         quantizations = vqvae_model.index_quantize(images)
@@ -412,8 +424,8 @@ for epoch in range(n_epochs):
         optimizer.zero_grad(set_to_none=True)
 
         # model outputs
-        logits = transformer_model(x=quantizations_input)
-        
+        logits = transformer_model(x=quantizations_input).transpose(1, 2)
+
         loss = ce_loss(logits, quantizations_target)
 
         loss.backward()
@@ -434,6 +446,7 @@ for epoch in range(n_epochs):
         val_loss = 0
         with torch.no_grad():
             for val_step, batch in enumerate(val_loader, start=1):
+
                 images = batch["image"].to(device)
                 # Encode images using vqvae and transformer to 1D sequence
                 quantizations = vqvae_model.index_quantize(images)
@@ -441,21 +454,22 @@ for epoch in range(n_epochs):
                 quantizations = quantizations[:, sequence_ordering]
 
                 # Pad input to give start of sequence token
-                quantizations = F.pad(quantizations, (1, 0), "constant", 255)  # pad with 256 i.e. vocab size of vqvae
+                quantizations = F.pad(quantizations, (1, 0), "constant", 255)  # pad with 255 i.e. vocab size of vqvae
                 quantizations = quantizations.long()
 
                 quantizations_input = convert_tensor(quantizations[:, :-1], device, non_blocking=True)
                 quantizations_target = convert_tensor(quantizations[:, 1:], device, non_blocking=True)
 
                 # model outputs
-                logits = transformer_model(x=quantizations_input)
+                logits = transformer_model(x=quantizations_input).transpose(1, 2)
 
                 loss = ce_loss(logits, quantizations_target)
 
                 # Generate a random sample to visualise progress
                 if val_step == 1:
-                    starting_token = torch.tensor([255], device=device)
-                    generated_latent = generate(transformer_model, starting_token, spatial_shape[0]*spatial_shape[1])
+                    starting_token = 255 * torch.ones((1, 1), device=device)
+                    generated_latent = generate(transformer_model, vqvae_model, starting_token, spatial_shape[0]*spatial_shape[1])
+                    generated_latent = generated_latent[0]
                     vqvae_latent = generated_latent[revert_sequence_ordering]
                     vqvae_latent = vqvae_latent.reshape((1,)+spatial_shape)
                     decoded = vqvae_model.decode_samples(vqvae_latent)
@@ -513,8 +527,9 @@ for image_n in range(len(val_samples)):
 # %%
 samples = []
 for i in range(5):
-    starting_token = torch.tensor([255], device=device)
-    generated_latent = generate(transformer_model, starting_token, spatial_shape[0]*spatial_shape[1])
+    starting_token = 255 * torch.ones((1, 1), device=device)
+    generated_latent = generate(transformer_model, vqvae_model, starting_token, spatial_shape[0]*spatial_shape[1])
+    generated_latent = generated_latent[0]
     vqvae_latent = generated_latent[revert_sequence_ordering]
     vqvae_latent = vqvae_latent.reshape((1,)+spatial_shape)
     decoded = vqvae_model.decode_samples(vqvae_latent)
