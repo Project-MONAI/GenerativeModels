@@ -8,7 +8,8 @@
     "pytorch_version": "1.13.0",
     "numpy_version": "1.22.4",
     "optional_packages_version": {
-        "nibabel": "4.0.1"
+        "nibabel": "4.0.1",
+        "generative": "0.1.0"
     },
     "task": "Brain image synthesis",
     "description": "A generative model for creating high-resolution 3D brain MRI based on UK Biobank",
@@ -50,11 +51,11 @@
                 "type": "image",
                 "format": "magnitude",
                 "modality": "MR",
-                "num_channels": 3,
+                "num_channels": 1,
                 "spatial_shape": [
-                    "160",
-                    "224",
-                    "160"
+                    160,
+                    224,
+                    160
                 ],
                 "dtype": "float32",
                 "value_range": [
