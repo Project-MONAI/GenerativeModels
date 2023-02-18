@@ -21,7 +21,7 @@ class DiffusionPrepareBatch(PrepareBatch):
         self.condition_name = condition_name
         self.num_train_timesteps = num_train_timesteps
 
-    def get_noise(self, images):
+    def get_noise(self, images: torch.Tensor) -> torch.Tensor:
         """Returns the noise tensor for input tensor `images`, override this for different noise distributions."""
         return torch.randn_like(images)
 
