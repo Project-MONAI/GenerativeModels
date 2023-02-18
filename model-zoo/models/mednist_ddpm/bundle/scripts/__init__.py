@@ -25,7 +25,7 @@ class DiffusionPrepareBatch(PrepareBatch):
         """Returns the noise tensor for input tensor `images`, override this for different noise distributions."""
         return torch.randn_like(images)
 
-    def get_timesteps(self, images):
+    def get_timesteps(self, images: torch.Tensor) -> torch.Tensor:
         return torch.randint(0, self.num_train_timesteps, (images.shape[0],), device=images.device).long()
 
     def __call__(
