@@ -1,5 +1,7 @@
+from __future__ import annotations
 
 from typing import Dict, Mapping, Optional, Union
+
 import torch
 from monai.engines import PrepareBatch, default_prepare_batch
 
