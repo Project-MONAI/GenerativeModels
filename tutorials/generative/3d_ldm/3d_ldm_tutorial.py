@@ -57,7 +57,7 @@ print(root_dir)
 # ## Download the training set
 
 # +
-batch_size = 4
+batch_size = 2
 channel = 0  # 0 = Flair
 assert channel in [0, 1, 2, 3], "Choose a valid channel"
 
@@ -131,16 +131,6 @@ autoencoder = AutoencoderKL(
 )
 autoencoder.to(device)
 
-unet = DiffusionModelUNet(
-    spatial_dims=3,
-    in_channels=3,
-    out_channels=3,
-    num_res_blocks=1,
-    num_channels=[32, 64, 64],
-    attention_levels=(False, True, True),
-    num_head_channels=1,
-)
-unet.to(device)
 
 discriminator = PatchDiscriminator(
     spatial_dims=3,
@@ -155,15 +145,6 @@ discriminator = PatchDiscriminator(
     padding=1,
 )
 discriminator.to(device)
-
-
-scheduler = DDPMScheduler(
-    num_train_timesteps=1000,
-    beta_schedule="linear",
-    beta_start=0.0015,
-    beta_end=0.0195,
-)
-
 # -
 
 # ## Define Losses
@@ -315,12 +296,33 @@ scale_factor = 1 / torch.std(z)
 
 # We define the inferer using the scale factor:
 
+# +
+unet = DiffusionModelUNet(
+    spatial_dims=3,
+    in_channels=3,
+    out_channels=3,
+    num_res_blocks=1,
+    num_channels=[32, 64, 64],
+    attention_levels=(False, True, True),
+    num_head_channels=1,
+)
+unet.to(device)
+
+
+scheduler = DDPMScheduler(
+    num_train_timesteps=1000,
+    beta_schedule="scaled_linear",
+    beta_start=0.0015,
+    beta_end=0.0195,
+)
+
 inferer = LatentDiffusionInferer(scheduler)
+# -
 
 optimizer_diff = torch.optim.Adam(params=unet.parameters(), lr=1e-4)
 
 # +
-n_epochs = 50
+n_epochs = 150
 epoch_loss_list = []
 autoencoder.eval()
 scaler = GradScaler()
