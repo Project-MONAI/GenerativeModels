@@ -7,9 +7,9 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.14.1
+#       jupytext_version: 1.14.4
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: Python 3 (ipykernel)
 #     language: python
 #     name: python3
 # ---
@@ -69,11 +69,7 @@ train_transforms = transforms.Compose(
         transforms.AddChanneld(keys=["image"]),
         transforms.EnsureTyped(keys=["image"]),
         transforms.Orientationd(keys=["image"], axcodes="RAS"),
-        transforms.Spacingd(
-            keys=["image"],
-            pixdim=(2.4, 2.4, 2.2),
-            mode=("bilinear"),
-        ),
+        transforms.Spacingd(keys=["image"], pixdim=(2.4, 2.4, 2.2), mode=("bilinear")),
         transforms.CenterSpatialCropd(keys=["image"], roi_size=(96, 96, 64)),
         transforms.ScaleIntensityRangePercentilesd(keys="image", lower=0, upper=99.5, b_min=0, b_max=1),
     ]
@@ -309,12 +305,7 @@ unet = DiffusionModelUNet(
 unet.to(device)
 
 
-scheduler = DDPMScheduler(
-    num_train_timesteps=1000,
-    beta_schedule="scaled_linear",
-    beta_start=0.0015,
-    beta_end=0.0195,
-)
+scheduler = DDPMScheduler(num_train_timesteps=1000, beta_schedule="scaled_linear", beta_start=0.0015, beta_end=0.0195)
 
 inferer = LatentDiffusionInferer(scheduler)
 # -
@@ -361,11 +352,7 @@ for epoch in range(n_epochs):
 
         epoch_loss += loss.item()
 
-        progress_bar.set_postfix(
-            {
-                "loss": epoch_loss / (step + 1),
-            }
-        )
+        progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
     epoch_loss_list.append(epoch_loss / (step + 1))
 # -
 

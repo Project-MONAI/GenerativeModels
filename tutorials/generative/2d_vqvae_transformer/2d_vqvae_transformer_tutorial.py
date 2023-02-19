@@ -152,8 +152,8 @@ vqvae_model = VQVAE(
     num_levels=2,
     downsample_parameters=((2, 4, 1, 1), (2, 4, 1, 1)),
     upsample_parameters=((2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
-    num_channels=(256,256),
-    num_res_channels=(256,256),
+    num_channels=(256, 256),
+    num_res_channels=(256, 256),
     num_embeddings=256,
     embedding_dim=32,
 )
@@ -199,10 +199,7 @@ for epoch in range(n_epochs):
         epoch_loss += recons_loss.item()
 
         progress_bar.set_postfix(
-            {
-                "recons_loss": epoch_loss / (step + 1),
-                "quantization_loss": quantization_loss.item() / (step + 1),
-            }
+            {"recons_loss": epoch_loss / (step + 1), "quantization_loss": quantization_loss.item() / (step + 1)}
         )
     epoch_recon_loss_list.append(epoch_loss / (step + 1))
     epoch_quant_loss_list.append(quantization_loss.item() / (step + 1))
@@ -314,11 +311,9 @@ spatial_shape = next(iter(train_loader))["image"].shape[2:]
 # Get spatial dimensions of data
 # We divide the spatial shape by 4 as the vqvae downsamples the image by a factor of 4 along each dimension
 spatial_shape = next(iter(train_loader))["image"].shape[2:]
-spatial_shape = (int(spatial_shape[0]/4),int(spatial_shape[1]/4))
+spatial_shape = (int(spatial_shape[0] / 4), int(spatial_shape[1] / 4))
 
-ordering = Ordering(ordering_type=OrderingType.RASTER_SCAN.value,
-                    spatial_dims=2,
-                    dimensions=(1,) + spatial_shape)
+ordering = Ordering(ordering_type=OrderingType.RASTER_SCAN.value, spatial_dims=2, dimensions=(1,) + spatial_shape)
 
 sequence_ordering = ordering.get_sequence_ordering()
 revert_sequence_ordering = ordering.get_revert_sequence_ordering()
@@ -331,11 +326,11 @@ revert_sequence_ordering = ordering.get_revert_sequence_ordering()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 transformer_model = DecoderOnlyTransformer(
-        num_tokens= 256,   # must be equal to num_embeddings input of VQVAE
-        max_seq_len=spatial_shape[0]*spatial_shape[1],
-        attn_layers_dim=64,
-        attn_layers_depth=12,
-        attn_layers_heads=8,
+    num_tokens=256,  # must be equal to num_embeddings input of VQVAE
+    max_seq_len=spatial_shape[0] * spatial_shape[1],
+    attn_layers_dim=64,
+    attn_layers_depth=12,
+    attn_layers_heads=8,
 )
 transformer_model.to(device)
 
@@ -349,14 +344,8 @@ ce_loss = CrossEntropyLoss()
 
 # %%
 @torch.no_grad()
-def generate(
-    net,
-    vqvae_model,
-    starting_tokens,
-    seq_len,
-    **kwargs
-):
-    
+def generate(net, vqvae_model, starting_tokens, seq_len, **kwargs):
+
     progress_bar = iter(range(seq_len))
 
     latent_seq = starting_tokens.long()
@@ -373,19 +362,19 @@ def generate(
         logits = logits[:, -1, :]
         # optionally crop the logits to only the top k options
 
-        
         # apply softmax to convert logits to (normalized) probabilities
         probs = F.softmax(logits, dim=-1)
         # remove the chance to be sampled the BOS token
-        probs[:, vqvae_model.num_embeddings-1] = 0
+        probs[:, vqvae_model.num_embeddings - 1] = 0
 
         # sample from the distribution
         idx_next = torch.multinomial(probs, num_samples=1)
         latent_seq = torch.cat((latent_seq, idx_next), dim=1)
 
     latent_seq = latent_seq[:, 1:]
-            
+
     return latent_seq
+
 
 # %% [markdown]
 # ### Transformer Model Training
@@ -432,13 +421,8 @@ for epoch in range(n_epochs):
 
         epoch_loss += loss.item()
 
-        progress_bar.set_postfix(
-            {
-                "ce_loss": epoch_loss / (step + 1),
-            }
-        )
+        progress_bar.set_postfix({"ce_loss": epoch_loss / (step + 1)})
     epoch_ce_loss_list.append(epoch_loss / (step + 1))
-
 
     if (epoch + 1) % val_interval == 0:
         transformer_model.eval()
@@ -467,10 +451,12 @@ for epoch in range(n_epochs):
                 # Generate a random sample to visualise progress
                 if val_step == 1:
                     starting_token = 255 * torch.ones((1, 1), device=device)
-                    generated_latent = generate(transformer_model, vqvae_model, starting_token, spatial_shape[0]*spatial_shape[1])
+                    generated_latent = generate(
+                        transformer_model, vqvae_model, starting_token, spatial_shape[0] * spatial_shape[1]
+                    )
                     generated_latent = generated_latent[0]
                     vqvae_latent = generated_latent[revert_sequence_ordering]
-                    vqvae_latent = vqvae_latent.reshape((1,)+spatial_shape)
+                    vqvae_latent = vqvae_latent.reshape((1,) + spatial_shape)
                     decoded = vqvae_model.decode_samples(vqvae_latent)
                     intermediary_images.append(decoded[:, 0])
 
@@ -527,10 +513,10 @@ for image_n in range(len(val_samples)):
 samples = []
 for i in range(5):
     starting_token = 255 * torch.ones((1, 1), device=device)
-    generated_latent = generate(transformer_model, vqvae_model, starting_token, spatial_shape[0]*spatial_shape[1])
+    generated_latent = generate(transformer_model, vqvae_model, starting_token, spatial_shape[0] * spatial_shape[1])
     generated_latent = generated_latent[0]
     vqvae_latent = generated_latent[revert_sequence_ordering]
-    vqvae_latent = vqvae_latent.reshape((1,)+spatial_shape)
+    vqvae_latent = vqvae_latent.reshape((1,) + spatial_shape)
     decoded = vqvae_model.decode_samples(vqvae_latent)
     samples.append(decoded[:, 0])
 
