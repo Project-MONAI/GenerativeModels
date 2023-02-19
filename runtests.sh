@@ -38,14 +38,12 @@ doNetTests=false
 doDryRun=false
 doZooTests=false
 doUnitTests=false
-doBuild=false
 doBlackFormat=false
 doBlackFix=false
 doIsortFormat=false
 doIsortFix=false
 doFlake8Format=false
 doPylintFormat=false
-doClangFormat=false
 doCopyRight=false
 doPytypeFormat=false
 doMypyFormat=false
@@ -58,9 +56,9 @@ NUM_PARALLEL=1
 PY_EXE=${MONAI_PY_EXE:-$(which python)}
 
 function print_usage {
-    echo "runtests.sh [--codeformat] [--autofix] [--black] [--isort] [--flake8] [--pylint] [--clangformat] [--pytype] [--mypy]"
+    echo "runtests.sh [--codeformat] [--autofix] [--black] [--isort] [--flake8] [--pylint] [--pytype] [--mypy]"
     echo "            [--unittests] [--disttests] [--coverage] [--quick] [--min] [--net] [--dryrun] [-j number] [--list_tests]"
-    echo "            [--copyright] [--build] [--clean] [--precommit] [--help] [--version]"
+    echo "            [--copyright] [--clean] [--precommit] [--help] [--version]"
     echo ""
     echo "MONAI unit testing utilities."
     echo ""
@@ -78,7 +76,6 @@ function print_usage {
     echo "    --isort           : perform \"isort\" import sort checks"
     echo "    --flake8          : perform \"flake8\" code format checks"
     echo "    --pylint          : perform \"pylint\" code format checks"
-    echo "    --clangformat     : format csrc code using \"clang-format\""
     echo "    --precommit       : perform source code format check and fix using \"pre-commit\""
     echo ""
     echo "Python type check options:"
@@ -93,7 +90,6 @@ function print_usage {
     echo "    -q, --quick       : skip long running unit tests and integration tests"
     echo "    -m, --min         : only run minimal unit tests which do not require optional packages"
     echo "    --net             : perform integration testing"
-    echo "    -b, --build       : compile and install the source code folder an editable release."
     echo "    --list_tests      : list unit tests and exit"
     echo ""
     echo "Misc. options:"
@@ -132,32 +128,6 @@ function install_deps {
     ${cmdPrefix}${PY_EXE} -m pip install -r requirements-dev.txt
 }
 
-function compile_cpp {
-    echo "Compiling and installing MONAI cpp extensions..."
-    # depends on setup.py behaviour for building
-    # currently setup.py uses environment variables: BUILD_MONAI and FORCE_CUDA
-    ${cmdPrefix}${PY_EXE} setup.py develop --user --uninstall
-    if [[ "$OSTYPE" == "darwin"* ]];
-    then  # clang for mac os
-        CC=clang CXX=clang++ ${cmdPrefix}${PY_EXE} setup.py develop --user
-    else
-        ${cmdPrefix}${PY_EXE} setup.py develop --user
-    fi
-}
-
-function clang_format {
-    echo "Running clang-format..."
-    ${cmdPrefix}${PY_EXE} -m tests.clang_format_utils
-    clang_format_tool='.clang-format-bin/clang-format'
-    # Verify .
-    if ! type -p "$clang_format_tool" >/dev/null; then
-        echo "'clang-format' not found, skipping the formatting."
-        exit 1
-    fi
-    find generative/csrc -type f | while read i; do $clang_format_tool -style=file -i $i; done
-    find generative/_extensions -type f -name "*.cpp" -o -name "*.h" -o -name "*.cuh" -o -name "*.cu" |\
-        while read i; do $clang_format_tool -style=file -i $i; done
-}
 
 function is_pip_installed() {
 	return $(${PY_EXE} -c "import sys, pkgutil; sys.exit(0 if pkgutil.find_loader(sys.argv[1]) else 1)" $1)
@@ -185,7 +155,6 @@ function clean_py {
 
     find ${TO_CLEAN} -depth -maxdepth 1 -type d -name ".eggs" -exec rm -r "{}" +
     find ${TO_CLEAN} -depth -maxdepth 1 -type d -name "generative.egg-info" -exec rm -r "{}" +
-    find ${TO_CLEAN} -depth -maxdepth 1 -type d -name "build" -exec rm -r "{}" +
     find ${TO_CLEAN} -depth -maxdepth 1 -type d -name "dist" -exec rm -r "{}" +
     find ${TO_CLEAN} -depth -maxdepth 1 -type d -name ".mypy_cache" -exec rm -r "{}" +
     find ${TO_CLEAN} -depth -maxdepth 1 -type d -name ".pytype" -exec rm -r "{}" +
@@ -258,8 +227,8 @@ do
             doIsortFormat=true
             doFlake8Format=true
             doPylintFormat=true
-            doPytypeFormat=true
-            doMypyFormat=true
+            doPytypeFormat=false
+            doMypyFormat=false
             doCopyRight=true
         ;;
         --disttests)
@@ -274,9 +243,6 @@ do
             doIsortFormat=true
             doBlackFormat=true
             doCopyRight=true
-        ;;
-        --clangformat)
-            doClangFormat=true
         ;;
         --isort)
             doIsortFormat=true
@@ -302,9 +268,6 @@ do
         ;;
         --copyright)
             doCopyRight=true
-        ;;
-        -b|--build)
-            doBuild=true
         ;;
         -c|--clean)
             doCleanup=true
@@ -350,14 +313,6 @@ else
     check_import
 fi
 
-if [ $doBuild = true ]
-then
-    echo "${separator}${blue}compile and install${noColor}"
-    # try to compile MONAI cpp
-    compile_cpp
-
-    echo "${green}done! (to uninstall and clean up, please use \"./runtests.sh --clean\")${noColor}"
-fi
 
 if [ $doCleanup = true ]
 then
@@ -369,14 +324,6 @@ then
     exit
 fi
 
-if [ $doClangFormat = true ]
-then
-    echo "${separator}${blue}clang-formatting${noColor}"
-
-    clang_format
-
-    echo "${green}done!${noColor}"
-fi
 
 # unconditionally report on the state of monai
 print_version

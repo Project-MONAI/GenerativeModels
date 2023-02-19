@@ -8,12 +8,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+#
 # =========================================================================
 # Adapted from https://github.com/photosynthesis-team/piq
 # which has the following license:
 # https://github.com/photosynthesis-team/piq/blob/master/LICENSE
-
+#
 # Copyright 2023 photosynthesis-team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -60,7 +60,7 @@ def get_fid_score(y_pred: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     y_pred = y_pred.float()
 
     if y.ndimension() > 2:
-        raise ValueError(f"Inputs should have (number images, number of features) shape.")
+        raise ValueError("Inputs should have (number images, number of features) shape.")
 
     mu_y_pred = torch.mean(y_pred, dim=0)
     sigma_y_pred = _cov(y_pred, rowvar=False)
@@ -114,9 +114,9 @@ def _sqrtm_newton_schulz(matrix: torch.Tensor, num_iters: int = 100) -> tuple[to
     error = torch.empty(1, device=matrix.device, dtype=matrix.dtype)
 
     for _ in range(num_iters):
-        T = 0.5 * (3.0 * i_matrix - z_matrix.mm(y_matrix))
-        y_matrix = y_matrix.mm(T)
-        z_matrix = T.mm(z_matrix)
+        t = 0.5 * (3.0 * i_matrix - z_matrix.mm(y_matrix))
+        y_matrix = y_matrix.mm(t)
+        z_matrix = t.mm(z_matrix)
 
         s_matrix = y_matrix * torch.sqrt(norm_of_matrix)
 

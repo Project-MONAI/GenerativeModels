@@ -191,15 +191,13 @@ def main_worker(args):
         num_head_channels=256,
     )
     model = model.to(device)
-    scheduler = DDPMScheduler(
-        num_train_timesteps=1000,
-    )
+    scheduler = DDPMScheduler(num_train_timesteps=1000)
 
     optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
 
     inferer = DiffusionInferer(scheduler)
     # wrap the model with DistributedDataParallel module
-    model = DistributedDataParallel(model, device_ids=[device])
+    model = DistributedDataParallel(model, device_ids=[device], find_unused_parameters=True)
 
     # start a typical PyTorch training
     best_metric = 10000

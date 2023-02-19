@@ -9,7 +9,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple
+from __future__ import annotations
 
 import torch
 import torch.nn as nn
@@ -38,19 +38,18 @@ class PerceptualLoss(nn.Module):
     """
 
     def __init__(
-        self,
-        spatial_dims: int,
-        network_type: str = "alex",
-        is_fake_3d: bool = True,
-        fake_3d_ratio: float = 0.5,
+        self, spatial_dims: int, network_type: str = "alex", is_fake_3d: bool = True, fake_3d_ratio: float = 0.5
     ):
         super().__init__()
 
         if spatial_dims not in [2, 3]:
             raise NotImplementedError("Perceptual loss is implemented only in 2D and 3D.")
 
-        if spatial_dims == 2 and "medicalnet_" in network_type:
-            raise ValueError("MedicalNet networks are only compatible with ``spatial_dims=3``.")
+        if (spatial_dims == 2 or is_fake_3d) and "medicalnet_" in network_type:
+            raise ValueError(
+                "MedicalNet networks are only compatible with ``spatial_dims=3``."
+                "Argument is_fake_3d must be set to False."
+            )
 
         self.spatial_dims = spatial_dims
         if spatial_dims == 3 and is_fake_3d is False:
@@ -58,11 +57,7 @@ class PerceptualLoss(nn.Module):
         elif "radimagenet_" in network_type:
             self.perceptual_function = RadImageNetPerceptualSimilarity(net=network_type, verbose=False)
         else:
-            self.perceptual_function = LPIPS(
-                pretrained=True,
-                net=network_type,
-                verbose=False,
-            )
+            self.perceptual_function = LPIPS(pretrained=True, net=network_type, verbose=False)
         self.is_fake_3d = is_fake_3d
         self.fake_3d_ratio = fake_3d_ratio
 
@@ -77,7 +72,7 @@ class PerceptualLoss(nn.Module):
             spatial_axis: spatial axis to obtain the 2D slices.
         """
 
-        def batchify_axis(x: torch.Tensor, fake_3d_perm: Tuple) -> torch.Tensor:
+        def batchify_axis(x: torch.Tensor, fake_3d_perm: tuple) -> torch.Tensor:
             """
             Transform slices from one spatial axis into different instances in the batch.
             """
@@ -90,26 +85,12 @@ class PerceptualLoss(nn.Module):
         preserved_axes.remove(spatial_axis)
 
         channel_axis = 1
-        input_slices = batchify_axis(
-            x=input,
-            fake_3d_perm=(
-                spatial_axis,
-                channel_axis,
-            )
-            + tuple(preserved_axes),
-        )
+        input_slices = batchify_axis(x=input, fake_3d_perm=(spatial_axis, channel_axis) + tuple(preserved_axes))
         indices = torch.randperm(input_slices.shape[0])[: int(input_slices.shape[0] * self.fake_3d_ratio)].to(
             input_slices.device
         )
         input_slices = torch.index_select(input_slices, dim=0, index=indices)
-        target_slices = batchify_axis(
-            x=target,
-            fake_3d_perm=(
-                spatial_axis,
-                channel_axis,
-            )
-            + tuple(preserved_axes),
-        )
+        target_slices = batchify_axis(x=target, fake_3d_perm=(spatial_axis, channel_axis) + tuple(preserved_axes))
         target_slices = torch.index_select(target_slices, dim=0, index=indices)
 
         axis_loss = torch.mean(self.perceptual_function(input_slices, target_slices))
@@ -150,11 +131,7 @@ class MedicalNetPerceptualSimilarity(nn.Module):
         verbose: if false, mute messages from torch Hub load function.
     """
 
-    def __init__(
-        self,
-        net: str = "medicalnet_resnet10_23datasets",
-        verbose: bool = False,
-    ) -> None:
+    def __init__(self, net: str = "medicalnet_resnet10_23datasets", verbose: bool = False) -> None:
         super().__init__()
         torch.hub._validate_not_a_forked_repo = lambda a, b, c: True
         self.model = torch.hub.load("Warvito/MedicalNet-models", model=net, verbose=verbose)
@@ -216,11 +193,7 @@ class RadImageNetPerceptualSimilarity(nn.Module):
         verbose: if false, mute messages from torch Hub load function.
     """
 
-    def __init__(
-        self,
-        net: str = "radimagenet_resnet50",
-        verbose: bool = False,
-    ) -> None:
+    def __init__(self, net: str = "radimagenet_resnet50", verbose: bool = False) -> None:
         super().__init__()
         self.model = torch.hub.load("Warvito/radimagenet-models", model=net, verbose=verbose)
         self.eval()
