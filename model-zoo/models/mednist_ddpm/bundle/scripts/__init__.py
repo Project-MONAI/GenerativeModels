@@ -19,7 +19,7 @@ class DiffusionPrepareBatch(PrepareBatch):
 
     """
 
-    def __init__(self, num_train_timesteps: int, condition_name: Optional[str] = None):
+    def __init__(self, num_train_timesteps: int, condition_name: str | None = None) -> None:
         self.condition_name = condition_name
         self.num_train_timesteps = num_train_timesteps
 
@@ -33,7 +33,7 @@ class DiffusionPrepareBatch(PrepareBatch):
     def __call__(
         self,
         batchdata: Dict[str, torch.Tensor],
-        device: Optional[Union[str, torch.device]] = None,
+        device: Union[str, torch.device] | None = None,
         non_blocking: bool = False,
         **kwargs,
     ):

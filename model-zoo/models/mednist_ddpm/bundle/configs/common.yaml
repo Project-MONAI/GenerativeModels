@@ -1,4 +1,4 @@
-# This file defines common definitions used in training and inference, most importantly the definition definition
+# This file defines common definitions used in training and inference, most importantly the network definition
 
 imports: 
 - $import os
