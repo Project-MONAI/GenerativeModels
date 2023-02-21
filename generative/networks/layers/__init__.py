@@ -10,3 +10,4 @@
 # limitations under the License.
 
 from .vector_quantizer import EMAQuantizer, VectorQuantizer
+from .vector_quantizer import EMAQuantizer, VectorQuantizer
