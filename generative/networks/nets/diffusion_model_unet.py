@@ -1761,7 +1761,7 @@ class DiffusionModelEncoder(nn.Module):
         for i in range(len(num_channels)):
             input_channel = output_channel
             output_channel = num_channels[i]
-            is_final_block = i == len(num_channels) - 1
+            is_final_block = i == len(num_channels) #- 1
 
             down_block = get_down_block(
                 spatial_dims=spatial_dims,
@@ -1825,7 +1825,15 @@ class DiffusionModelEncoder(nn.Module):
             )
 
             self.up_blocks.append(up_block)
-        self.out = nn.Linear(16384, self.out_channels)
+     #   self.out = nn.Linear(4096, self.out_channels)
+        self.out = nn.Sequential(
+          nn.Linear(8192, 512),
+           nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(512, self.out_channels),
+            #nn.Sigmoid(),
+         )
+
         # out
       #  self.out = nn.Sequential(
         #    nn.GroupNorm(num_groups=norm_num_groups, num_channels=num_channels[0], eps=norm_eps, affine=True),
@@ -1877,14 +1885,15 @@ class DiffusionModelEncoder(nn.Module):
             raise ValueError("model should have with_conditioning = True if context is provided")
         down_block_res_samples: List[torch.Tensor] = [h]
         for downsample_block in self.down_blocks:
-            h, res_samples = downsample_block(hidden_states=h, temb=emb, context=context)
-            for residual in res_samples:
-                down_block_res_samples.append(residual)
-        h=h.reshape(h.shape[0] ,-1)
+            h, _ = downsample_block(hidden_states=h, temb=emb, context=context)
+         #   for residual in res_samples:
+           #     down_block_res_samples.append(residual)
+
        
 
         # # 5. mid
-        # h = self.middle_block(hidden_states=h, temb=emb, context=context)
+
+        h = h.reshape(h.shape[0], -1)
         #
         # # 6. up
         # for upsample_block in self.up_blocks:
