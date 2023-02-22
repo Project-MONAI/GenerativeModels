@@ -1660,9 +1660,7 @@ class DiffusionModelUNet(nn.Module):
     
 class DiffusionModelEncoder(nn.Module):
     """
-    Unet network with timestep embedding and attention mechanisms for conditioning based on
-    Rombach et al. "High-Resolution Image Synthesis with Latent Diffusion Models" https://arxiv.org/abs/2112.10752
-    and Pinaya et al. "Brain Imaging Generation with Latent Diffusion Models" https://arxiv.org/abs/2209.07162
+    Classification Network based on the Encoder of the Diffusion Model, followed by fully connected layers for classification
 
     Args:
         spatial_dims: number of spatial dimensions.
@@ -1781,76 +1779,16 @@ class DiffusionModelEncoder(nn.Module):
 
             self.down_blocks.append(down_block)
 
-        # mid
-        self.middle_block = get_mid_block(
-            spatial_dims=spatial_dims,
-            in_channels=num_channels[-1],
-            temb_channels=time_embed_dim,
-            norm_num_groups=norm_num_groups,
-            norm_eps=norm_eps,
-            with_conditioning=with_conditioning,
-            num_head_channels=num_head_channels[-1],
-            transformer_num_layers=transformer_num_layers,
-            cross_attention_dim=cross_attention_dim,
-        )
 
-        # up
-        self.up_blocks = nn.ModuleList([])
-        reversed_block_out_channels = list(reversed(num_channels))
-        reversed_attention_levels = list(reversed(attention_levels))
-        reversed_num_head_channels = list(reversed(num_head_channels))
-        output_channel = reversed_block_out_channels[0]
-        for i in range(len(reversed_block_out_channels)):
-            prev_output_channel = output_channel
-            output_channel = reversed_block_out_channels[i]
-            input_channel = reversed_block_out_channels[min(i + 1, len(num_channels) - 1)]
 
-            is_final_block = i == len(num_channels) - 1
-
-            up_block = get_up_block(
-                spatial_dims=spatial_dims,
-                in_channels=input_channel,
-                prev_output_channel=prev_output_channel,
-                out_channels=output_channel,
-                temb_channels=time_embed_dim,
-                num_res_blocks=num_res_blocks + 1,
-                norm_num_groups=norm_num_groups,
-                norm_eps=norm_eps,
-                add_upsample=not is_final_block,
-                with_attn=(reversed_attention_levels[i] and not with_conditioning),
-                with_cross_attn=(reversed_attention_levels[i] and with_conditioning),
-                num_head_channels=reversed_num_head_channels[i],
-                transformer_num_layers=transformer_num_layers,
-                cross_attention_dim=cross_attention_dim,
-            )
-
-            self.up_blocks.append(up_block)
-     #   self.out = nn.Linear(4096, self.out_channels)
         self.out = nn.Sequential(
           nn.Linear(8192, 512),
            nn.ReLU(),
             nn.Dropout(0.2),
             nn.Linear(512, self.out_channels),
-            #nn.Sigmoid(),
          )
 
-        # out
-      #  self.out = nn.Sequential(
-        #    nn.GroupNorm(num_groups=norm_num_groups, num_channels=num_channels[0], eps=norm_eps, affine=True),
-        #    nn.SiLU(),
-        #    zero_module(
-          #      Convolution(
-          #          spatial_dims=spatial_dims,
-          #          in_channels=num_channels[0],
-           #         out_channels=out_channels,
-            #        strides=1,
-            #        kernel_size=3,
-          #          padding=1,
-            #        conv_only=True,
-            #    )
-         #   ),
-      #  )
-        
+
 
     def forward(
         self,
@@ -1883,27 +1821,10 @@ class DiffusionModelEncoder(nn.Module):
         # 4. down
         if context is not None and self.with_conditioning is False:
             raise ValueError("model should have with_conditioning = True if context is provided")
-        down_block_res_samples: List[torch.Tensor] = [h]
         for downsample_block in self.down_blocks:
             h, _ = downsample_block(hidden_states=h, temb=emb, context=context)
-         #   for residual in res_samples:
-           #     down_block_res_samples.append(residual)
-
-       
-
-        # # 5. mid
 
         h = h.reshape(h.shape[0], -1)
-        #
-        # # 6. up
-        # for upsample_block in self.up_blocks:
-        #     res_samples = down_block_res_samples[-len(upsample_block.resnets) :]
-        #     down_block_res_samples = down_block_res_samples[: -len(upsample_block.resnets)]
-        #     h = upsample_block(hidden_states=h, res_hidden_states_list=res_samples, temb=emb, context=context)
-
-        # 7. output block
-
-        
         output=self.out(h)
 
         return output
