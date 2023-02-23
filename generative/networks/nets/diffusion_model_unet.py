@@ -1656,8 +1656,7 @@ class DiffusionModelUNet(nn.Module):
 
         return h
 
-    
-    
+
 class DiffusionModelEncoder(nn.Module):
     """
     Classification Network based on the Encoder of the Diffusion Model, followed by fully connected layers for classification
@@ -1759,7 +1758,7 @@ class DiffusionModelEncoder(nn.Module):
         for i in range(len(num_channels)):
             input_channel = output_channel
             output_channel = num_channels[i]
-            is_final_block = i == len(num_channels) #- 1
+            is_final_block = i == len(num_channels)  # - 1
 
             down_block = get_down_block(
                 spatial_dims=spatial_dims,
@@ -1779,16 +1778,12 @@ class DiffusionModelEncoder(nn.Module):
 
             self.down_blocks.append(down_block)
 
-
-
         self.out = nn.Sequential(
-          nn.Linear(8192, 512),
-           nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.Linear(4096, 512),
+            nn.ReLU(),
+            nn.Dropout(0.1),
             nn.Linear(512, self.out_channels),
-         )
-
-
+        )
 
     def forward(
         self,
@@ -1825,6 +1820,6 @@ class DiffusionModelEncoder(nn.Module):
             h, _ = downsample_block(hidden_states=h, temb=emb, context=context)
 
         h = h.reshape(h.shape[0], -1)
-        output=self.out(h)
+        output = self.out(h)
 
         return output

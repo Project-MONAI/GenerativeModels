@@ -42,7 +42,6 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import torch.nn.functional as F
 from monai import transforms
 from monai.apps import MedNISTDataset
 from monai.config import print_config

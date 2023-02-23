@@ -223,8 +223,6 @@ class DDIMScheduler(nn.Module):
 
         return pred_prev_sample, pred_original_sample
 
-
-
     def reversed_step(
         self,
         model_output: torch.Tensor,
@@ -249,8 +247,7 @@ class DDIMScheduler(nn.Module):
             pred_prev_sample: Predicted previous sample
             pred_original_sample: Predicted original sample
         """
-        # See formulas (12) and (16) of DDIM paper https://arxiv.org/pdf/2010.02502.pdf
-        # Ideally, read DDIM paper in-detail understanding
+        # See Appendix F at https://arxiv.org/pdf/2105.05233.pdf, or Equation (6) in https://arxiv.org/pdf/2203.04306.pdf
 
         # Notation (<variable name> -> <name in paper>
         # - model_output -> e_theta(x_t, t)
@@ -258,17 +255,20 @@ class DDIMScheduler(nn.Module):
         # - std_dev_t -> sigma_t
         # - eta -> η
         # - pred_sample_direction -> "direction pointing to x_t"
-        # - pred_prev_sample -> "x_t-1"
+        # - pred_post_sample -> "x_t+1"
 
         # 1. get previous step value (=t-1)
-        prev_timestep = timestep - self.num_train_timesteps // self.num_inference_steps  #t-1
-        post_timestep = timestep + self.num_train_timesteps // self.num_inference_steps  #t+1
+        prev_timestep = timestep - self.num_train_timesteps // self.num_inference_steps  # t-1
+        post_timestep = timestep + self.num_train_timesteps // self.num_inference_steps  # t+1
 
         # 2. compute alphas, betas
         alpha_prod_t = self.alphas_cumprod[timestep]
-        alpha_prod_t_prev = self.alphas_cumprod[prev_timestep] if prev_timestep >= 0 else self.final_alpha_cumprod #alpha at timestep t-1
-        alpha_prod_t_post = self.alphas_cumprod[post_timestep] if prev_timestep >= 0 else self.final_alpha_cumprod  #alpha at timestep t+1
-
+        alpha_prod_t_prev = (
+            self.alphas_cumprod[prev_timestep] if prev_timestep >= 0 else self.final_alpha_cumprod
+        )  # alpha at timestep t-1
+        alpha_prod_t_post = (
+            self.alphas_cumprod[post_timestep] if prev_timestep >= 0 else self.final_alpha_cumprod
+        )  # alpha at timestep t+1
 
         beta_prod_t = 1 - alpha_prod_t
 
@@ -302,13 +302,8 @@ class DDIMScheduler(nn.Module):
             # randn_like does not support generator https://github.com/pytorch/pytorch/issues/27072
             device = model_output.device if torch.is_tensor(model_output) else "cpu"
             noise = torch.randn(model_output.shape, dtype=model_output.dtype, generator=generator).to(device)
-            variance = self._get_variance(timestep, prev_timestep) ** (0.5) * eta * noise
-
-            pred_prev_sample = pred_prev_sample + variance
 
         return pred_post_sample, pred_original_sample
-
-
 
     def add_noise(
         self,
