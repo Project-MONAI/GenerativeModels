@@ -94,7 +94,6 @@ class TestPatchGAN(unittest.TestCase):
             MultiScalePatchDiscriminator(**TEST_TOO_SMALL_SIZE[0])
 
     def test_script(self):
-
         net = MultiScalePatchDiscriminator(
             num_d=2,
             num_layers_d=3,

@@ -1882,8 +1882,8 @@ class DiffusionModelEncoder(nn.Module):
         super().__init__()
         if with_conditioning is True and cross_attention_dim is None:
             raise ValueError(
-                    "DiffusionModelUNet expects dimension of the cross-attention conditioning (cross_attention_dim) "
-                    "when using with_conditioning."
+                "DiffusionModelUNet expects dimension of the cross-attention conditioning (cross_attention_dim) "
+                "when using with_conditioning."
             )
         if cross_attention_dim is not None and with_conditioning is False:
             raise ValueError(
@@ -1925,9 +1925,7 @@ class DiffusionModelEncoder(nn.Module):
         # time
         time_embed_dim = num_channels[0] * 4
         self.time_embed = nn.Sequential(
-            nn.Linear(num_channels[0], time_embed_dim),
-            nn.SiLU(),
-            nn.Linear(time_embed_dim, time_embed_dim),
+            nn.Linear(num_channels[0], time_embed_dim), nn.SiLU(), nn.Linear(time_embed_dim, time_embed_dim)
         )
 
         # class embedding
@@ -1961,12 +1959,7 @@ class DiffusionModelEncoder(nn.Module):
 
             self.down_blocks.append(down_block)
 
-        self.out = nn.Sequential(
-            nn.Linear(4096, 512),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(512, self.out_channels),
-        )
+        self.out = nn.Sequential(nn.Linear(4096, 512), nn.ReLU(), nn.Dropout(0.1), nn.Linear(512, self.out_channels))
 
     def forward(
         self,

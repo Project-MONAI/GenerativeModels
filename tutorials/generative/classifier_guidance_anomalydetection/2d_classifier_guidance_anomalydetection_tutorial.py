@@ -120,11 +120,7 @@ train_transforms = transforms.Compose(
         transforms.AddChanneld(keys=["image"]),
         transforms.EnsureTyped(keys=["image", "label"]),
         transforms.Orientationd(keys=["image", "label"], axcodes="RAS"),
-        transforms.Spacingd(
-            keys=["image", "label"],
-            pixdim=(3.0, 3.0, 2.0),
-            mode=("bilinear", "nearest"),
-        ),
+        transforms.Spacingd(keys=["image", "label"], pixdim=(3.0, 3.0, 2.0), mode=("bilinear", "nearest")),
         transforms.CenterSpatialCropd(keys=["image", "label"], roi_size=(64, 64, 64)),
         transforms.ScaleIntensityRangePercentilesd(keys="image", lower=0, upper=99.5, b_min=0, b_max=1),
         transforms.CopyItemsd(keys=["label"], times=1, names=["slice_label"]),
@@ -251,9 +247,7 @@ model = DiffusionModelUNet(
 )
 model.to(device)
 
-scheduler = DDIMScheduler(
-    num_train_timesteps=1000,
-)
+scheduler = DDIMScheduler(num_train_timesteps=1000)
 
 optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
 
@@ -312,11 +306,7 @@ else:
             scaler.step(optimizer)
             scaler.update()
             epoch_loss += loss.item()
-            progress_bar.set_postfix(
-                {
-                    "loss": epoch_loss / (step + 1),
-                }
-            )
+            progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
         epoch_loss_list.append(epoch_loss / (step + 1))
 
         if (epoch) % val_interval == 0:
@@ -336,11 +326,7 @@ else:
                         val_loss = F.mse_loss(noise_pred.float(), noise.float())
 
                 val_epoch_loss += val_loss.item()
-                progress_bar.set_postfix(
-                    {
-                        "val_loss": val_epoch_loss / (step + 1),
-                    }
-                )
+                progress_bar.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
             val_epoch_loss_list.append(val_epoch_loss / (step + 1))
 
     total_time = time.time() - total_start
@@ -407,7 +393,6 @@ weight = torch.tensor((3, 1)).float().to(device)  # account for the class imbala
 if train_classifier is False:
     classifier.load_state_dict(torch.load("./classifier.pt", map_location={"cuda:0": "cpu"}))
 else:
-
     scaler = GradScaler()
     total_start = time.time()
     for epoch in range(n_epochs):
@@ -440,11 +425,7 @@ else:
             optimizer_cls.step()
 
             epoch_loss += loss.item()
-            progress_bar.set_postfix(
-                {
-                    "loss": epoch_loss / (step + 1),
-                }
-            )
+            progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
         epoch_loss_list.append(epoch_loss / (step + 1))
         print("final step train", step)
 
@@ -469,11 +450,7 @@ else:
 
                 val_epoch_loss += val_loss.item()
                 _, predicted = torch.max(pred, 1)
-                progress_bar_val.set_postfix(
-                    {
-                        "val_loss": val_epoch_loss / (step + 1),
-                    }
-                )
+                progress_bar_val.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
             val_epoch_loss_list.append(val_epoch_loss / (step + 1))
 
     total_time = time.time() - total_start
@@ -533,7 +510,6 @@ scheduler.set_timesteps(num_inference_steps=1000)
 
 progress_bar = tqdm(range(L))  # go back and forth L timesteps
 for t in progress_bar:  # go through the noising process
-
     with autocast(enabled=False):
         with torch.no_grad():
             model_output = model(current_img, timesteps=torch.Tensor((t,)).to(current_img.device))
@@ -560,7 +536,6 @@ scale = 5  # define the desired gradient scale s
 progress_bar = tqdm(range(L))  # go back and forth L timesteps
 
 for i in progress_bar:  # go through the denoising process
-
     t = L - i
     with autocast(enabled=True):
         with torch.no_grad():
@@ -592,6 +567,7 @@ plt.show()
 # %% [markdown]
 # # Anomaly Detection
 # To get the anomaly map, we compute the difference between the input image the output of our image-to-image translation model, which is the healthy reconstruction.
+
 
 # %%
 def visualize(img):

@@ -230,7 +230,7 @@ for epoch in range(n_epochs):
     for step, batch in progress_bar:
         images = batch["image"].to(device)
         classes = batch["class"].to(device)
-        print('images', images.shape, 'classes', classes.shape, classes)
+        print("images", images.shape, "classes", classes.shape, classes)
         optimizer.zero_grad(set_to_none=True)
 
         with autocast(enabled=True):
