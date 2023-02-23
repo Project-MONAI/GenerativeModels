@@ -9,14 +9,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import unittest
 
 import torch
 from monai.networks import eval_mode
 from parameterized import parameterized
-from tests.utils import test_script_save
 
 from generative.networks.nets.patchgan_discriminator import MultiScalePatchDiscriminator
+from tests.utils import test_script_save
 
 TEST_2D = [
     {
@@ -70,7 +72,7 @@ TEST_TOO_SMALL_SIZE = [
         "bias": False,
         "dropout": 0.1,
         "minimum_size_im": 256,
-    },
+    }
 ]
 
 CASES = [TEST_2D, TEST_3D]
@@ -78,13 +80,7 @@ CASES = [TEST_2D, TEST_3D]
 
 class TestPatchGAN(unittest.TestCase):
     @parameterized.expand(CASES)
-    def test_shape(
-        self,
-        input_param,
-        input_data,
-        expected_shape,
-        features_lengths=None,
-    ):
+    def test_shape(self, input_param, input_data, expected_shape, features_lengths=None):
         net = MultiScalePatchDiscriminator(**input_param)
         with eval_mode(net):
             result, features = net.forward(input_data)

@@ -7,9 +7,9 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.14.1
+#       jupytext_version: 1.14.4
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: Python 3 (ipykernel)
 #     language: python
 #     name: python3
 # ---
@@ -69,11 +69,7 @@ train_transforms = transforms.Compose(
         transforms.AddChanneld(keys=["image"]),
         transforms.EnsureTyped(keys=["image"]),
         transforms.Orientationd(keys=["image"], axcodes="RAS"),
-        transforms.Spacingd(
-            keys=["image"],
-            pixdim=(2.4, 2.4, 2.2),
-            mode=("bilinear"),
-        ),
+        transforms.Spacingd(keys=["image"], pixdim=(2.4, 2.4, 2.2), mode=("bilinear")),
         transforms.CenterSpatialCropd(keys=["image"], roi_size=(96, 96, 64)),
         transforms.ScaleIntensityRangePercentilesd(keys="image", lower=0, upper=99.5, b_min=0, b_max=1),
     ]
@@ -83,12 +79,12 @@ train_ds = DecathlonDataset(
     task="Task01_BrainTumour",
     section="training",  # validation
     cache_rate=1.0,  # you may need a few Gb of RAM... Set to 0 otherwise
-    num_workers=4,
-    download=False,  # Set download to True if the dataset hasnt been downloaded yet
+    num_workers=8,
+    download=True,  # Set download to True if the dataset hasnt been downloaded yet
     seed=0,
     transform=train_transforms,
 )
-train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=4)
+train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=8)
 print(f'Image shape {train_ds[0]["image"].shape}')
 # -
 
@@ -131,16 +127,6 @@ autoencoder = AutoencoderKL(
 )
 autoencoder.to(device)
 
-unet = DiffusionModelUNet(
-    spatial_dims=3,
-    in_channels=3,
-    out_channels=3,
-    num_res_blocks=1,
-    num_channels=[32, 64, 64],
-    attention_levels=(False, True, True),
-    num_head_channels=1,
-)
-unet.to(device)
 
 discriminator = PatchDiscriminator(
     spatial_dims=3,
@@ -155,16 +141,6 @@ discriminator = PatchDiscriminator(
     padding=1,
 )
 discriminator.to(device)
-
-
-scheduler = DDPMScheduler(
-    num_train_timesteps=1000,
-    beta_schedule="linear",
-    beta_start=0.0015,
-    beta_end=0.0195,
-)
-
-inferer = LatentDiffusionInferer(scheduler)
 # -
 
 # ## Define Losses
@@ -298,10 +274,46 @@ ax.imshow(img[img.shape[0] // 2, ...], cmap="gray")
 
 # ## Train Diffusion Model
 
+# ### Scaling factor
+#
+# As mentioned in Rombach et al. [1] Section 4.3.2 and D.1, the signal-to-noise ratio (induced by the scale of the latent space) can affect the results obtained with the LDM, if the standard deviation of the latent space distribution drifts too much from that of a Gaussian. For this reason, it is best practice to use a scaling factor to adapt this standard deviation.
+#
+# _Note: In case where the latent space is close to a Gaussian distribution, the scaling factor will be close to one, and the results will not differ from those obtained when it is not used._
+#
+
+# +
+with torch.no_grad():
+    with autocast(enabled=True):
+        z = autoencoder.encode_stage_2_inputs(check_data["image"].to(device))
+
+print(f"Scaling factor set to {1/torch.std(z)}")
+scale_factor = 1 / torch.std(z)
+# -
+
+# We define the inferer using the scale factor:
+
+# +
+unet = DiffusionModelUNet(
+    spatial_dims=3,
+    in_channels=3,
+    out_channels=3,
+    num_res_blocks=1,
+    num_channels=[32, 64, 64],
+    attention_levels=(False, True, True),
+    num_head_channels=1,
+)
+unet.to(device)
+
+
+scheduler = DDPMScheduler(num_train_timesteps=1000, beta_schedule="scaled_linear", beta_start=0.0015, beta_end=0.0195)
+
+inferer = LatentDiffusionInferer(scheduler)
+# -
+
 optimizer_diff = torch.optim.Adam(params=unet.parameters(), lr=1e-4)
 
 # +
-n_epochs = 50
+n_epochs = 150
 epoch_loss_list = []
 autoencoder.eval()
 scaler = GradScaler()
@@ -340,11 +352,7 @@ for epoch in range(n_epochs):
 
         epoch_loss += loss.item()
 
-        progress_bar.set_postfix(
-            {
-                "loss": epoch_loss / (step + 1),
-            }
-        )
+        progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
     epoch_loss_list.append(epoch_loss / (step + 1))
 # -
 

@@ -1,3 +1,19 @@
+# ---
+# jupyter:
+#   jupytext:
+#     cell_metadata_filter: -all
+#     formats: ipynb,py
+#     text_representation:
+#       extension: .py
+#       format_name: light
+#       format_version: '1.5'
+#       jupytext_version: 1.14.4
+#   kernelspec:
+#     display_name: Python 3 (ipykernel)
+#     language: python
+#     name: python3
+# ---
+
 # # 2D Latent Diffusion Model
 
 # +
@@ -31,7 +47,7 @@ from monai.utils import first, set_determinism
 from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
-from generative.inferers import DiffusionInferer
+from generative.inferers import LatentDiffusionInferer
 from generative.losses.adversarial_loss import PatchAdversarialLoss
 from generative.losses.perceptual import PerceptualLoss
 from generative.networks.nets import AutoencoderKL, DiffusionModelUNet, PatchDiscriminator
@@ -120,22 +136,10 @@ autoencoderkl = autoencoderkl.to(device)
 
 # +
 unet = DiffusionModelUNet(
-    spatial_dims=2,
-    in_channels=3,
-    out_channels=3,
-    num_res_blocks=1,
-    num_channels=(128, 256, 256),
-    num_head_channels=256,
+    spatial_dims=2, in_channels=3, out_channels=3, num_res_blocks=1, num_channels=(128, 256, 256), num_head_channels=256
 )
 
-scheduler = DDPMScheduler(
-    num_train_timesteps=1000,
-    beta_schedule="linear",
-    beta_start=0.0015,
-    beta_end=0.0195,
-)
-
-inferer = DiffusionInferer(scheduler)
+scheduler = DDPMScheduler(num_train_timesteps=1000, beta_schedule="linear", beta_start=0.0015, beta_end=0.0195)
 
 discriminator = PatchDiscriminator(
     spatial_dims=2,
@@ -284,6 +288,26 @@ for image_n in range(5):
 
 # ## Train Diffusion Model
 
+# ### Scaling factor
+#
+# As mentioned in Rombach et al. [1] Section 4.3.2 and D.1, the signal-to-noise ratio (induced by the scale of the latent space) can affect the results obtained with the LDM, if the standard deviation of the latent space distribution drifts too much from that of a Gaussian. For this reason, it is best practice to use a scaling factor to adapt this standard deviation.
+#
+# _Note: In case where the latent space is close to a Gaussian distribution, the scaling factor will be close to one, and the results will not differ from those obtained when it is not used._
+#
+
+# +
+with torch.no_grad():
+    with autocast(enabled=True):
+        z = autoencoderkl.encode_stage_2_inputs(check_data["image"].to(device))
+
+print(f"Scaling factor set to {1/torch.std(z)}")
+scale_factor = 1 / torch.std(z)
+# -
+
+# We define the inferer using the scale factor:
+
+inferer = LatentDiffusionInferer(scheduler, scale_factor=scale_factor)
+
 # It takes about ~80 min to train the model.
 
 # +
@@ -305,14 +329,14 @@ for epoch in range(n_epochs):
     for step, batch in progress_bar:
         images = batch["image"].to(device)
         optimizer.zero_grad(set_to_none=True)
-
         with autocast(enabled=True):
             z_mu, z_sigma = autoencoderkl.encode(images)
             z = autoencoderkl.sampling(z_mu, z_sigma)
-
             noise = torch.randn_like(z).to(device)
             timesteps = torch.randint(0, inferer.scheduler.num_train_timesteps, (z.shape[0],), device=z.device).long()
-            noise_pred = inferer(inputs=z, diffusion_model=unet, noise=noise, timesteps=timesteps)
+            noise_pred = inferer(
+                inputs=images, diffusion_model=unet, noise=noise, timesteps=timesteps, autoencoder_model=autoencoderkl
+            )
             loss = F.mse_loss(noise_pred.float(), noise.float())
 
         scaler.scale(loss).backward()
@@ -321,11 +345,7 @@ for epoch in range(n_epochs):
 
         epoch_loss += loss.item()
 
-        progress_bar.set_postfix(
-            {
-                "loss": epoch_loss / (step + 1),
-            }
-        )
+        progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
     epoch_loss_list.append(epoch_loss / (step + 1))
 
     if (epoch + 1) % val_interval == 0:
@@ -343,7 +363,13 @@ for epoch in range(n_epochs):
                     timesteps = torch.randint(
                         0, inferer.scheduler.num_train_timesteps, (z.shape[0],), device=z.device
                     ).long()
-                    noise_pred = inferer(inputs=z, diffusion_model=unet, noise=noise, timesteps=timesteps)
+                    noise_pred = inferer(
+                        inputs=images,
+                        diffusion_model=unet,
+                        noise=noise,
+                        timesteps=timesteps,
+                        autoencoder_model=autoencoderkl,
+                    )
 
                     loss = F.mse_loss(noise_pred.float(), noise.float())
 
@@ -357,8 +383,9 @@ for epoch in range(n_epochs):
         z = z.to(device)
         scheduler.set_timesteps(num_inference_steps=1000)
         with autocast(enabled=True):
-            z = inferer.sample(input_noise=z, diffusion_model=unet, scheduler=scheduler)
-            decoded = autoencoderkl.decode(z)
+            decoded = inferer.sample(
+                input_noise=z, diffusion_model=unet, scheduler=scheduler, autoencoder_model=autoencoderkl
+            )
 
         plt.figure(figsize=(2, 2))
         plt.style.use("default")
@@ -385,7 +412,12 @@ with torch.no_grad():
 
     noise = torch.randn_like(z).to(device)
     image, intermediates = inferer.sample(
-        input_noise=z, diffusion_model=unet, scheduler=scheduler, save_intermediates=True, intermediate_steps=100
+        input_noise=z,
+        diffusion_model=unet,
+        scheduler=scheduler,
+        save_intermediates=True,
+        intermediate_steps=100,
+        autoencoder_model=autoencoderkl,
     )
 
 
@@ -395,8 +427,7 @@ with torch.no_grad():
 decoded_images = []
 for image in intermediates:
     with torch.no_grad():
-        decoded = autoencoderkl.decode(image)
-        decoded_images.append(decoded)
+        decoded_images.append(image)
 plt.figure(figsize=(10, 12))
 chain = torch.cat(decoded_images, dim=-1)
 plt.style.use("default")

@@ -9,5 +9,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
+from .fid import FID
 from .mmd import MMD
 from .ms_ssim import MSSSIM

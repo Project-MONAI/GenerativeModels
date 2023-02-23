@@ -9,4 +9,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .inferer import DiffusionInferer, LatentDiffusionInferer
+from __future__ import annotations
+
+from .inferer import DiffusionInferer, LatentDiffusionInferer, VQVAETransformerInferer

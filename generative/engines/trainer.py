@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence
 
 import torch
 from monai.config import IgniteInfo
@@ -88,9 +88,9 @@ class AdversarialTrainer(Trainer):
 
     def __init__(
         self,
-        device: Union[torch.device, str],
+        device: torch.device | str,
         max_epochs: int,
-        train_data_loader: Union[Iterable, DataLoader],
+        train_data_loader: Iterable | DataLoader,
         g_network: torch.nn.Module,
         g_optimizer: Optimizer,
         g_loss_function: Callable,
@@ -98,24 +98,24 @@ class AdversarialTrainer(Trainer):
         d_network: torch.nn.Module,
         d_optimizer: Optimizer,
         d_loss_function: Callable,
-        epoch_length: Optional[int] = None,
+        epoch_length: int | None = None,
         non_blocking: bool = False,
-        prepare_batch: Union[Callable[[Engine, Any], Any], None] = default_prepare_batch,
-        iteration_update: Optional[Callable] = None,
-        g_inferer: Optional[Inferer] = None,
-        d_inferer: Optional[Inferer] = None,
-        postprocessing: Optional[Transform] = None,
-        key_train_metric: Optional[Dict[str, Metric]] = None,
-        additional_metrics: Optional[Dict[str, Metric]] = None,
+        prepare_batch: Callable[[Engine, Any], Any] | None = default_prepare_batch,
+        iteration_update: Callable | None = None,
+        g_inferer: Inferer | None = None,
+        d_inferer: Inferer | None = None,
+        postprocessing: Transform | None = None,
+        key_train_metric: dict[str, Metric] | None = None,
+        additional_metrics: dict[str, Metric] | None = None,
         metric_cmp_fn: Callable = default_metric_cmp_fn,
-        train_handlers: Optional[Sequence] = None,
+        train_handlers: Sequence | None = None,
         amp: bool = False,
-        event_names: Union[List[Union[str, EventEnum]], None] = None,
-        event_to_attr: Union[dict, None] = None,
+        event_names: list[str | EventEnum] | None = None,
+        event_to_attr: dict | None = None,
         decollate: bool = True,
         optim_set_to_none: bool = False,
-        to_kwargs: Union[dict, None] = None,
-        amp_kwargs: Union[dict, None] = None,
+        to_kwargs: dict | None = None,
+        amp_kwargs: dict | None = None,
     ):
         super().__init__(
             device=device,
@@ -183,8 +183,8 @@ class AdversarialTrainer(Trainer):
             self._state_dict_user_keys.append("recon_loss_function")
 
     def _iteration(
-        self, engine: AdversarialTrainer, batchdata: Dict[str, torch.Tensor]
-    ) -> Dict[str, Union[torch.Tensor, int, float, bool]]:
+        self, engine: AdversarialTrainer, batchdata: dict[str, torch.Tensor]
+    ) -> dict[str, torch.Tensor | int | float | bool]:
         """
         Callback function for the Adversarial Training processing logic of 1 iteration in Ignite Engine.
         Return below items in a dictionary:
@@ -219,8 +219,8 @@ class AdversarialTrainer(Trainer):
 
         if len(batch) == 2:
             inputs, targets = batch
-            args: Tuple = ()
-            kwargs: Dict = {}
+            args: tuple = ()
+            kwargs: dict = {}
         else:
             inputs, targets, args, kwargs = batch
 

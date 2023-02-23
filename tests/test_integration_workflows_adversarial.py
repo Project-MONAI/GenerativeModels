@@ -9,6 +9,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import os
 import shutil
 import tempfile
@@ -24,10 +26,10 @@ from monai.handlers import CheckpointSaver, StatsHandler, TensorBoardStatsHandle
 from monai.networks.nets import AutoEncoder, Discriminator
 from monai.transforms import AsChannelFirstd, Compose, LoadImaged, RandFlipd, ScaleIntensityd
 from monai.utils import CommonKeys, set_determinism
-from tests.utils import DistTestCase, TimedCall, skip_if_quick
 
 from generative.engines import AdversarialTrainer
 from generative.utils import AdversarialKeys as Keys
+from tests.utils import DistTestCase, TimedCall, skip_if_quick
 
 
 def run_training_test(root_dir, device="cuda:0"):

@@ -6,9 +6,9 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.14.1
+#       jupytext_version: 1.14.4
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: Python 3 (ipykernel)
 #     language: python
 #     name: python3
 # ---
@@ -165,12 +165,11 @@ model = VQVAE(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
+    num_channels=(256, 512),
+    num_res_channels=512,
     num_res_layers=2,
-    num_levels=2,
     downsample_parameters=((2, 4, 1, 1), (2, 4, 1, 1)),
     upsample_parameters=((2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
-    num_channels=[256, 512],
-    num_res_channels=[256, 512],
     num_embeddings=256,
     embedding_dim=32,
 )
@@ -190,10 +189,7 @@ discriminator = PatchDiscriminator(
 )
 discriminator.to(device)
 
-perceptual_loss = PerceptualLoss(
-    spatial_dims=2,
-    network_type="alex",
-)
+perceptual_loss = PerceptualLoss(spatial_dims=2, network_type="alex")
 perceptual_loss.to(device)
 
 optimizer_g = torch.optim.Adam(params=model.parameters(), lr=1e-4)
