@@ -137,6 +137,9 @@ class MedicalNetPerceptualSimilarity(nn.Module):
         self.model = torch.hub.load("Warvito/MedicalNet-models", model=net, verbose=verbose)
         self.eval()
 
+        for param in self.parameters():
+            param.requires_grad = False
+
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """
         Compute perceptual loss using MedicalNet 3D networks. The input and target tensors are inputted in the
@@ -197,6 +200,9 @@ class RadImageNetPerceptualSimilarity(nn.Module):
         super().__init__()
         self.model = torch.hub.load("Warvito/radimagenet-models", model=net, verbose=verbose)
         self.eval()
+
+        for param in self.parameters():
+            param.requires_grad = False
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """
