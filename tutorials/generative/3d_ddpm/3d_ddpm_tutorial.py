@@ -44,7 +44,6 @@
 # limitations under the License.
 
 import os
-import tempfile
 import time
 
 import matplotlib.pyplot as plt
@@ -78,7 +77,8 @@ print_config()
 
 # %%
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
-root_dir = tempfile.mkdtemp() if directory is None else directory
+root_dir = "/tmp/tmpk32kv7za"
+# root_dir = tempfile.mkdtemp() if directory is None else directory
 print(root_dir)
 
 # %% [markdown]
@@ -118,13 +118,13 @@ train_ds = DecathlonDataset(
     root_dir=root_dir, task="Task01_BrainTumour", transform=train_transform, section="training", download=True
 )
 
-train_loader = DataLoader(train_ds, batch_size=16, shuffle=True, num_workers=8)
+train_loader = DataLoader(train_ds, batch_size=8, shuffle=True, num_workers=8)
 
 val_ds = DecathlonDataset(
     root_dir=root_dir, task="Task01_BrainTumour", transform=val_transform, section="validation", download=True
 )
 
-val_loader = DataLoader(val_ds, batch_size=16, shuffle=False, num_workers=8)
+val_loader = DataLoader(val_ds, batch_size=8, shuffle=False, num_workers=8)
 
 
 # %% [markdown]
@@ -149,10 +149,10 @@ model = DiffusionModelUNet(
     spatial_dims=3,
     in_channels=1,
     out_channels=1,
-    num_channels=[128, 128, 256, 256],
-    attention_levels=[False, False, False, True],
-    num_head_channels=[128, 128, 256, 256],
-    num_res_blocks=1,
+    num_channels=[256, 256, 512],
+    attention_levels=[False, False, True],
+    num_head_channels=[256, 256, 512],
+    num_res_blocks=2,
 )
 model.to(device)
 
@@ -282,6 +282,3 @@ plt.imshow(np.concatenate([plotting_image_0, plotting_image_1], axis=0), cmap="g
 plt.tight_layout()
 plt.axis("off")
 plt.show()
-
-# %%
-image
