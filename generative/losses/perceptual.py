@@ -35,10 +35,16 @@ class PerceptualLoss(nn.Module):
             Specifies the network architecture to use. Defaults to ``"alex"``.
         is_fake_3d: if True use 2.5D approach for a 3D perceptual loss.
         fake_3d_ratio: ratio of how many slices per axis are used in the 2.5D approach.
+        cache_dir: path to cache directory to save the pretrained network weights.
     """
 
     def __init__(
-        self, spatial_dims: int, network_type: str = "alex", is_fake_3d: bool = True, fake_3d_ratio: float = 0.5
+        self,
+        spatial_dims: int,
+        network_type: str = "alex",
+        is_fake_3d: bool = True,
+        fake_3d_ratio: float = 0.5,
+        cache_dir: str | None = None,
     ):
         super().__init__()
 
@@ -50,6 +56,9 @@ class PerceptualLoss(nn.Module):
                 "MedicalNet networks are only compatible with ``spatial_dims=3``."
                 "Argument is_fake_3d must be set to False."
             )
+
+        if cache_dir:
+            torch.hub.set_dir(cache_dir)
 
         self.spatial_dims = spatial_dims
         if spatial_dims == 3 and is_fake_3d is False:
