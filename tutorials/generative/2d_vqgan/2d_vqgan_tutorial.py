@@ -59,8 +59,7 @@ from torch.nn import L1Loss
 from tqdm import tqdm
 
 # TODO: Add right import reference after deployed
-from generative.losses.adversarial_loss import PatchAdversarialLoss
-from generative.losses.perceptual import PerceptualLoss
+from generative.losses import PatchAdversarialLoss, PerceptualLoss
 from generative.networks.nets import VQVAE, PatchDiscriminator
 
 print_config()
