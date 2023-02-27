@@ -25,6 +25,7 @@
 # ## Setup environment
 
 # %%
+# !python -c "import monai" || pip install -q "monai-weekly[nibabel, tqdm]"
 # !python -c "import matplotlib" || pip install -q matplotlib
 # %matplotlib inline
 
@@ -44,6 +45,7 @@
 # limitations under the License.
 
 import os
+import tempfile
 import time
 
 import matplotlib.pyplot as plt
@@ -77,8 +79,7 @@ print_config()
 
 # %%
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
-root_dir = "/tmp/tmpk32kv7za"
-# root_dir = tempfile.mkdtemp() if directory is None else directory
+root_dir = tempfile.mkdtemp() if directory is None else directory
 print(root_dir)
 
 # %% [markdown]
@@ -278,7 +279,7 @@ image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=sched
 plt.style.use("default")
 plotting_image_0 = np.concatenate([image[0, 0, :, :, 15].cpu(), np.flipud(image[0, 0, :, 24, :].cpu().T)], axis=1)
 plotting_image_1 = np.concatenate([np.flipud(image[0, 0, 15, :, :].cpu().T), np.zeros((32, 32))], axis=1)
-plt.imshow(np.concatenate([plotting_image_0, plotting_image_1], axis=0), cmap="gray")
+plt.imshow(np.concatenate([plotting_image_0, plotting_image_1], axis=0), vmin=0, vmax=1, cmap="gray")
 plt.tight_layout()
 plt.axis("off")
 plt.show()
