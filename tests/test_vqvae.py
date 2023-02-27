@@ -26,146 +26,78 @@ TEST_CASES = [
             "spatial_dims": 2,
             "in_channels": 1,
             "out_channels": 1,
-            "num_levels": 2,
-            "downsample_parameters": [(2, 4, 1, 1)] * 2,
-            "upsample_parameters": [(2, 4, 1, 1, 0)] * 2,
+            "num_channels": (4, 4),
             "num_res_layers": 1,
-            "num_channels": 8,
-            "num_res_channels": [8, 8],
-            "num_embeddings": 16,
+            "num_res_channels": (4, 4),
+            "downsample_parameters": ((2, 4, 1, 1),) * 2,
+            "upsample_parameters": ((2, 4, 1, 1, 0),) * 2,
+            "num_embeddings": 8,
             "embedding_dim": 8,
-            "embedding_init": "normal",
-            "commitment_cost": 0.25,
-            "decay": 0.5,
-            "epsilon": 1e-5,
-            "adn_ordering": "NDA",
-            "dropout": 0.1,
-            "act": "RELU",
-            "output_act": None,
         },
-        (1, 1, 16, 16),
-        (1, 1, 16, 16),
+        (1, 1, 8, 8),
+        (1, 1, 8, 8),
     ],
     [
         {
             "spatial_dims": 2,
             "in_channels": 1,
             "out_channels": 1,
-            "num_levels": 2,
-            "downsample_parameters": [(2, 4, 1, 1)] * 2,
-            "upsample_parameters": [(2, 4, 1, 1, 0)] * 2,
+            "num_channels": (4, 4),
             "num_res_layers": 1,
-            "num_channels": 8,
-            "num_res_channels": 8,
-            "num_embeddings": 16,
+            "num_res_channels": 4,
+            "downsample_parameters": ((2, 4, 1, 1),) * 2,
+            "upsample_parameters": ((2, 4, 1, 1, 0),) * 2,
+            "num_embeddings": 8,
             "embedding_dim": 8,
-            "embedding_init": "normal",
-            "commitment_cost": 0.25,
-            "decay": 0.5,
-            "epsilon": 1e-5,
-            "adn_ordering": "NDA",
-            "dropout": 0.1,
-            "act": "RELU",
-            "output_act": None,
         },
-        (1, 1, 16, 16),
-        (1, 1, 16, 16),
+        (1, 1, 8, 8),
+        (1, 1, 8, 8),
     ],
     [
         {
             "spatial_dims": 2,
             "in_channels": 1,
             "out_channels": 1,
-            "num_levels": 2,
-            "downsample_parameters": [(2, 4, 1, 1)] * 2,
-            "upsample_parameters": [(2, 4, 1, 1, 0)] * 2,
+            "num_channels": (4, 4),
             "num_res_layers": 1,
-            "num_channels": [8, 8],
-            "num_res_channels": [8, 8],
-            "num_embeddings": 16,
+            "num_res_channels": (4, 4),
+            "downsample_parameters": (2, 4, 1, 1),
+            "upsample_parameters": ((2, 4, 1, 1, 0),) * 2,
+            "num_embeddings": 8,
             "embedding_dim": 8,
-            "embedding_init": "normal",
-            "commitment_cost": 0.25,
-            "decay": 0.5,
-            "epsilon": 1e-5,
-            "adn_ordering": "NDA",
-            "dropout": 0.1,
-            "act": "RELU",
-            "output_act": None,
         },
-        (1, 1, 16, 16),
-        (1, 1, 16, 16),
+        (1, 1, 8, 8),
+        (1, 1, 8, 8),
     ],
     [
         {
-            "spatial_dims": 3,
+            "spatial_dims": 2,
             "in_channels": 1,
             "out_channels": 1,
-            "num_levels": 2,
-            "downsample_parameters": [(2, 4, 1, 1)] * 2,
-            "upsample_parameters": [(2, 4, 1, 1, 0)] * 2,
+            "num_channels": (4, 4),
             "num_res_layers": 1,
-            "num_channels": [8, 8],
-            "num_res_channels": [8, 8],
-            "num_embeddings": 16,
+            "num_res_channels": (4, 4),
+            "downsample_parameters": ((2, 4, 1, 1),) * 2,
+            "upsample_parameters": (2, 4, 1, 1, 0),
+            "num_embeddings": 8,
             "embedding_dim": 8,
-            "embedding_init": "normal",
-            "commitment_cost": 0.25,
-            "decay": 0.5,
-            "epsilon": 1e-5,
-            "adn_ordering": "NDA",
-            "dropout": 0.1,
-            "act": "RELU",
-            "output_act": None,
         },
-        (1, 1, 16, 16, 16),
-        (1, 1, 16, 16, 16),
+        (1, 1, 8, 8),
+        (1, 1, 8, 8),
     ],
 ]
-
-# 1-channel 2D, should fail because of number of levels, number of downsamplings, number of upsamplings mismatch.
-TEST_CASE_FAIL = {
-    "spatial_dims": 3,
-    "in_channels": 1,
-    "out_channels": 1,
-    "num_levels": 3,
-    "downsample_parameters": [(2, 4, 1, 1)] * 2,
-    "upsample_parameters": [(2, 4, 1, 1, 0)] * 4,
-    "num_res_layers": 1,
-    "num_channels": [8, 8],
-    "num_res_channels": [8, 8],
-    "num_embeddings": 16,
-    "embedding_dim": 8,
-    "embedding_init": "normal",
-    "commitment_cost": 0.25,
-    "decay": 0.5,
-    "epsilon": 1e-5,
-    "adn_ordering": "NDA",
-    "dropout": 0.1,
-    "act": "RELU",
-    "output_act": None,
-}
 
 TEST_LATENT_SHAPE = {
     "spatial_dims": 2,
     "in_channels": 1,
     "out_channels": 1,
-    "num_levels": 2,
-    "downsample_parameters": [(2, 4, 1, 1)] * 2,
-    "upsample_parameters": [(2, 4, 1, 1, 0)] * 2,
+    "downsample_parameters": ((2, 4, 1, 1),) * 2,
+    "upsample_parameters": ((2, 4, 1, 1, 0),) * 2,
     "num_res_layers": 1,
-    "num_channels": [8, 8],
-    "num_res_channels": [8, 8],
+    "num_channels": (8, 8),
+    "num_res_channels": (8, 8),
     "num_embeddings": 16,
     "embedding_dim": 8,
-    "embedding_init": "normal",
-    "commitment_cost": 0.25,
-    "decay": 0.5,
-    "epsilon": 1e-5,
-    "adn_ordering": "NDA",
-    "dropout": 0.1,
-    "act": "RELU",
-    "output_act": None,
 }
 
 
@@ -186,30 +118,101 @@ class TestVQVAE(unittest.TestCase):
             spatial_dims=2,
             in_channels=1,
             out_channels=1,
-            num_levels=2,
-            downsample_parameters=tuple([(2, 4, 1, 1)] * 2),
-            upsample_parameters=tuple([(2, 4, 1, 1, 0)] * 2),
+            downsample_parameters=((2, 4, 1, 1),) * 2,
+            upsample_parameters=((2, 4, 1, 1, 0),) * 2,
             num_res_layers=1,
-            num_channels=[8, 8],
-            num_res_channels=[8, 8],
+            num_channels=(8, 8),
+            num_res_channels=(8, 8),
             num_embeddings=16,
             embedding_dim=8,
-            embedding_init="normal",
-            commitment_cost=0.25,
-            decay=0.5,
-            epsilon=1e-5,
-            adn_ordering="NDA",
-            dropout=0.1,
-            act="RELU",
-            output_act=None,
             ddp_sync=False,
         )
         test_data = torch.randn(1, 1, 16, 16)
         test_script_save(net, test_data)
 
-    def test_level_upsample_downsample_difference(self):
-        with self.assertRaises(AssertionError):
-            VQVAE(**TEST_CASE_FAIL)
+    def test_num_channels_not_same_size_of_num_res_channels(self):
+        with self.assertRaises(ValueError):
+            VQVAE(
+                spatial_dims=2,
+                in_channels=1,
+                out_channels=1,
+                num_channels=(16, 16),
+                num_res_channels=(16, 16, 16),
+                downsample_parameters=((2, 4, 1, 1),) * 2,
+                upsample_parameters=((2, 4, 1, 1, 0),) * 2,
+            )
+
+    def test_num_channels_not_same_size_of_downsample_parameters(self):
+        with self.assertRaises(ValueError):
+            VQVAE(
+                spatial_dims=2,
+                in_channels=1,
+                out_channels=1,
+                num_channels=(16, 16),
+                num_res_channels=(16, 16),
+                downsample_parameters=((2, 4, 1, 1),) * 3,
+                upsample_parameters=((2, 4, 1, 1, 0),) * 2,
+            )
+
+    def test_num_channels_not_same_size_of_upsample_parameters(self):
+        with self.assertRaises(ValueError):
+            VQVAE(
+                spatial_dims=2,
+                in_channels=1,
+                out_channels=1,
+                num_channels=(16, 16),
+                num_res_channels=(16, 16),
+                downsample_parameters=((2, 4, 1, 1),) * 2,
+                upsample_parameters=((2, 4, 1, 1, 0),) * 3,
+            )
+
+    def test_downsample_parameters_not_sequence_or_int(self):
+        with self.assertRaises(ValueError):
+            VQVAE(
+                spatial_dims=2,
+                in_channels=1,
+                out_channels=1,
+                num_channels=(16, 16),
+                num_res_channels=(16, 16, 16),
+                downsample_parameters=(("test", 4, 1, 1),) * 2,
+                upsample_parameters=((2, 4, 1, 1, 0),) * 2,
+            )
+
+    def test_upsample_parameters_not_sequence_or_int(self):
+        with self.assertRaises(ValueError):
+            VQVAE(
+                spatial_dims=2,
+                in_channels=1,
+                out_channels=1,
+                num_channels=(16, 16),
+                num_res_channels=(16, 16, 16),
+                downsample_parameters=((2, 4, 1, 1),) * 2,
+                upsample_parameters=(("test", 4, 1, 1, 0),) * 2,
+            )
+
+    def test_downsample_parameter_length_different_4(self):
+        with self.assertRaises(ValueError):
+            VQVAE(
+                spatial_dims=2,
+                in_channels=1,
+                out_channels=1,
+                num_channels=(16, 16),
+                num_res_channels=(16, 16, 16),
+                downsample_parameters=((2, 4, 1),) * 2,
+                upsample_parameters=((2, 4, 1, 1, 0),) * 3,
+            )
+
+    def test_upsample_parameter_length_different_5(self):
+        with self.assertRaises(ValueError):
+            VQVAE(
+                spatial_dims=2,
+                in_channels=1,
+                out_channels=1,
+                num_channels=(16, 16),
+                num_res_channels=(16, 16, 16),
+                downsample_parameters=((2, 4, 1, 1),) * 2,
+                upsample_parameters=((2, 4, 1, 1, 0, 1),) * 3,
+            )
 
     def test_encode_shape(self):
         device = "cuda" if torch.cuda.is_available() else "cpu"
