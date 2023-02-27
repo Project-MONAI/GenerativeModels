@@ -19,18 +19,17 @@ class Sampler:
             progress_bar = iter(scheduler.timesteps)
 
         image = input_noise
-        conditioning = torch.tensor([[1.0, 0.5, 0.5, 0.5]]).to("cuda").unsqueeze(1)
+        conditioning = torch.tensor([[1.0, 0.1, 0.2, 0.4]]).to("cuda").unsqueeze(1)
         cond_concat = conditioning.squeeze(1).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
         cond_concat = cond_concat.expand(list(cond_concat.shape[0:2]) + list(input_noise.shape[2:]))
         for t in progress_bar:
             with torch.no_grad():
-                with autocast():
-                    model_output = diffusion_model(
-                        torch.cat((image, cond_concat), dim=1),
-                        timesteps=torch.Tensor((t,)).to(input_noise.device).long(),
-                        context=conditioning,
-                    )
-                    image, _ = scheduler.step(model_output, t, image)
+                model_output = diffusion_model(
+                    torch.cat((image, cond_concat), dim=1),
+                    timesteps=torch.Tensor((t,)).to(input_noise.device).long(),
+                    context=conditioning,
+                )
+                image, _ = scheduler.step(model_output, t, image)
 
         with torch.no_grad():
             with autocast():
