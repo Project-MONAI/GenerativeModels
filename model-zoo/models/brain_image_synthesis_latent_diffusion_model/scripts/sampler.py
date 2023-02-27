@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import torch
+import torch.nn as nn
 from monai.utils import optional_import
 from torch.cuda.amp import autocast
 
@@ -12,14 +13,20 @@ class Sampler:
         super().__init__()
 
     @torch.no_grad()
-    def sampling_fn(self, input_noise, autoencoder_model, diffusion_model, scheduler):
+    def sampling_fn(
+        self,
+        input_noise: torch.Tensor,
+        autoencoder_model: nn.Module,
+        diffusion_model: nn.Module,
+        scheduler: nn.Module,
+        conditioning: torch.Tensor,
+    ) -> torch.Tensor:
         if has_tqdm:
             progress_bar = tqdm(scheduler.timesteps)
         else:
             progress_bar = iter(scheduler.timesteps)
 
         image = input_noise
-        conditioning = torch.tensor([[1.0, 0.1, 0.2, 0.4]]).to("cuda").unsqueeze(1)
         cond_concat = conditioning.squeeze(1).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
         cond_concat = cond_concat.expand(list(cond_concat.shape[0:2]) + list(input_noise.shape[2:]))
         for t in progress_bar:

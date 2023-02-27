@@ -5,7 +5,6 @@
         "$from pathlib import Path"
     ],
     "bundle_root": ".",
-    "out_file": "$datetime.now().strftime('sample_%H%M%S_%d%m%Y')",
     "model_dir": "$@bundle_root + '/models'",
     "output_dir": "$@bundle_root + '/output'",
     "create_output_dir": "$Path(@output_dir).mkdir(exist_ok=True)",
@@ -15,6 +14,7 @@
     "brain_vol": 0.4,
     "device": "$torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')",
     "conditioning": "$torch.tensor([[@gender, @age, @ventricular_vol, @brain_vol]]).to(@device).unsqueeze(1)",
+    "out_file": "$datetime.now().strftime('sample_%H%M%S_%d%m%Y') + '_' + str(@gender) + '_' + str(@age) + '_' + str(@ventricular_vol) + '_' + str(@brain_vol)",
     "autoencoder_def": {
         "_target_": "generative.networks.nets.AutoencoderKL",
         "spatial_dims": 3,
@@ -77,6 +77,10 @@
     "diffusion": "$@diffusion_def.to(@device)",
     "scheduler": {
         "_target_": "generative.networks.schedulers.DDIMScheduler",
+        "_requires_": [
+            "@load_diffusion",
+            "@load_autoencoder"
+        ],
         "beta_start": 0.0015,
         "beta_end": 0.0205,
         "num_train_timesteps": 1000,
@@ -89,7 +93,7 @@
         "_target_": "scripts.sampler.Sampler",
         "_requires_": "@set_timesteps"
     },
-    "sample": "$@sampler.sampling_fn(@noise, @autoencoder, @diffusion, @scheduler)",
+    "sample": "$@sampler.sampling_fn(@noise, @autoencoder, @diffusion, @scheduler, @conditioning)",
     "saver": {
         "_target_": "scripts.saver.NiftiSaver",
         "output_dir": "@output_dir"
