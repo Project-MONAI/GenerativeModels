@@ -14,11 +14,12 @@ from abc import abstractmethod
 import math
 
 import numpy as np
-import torch as th
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from generative.networks.layers.RPE import RPEAttention
+from monai.networks.blocks import Convolution
 
 
 class TimestepBlock(nn.Module):
@@ -71,7 +72,7 @@ class Upsample(nn.Module):
         self.use_conv = use_conv
         self.dims = dims
         if use_conv:
-            self.conv = conv_nd(dims, channels, channels, 3, padding=1)
+            self.conv = Convolution(dims, channels, channels,  padding=1)
 
     def forward(self, x):
         assert x.shape[1] == self.channels
@@ -102,7 +103,7 @@ class Downsample(nn.Module):
         self.dims = dims
         stride = 2 if dims != 3 else (1, 2, 2)
         if use_conv:
-            self.op = conv_nd(dims, channels, channels, 3, stride=stride, padding=1)
+            self.op = Convolution(dims, channels, channels, strides=stride, padding=1)
         else:
             self.op = avg_pool_nd(stride)
 
@@ -144,34 +145,32 @@ class ResBlock(TimestepBlock):
         self.use_scale_shift_norm = use_scale_shift_norm
 
         self.in_layers = nn.Sequential(
-            normalization(channels),
-            SiLU(),
-            conv_nd(dims, channels, self.out_channels, 3, padding=1),
+            nn.GroupNorm(32, channels),
+            nn.SiLU(),
+            Convolution(dims, channels, self.out_channels, padding=1),
         )
         self.emb_layers = nn.Sequential(
-            SiLU(),
-            linear(
+            nn.SiLU(),
+            nn.Linear(
                 emb_channels,
                 2 * self.out_channels if use_scale_shift_norm else self.out_channels,
             ),
         )
         self.out_layers = nn.Sequential(
-            normalization(self.out_channels),
-            SiLU(),
+            nn.GroupNorm(32, self.out_channels),
+            nn.SiLU(),
             nn.Dropout(p=dropout),
-            zero_module(
-                conv_nd(dims, self.out_channels, self.out_channels, 3, padding=1)
-            ),
+            Convolution(dims, self.out_channels, self.out_channels, padding=1),
         )
 
         if self.out_channels == channels:
             self.skip_connection = nn.Identity()
         elif use_conv:
-            self.skip_connection = conv_nd(
-                dims, channels, self.out_channels, 3, padding=1
+            self.skip_connection = Convolution(
+                dims, channels, self.out_channels, padding=1
             )
         else:
-            self.skip_connection = conv_nd(dims, channels, self.out_channels, 1)
+            self.skip_connection = Convolution(dims, channels, self.out_channels, kernel_size = 1)
 
     def forward(self, x, emb):
         """
@@ -186,7 +185,7 @@ class ResBlock(TimestepBlock):
             emb_out = emb_out[..., None]
         if self.use_scale_shift_norm:
             out_norm, out_rest = self.out_layers[0], self.out_layers[1:]
-            scale, shift = th.chunk(emb_out, 2, dim=1)
+            scale, shift = torch.chunk(emb_out, 2, dim=1)
             h = out_norm(h) * (1 + scale) + shift
             h = out_rest(h)
         else:
@@ -197,14 +196,14 @@ class ResBlock(TimestepBlock):
 
 class FactorizedAttentionBlock(nn.Module):
 
-    def __init__(self, channels, num_heads, use_rpe_net, time_embed_dim=None):
+    def __init__(self, channels, num_heads, time_embed_dim=None):
         super().__init__()
         self.spatial_attention = RPEAttention(
-            channels=channels, num_heads=num_heads, use_rpe_q=False, use_rpe_k=False, use_rpe_v=False,
+            channels=channels, num_heads=num_heads, time_embed_dim = time_embed_dim, use_rpe_q=False, use_rpe_k=False, use_rpe_v=False,
         )
         self.temporal_attention = RPEAttention(
             channels=channels, num_heads=num_heads,
-            time_embed_dim=time_embed_dim, use_rpe_net=use_rpe_net,
+            time_embed_dim=time_embed_dim,
         )
 
     def forward(self, x, attn_mask, temb, T, frame_indices=None):
@@ -264,7 +263,6 @@ class UNet_2Plus1_Model(nn.Module):
         num_heads=1,
         num_heads_upsample=-1,
         use_scale_shift_norm=False,
-        use_rpe_net=False,
     ):
         super().__init__()
 
@@ -281,19 +279,18 @@ class UNet_2Plus1_Model(nn.Module):
         self.conv_resample = conv_resample
         self.num_heads = num_heads
         self.num_heads_upsample = num_heads_upsample
-        self.use_rpe_net = use_rpe_net
 
         time_embed_dim = model_channels * 4
         self.time_embed = nn.Sequential(
-            linear(model_channels, time_embed_dim),
-            SiLU(),
-            linear(time_embed_dim, time_embed_dim),
+            nn.Linear(model_channels, time_embed_dim),
+            nn.SiLU(),
+            nn.Linear(time_embed_dim, time_embed_dim),
         )
 
         self.input_blocks = nn.ModuleList(
             [
                 TimestepEmbedAttnThingsSequential(
-                    conv_nd(dims, self.in_channels, model_channels, 3, padding=1)
+                    Convolution(dims, self.in_channels, model_channels, padding=1)
                 )
             ]
         )
@@ -317,7 +314,7 @@ class UNet_2Plus1_Model(nn.Module):
                 if ds in attention_resolutions:
                     layers.append(
                         FactorizedAttentionBlock(
-                            ch, num_heads=num_heads, use_rpe_net=use_rpe_net, time_embed_dim=time_embed_dim,
+                            ch, num_heads=num_heads, time_embed_dim=time_embed_dim,
                         )
                     )
                 self.input_blocks.append(TimestepEmbedAttnThingsSequential(*layers))
@@ -337,7 +334,7 @@ class UNet_2Plus1_Model(nn.Module):
                 dims=dims,
                 use_scale_shift_norm=use_scale_shift_norm,
             ),
-            FactorizedAttentionBlock(ch, num_heads=num_heads, use_rpe_net=use_rpe_net, time_embed_dim=time_embed_dim),
+            FactorizedAttentionBlock(ch, num_heads=num_heads, time_embed_dim=time_embed_dim),
             ResBlock(
                 ch,
                 time_embed_dim,
@@ -366,7 +363,6 @@ class UNet_2Plus1_Model(nn.Module):
                         FactorizedAttentionBlock(
                             ch,
                             num_heads=num_heads_upsample,
-                            use_rpe_net=use_rpe_net,
                             time_embed_dim=time_embed_dim,
                         )
                     )
@@ -376,9 +372,9 @@ class UNet_2Plus1_Model(nn.Module):
                 self.output_blocks.append(TimestepEmbedAttnThingsSequential(*layers))
 
         self.out = nn.Sequential(
-            normalization(ch),
-            SiLU(),
-            zero_module(conv_nd(dims, model_channels, out_channels, 3, padding=1)),
+            nn.GroupNorm(32, ch),
+            nn.SiLU(),
+            Convolution(dims, model_channels, out_channels, padding=1),
         )
 
     @property
@@ -388,42 +384,71 @@ class UNet_2Plus1_Model(nn.Module):
         """
         return next(self.input_blocks.parameters()).dtype
 
-    def forward(self, x, *, x0, timesteps, frame_indices=None,
-                obs_mask=None, latent_mask=None, return_attn_weights=False
-            ):
+    def forward(self, x, timesteps, context=None):
         """
         Apply the model to an input batch.
-        :param x: an [N x C x ...] Tensor of inputs.
+        :param x: list of both an [N x C x ...] Tensor of inputs, noisy input, and target.
+        :param x0: an [N x C x ...] Tensor of inputs, target.
         :param timesteps: a 1-D batch of timesteps.
-        :param y: an [N] Tensor of labels, if class-conditional.
+        :param context: all other informations, including:
+            :param frame_indices: absolute index in the whole volume.
+            :param obs_mask: absolute index in the whole volume.
+            :param latent_mask: absolute index in the whole volume.
+
         :return: an [N x C x ...] Tensor of outputs.
         """
+        frame_indices = context[0]
+        obs_mask = context[1]
+        latent_mask = context[2]
+        x0 = context[3]
+
         B, T, C, H, W = x.shape
         timesteps = timesteps.view(B, 1).expand(B, T)
         attn_mask = (obs_mask + latent_mask).clip(max=1)
         # add channel to indicate obs
-        indicator_template = th.ones_like(x[:, :, :1, :, :])
+        indicator_template = torch.ones_like(x[:, :, :1, :, :])
         obs_indicator = indicator_template * obs_mask
-        x = th.cat([x*(1-obs_mask) + x0*obs_mask,
+        x = torch.cat([x*(1-obs_mask) + x0*obs_mask,
                     obs_indicator],
                    dim=2,
         )
         x = x.reshape(B*T, self.in_channels, H, W)
         timesteps = timesteps.reshape(B*T)
         hs = []
-        emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
+        emb = self.timestep_embedding(timesteps, self.model_channels*4)
+        # print(f't_emb.shape is {t_emb.shape}')
+        # emb = self.time_embed(t_emb)
         h = x.type(self.inner_dtype)
-        attns = {'spatial': [], 'temporal': [], 'mixed': []} if return_attn_weights else None
+
         for layer, module in enumerate(self.input_blocks):
             h = module(h, emb,  attn_mask, T=T, frame_indices=frame_indices)
             hs.append(h)
         h = self.middle_block(h, emb,  attn_mask, T=T, frame_indices=frame_indices)
         for module in self.output_blocks:
-            cat_in = th.cat([h, hs.pop()], dim=1)
+            cat_in = torch.cat([h, hs.pop()], dim=1)
             h = module(cat_in, emb,  attn_mask, T=T, frame_indices=frame_indices)
         h = h.type(x.dtype)
         out = self.out(h)
-        return out.view(B, T, self.out_channels, H, W), attns
+        return out.view(B, T, self.out_channels, H, W)
+
+    def timestep_embedding(self, timesteps, dim, max_period=10000):
+        """
+        Create sinusoidal timestep embeddings.
+        :param timesteps: a 1-D Tensor of N indices, one per batch element.
+                          These may be fractional.
+        :param dim: the dimension of the output.
+        :param max_period: controls the minimum frequency of the embeddings.
+        :return: an [N x dim] Tensor of positional embeddings.
+        """
+        half = dim // 2
+        freqs = torch.exp(
+            -math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half
+        ).to(device=timesteps.device)
+        args = timesteps[:, None].float() * freqs[None]
+        embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
+        if dim % 2:
+            embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
+        return embedding
 
     def get_feature_vectors(self, x, timesteps, y=None):
         """
@@ -438,7 +463,8 @@ class UNet_2Plus1_Model(nn.Module):
                  - 'up': a list of hidden state tensors from upsampling.
         """
         hs = []
-        emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
+        emb = self.timestep_embedding(timesteps, self.model_channels)
+        # emb = self.time_embed(t_emb)
         result = dict(down=[], up=[])
         h = x.type(self.inner_dtype)
         for module in self.input_blocks:
@@ -448,12 +474,101 @@ class UNet_2Plus1_Model(nn.Module):
         h = self.middle_block(h, emb)
         result["middle"] = h.type(x.dtype)
         for module in self.output_blocks:
-            cat_in = th.cat([h, hs.pop()], dim=1)
+            cat_in = torch.cat([h, hs.pop()], dim=1)
             h = module(cat_in, emb)
             result["up"].append(h.type(x.dtype))
         return result
 
+    def sample_some_indices(self, max_indices=16, T=32):
+        s = torch.randint(low=1, high=max_indices+1, size=())
+        max_scale = T / (s-0.999)
+        scale = np.exp(np.random.rand() * np.log(max_scale))
+        pos = torch.rand(()) * (T - scale*(s-1))
+        indices = [int(pos+i*scale) for i in range(s)]
+        # do some recursion if we have somehow failed to satisfy the consrtaints
+        if all(i<T and i>=0 for i in indices):
+            return indices
+        else:
+            print('warning: sampled invalid indices', [int(pos+i*scale) for i in range(s)], 'trying again')
+            # exit()
+            return self.sample_some_indices(max_indices, T)
+
+    def get_image_context(self, batch1, batch2=None, max_frames=16, set_masks={'obs': (), 'latent': ()}):
+        N = max_frames
+
+        B, T, *_ = batch1.shape
+        masks = {k: torch.zeros_like(batch1[:, :, :1, :1, :1]) for k in ['obs', 'latent']}
+        for obs_row, latent_row in zip(*[masks[k] for k in ['obs', 'latent']]):
+            latent_row[self.sample_some_indices(max_indices=N, T=T)] = 1.
+            while True:
+                mask = obs_row if torch.rand(()) < 0.5 else latent_row
+                indices = torch.tensor(self.sample_some_indices(max_indices=N, T=T))
+                taken = (obs_row[indices] + latent_row[indices]).view(-1)
+                indices = indices[taken == 0]  # remove indices that are already used in a mask
+                if len(indices) > N - sum(obs_row) - sum(latent_row):
+                    break
+                mask[indices] = 1.
+        if len(set_masks['obs']) > 0:  # set_masks allow us to choose informative masks for logging
+            for k in masks:
+                set_values = set_masks[k]
+                n_set = min(len(set_values), len(masks[k]))
+                masks[k][:n_set] = set_values[:n_set]
+        any_mask = (masks['obs'] + masks['latent']).clip(max=1)
+
+        batch, (obs_mask, latent_mask), frame_indices =\
+            self.prepare_training_batch(
+                any_mask, batch1, batch2, (masks['obs'], masks['latent']), max_frames
+            )
+        return (frame_indices, obs_mask, latent_mask, batch)
+
+    def prepare_training_batch(self, mask, batch1, batch2, tensors, max_frames):
+        """
+        Prepare training batch by selecting frames from batch1 according to mask, appending uniformly sampled frames
+        from batch2, and selecting the corresponding elements from tensors (usually obs_mask and latent_mask).
+        """
+        B, T, *_ = mask.shape
+        mask = mask.view(B, T)  # remove unit C, H, W dims
+        effective_T = max_frames
+        indices = torch.zeros_like(mask[:, :effective_T], dtype=torch.int64)
+        new_batch = torch.zeros_like(batch1[:, :effective_T])
+        new_tensors = [torch.zeros_like(t[:, :effective_T]) for t in tensors]
+        for b in range(B):
+            instance_T = mask[b].sum().int()
+            indices[b, :instance_T] = mask[b].nonzero().flatten()
+            indices[b, instance_T:] = torch.randint_like(indices[b, instance_T:], high=T)
+            new_batch[b, :instance_T] = batch1[b][mask[b]==1]
+            new_batch[b, instance_T:] = (batch1 if batch2 is None else batch2)[b][indices[b, instance_T:]]
+            for new_t, t in zip(new_tensors, tensors):
+                new_t[b, :instance_T] = t[b][mask[b]==1]
+                new_t[b, instance_T:] = t[b][indices[b, instance_T:]]
+        return new_batch, new_tensors, indices
+
+    def next_indices(self, done_frames, images_length, max_frames = 16, step_size = None ):
+        if step_size is None:
+            step_size = max_frames//2
+        if len(done_frames) == 1:
+            obs_frame_indices = [0]
+            latent_frame_indices = list(range(1, max_frames))
+        else:
+            obs_frame_indices = sorted(done_frames)[-(max_frames - step_size):]
+            first_idx = obs_frame_indices[-1] + 1
+            latent_frame_indices = list(range(first_idx, min(first_idx + step_size, images_length)))
+
+        obs_mask = torch.cat([torch.ones_like(torch.tensor(obs_frame_indices)),
+                              torch.zeros_like(torch.tensor(latent_frame_indices))]).view(1, -1, 1, 1, 1).float()
+        latent_mask = 1 - obs_mask
+
+        return obs_frame_indices, latent_frame_indices, obs_mask, latent_mask
+
 if __name__ == "__main__":
-    Model = UNet_2Plus1_Model()
-    input = torch.tensor(1,20,1,128,128)
-    pred = Model(input)
+    Model = UNet_2Plus1_Model(
+        in_channels = 1,
+        out_channels= 1,
+        model_channels = 128,
+        num_res_blocks=2,
+        attention_resolutions=[16, 8],
+        )
+    input = torch.randn((1,20,1,128,128))
+    timesteps = torch.randn((1,1))
+    pred = Model(input, x0=input , timesteps=timesteps)
+    print(f'pred is with shape {pred.shape}')

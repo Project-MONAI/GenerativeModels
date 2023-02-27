@@ -1,20 +1,10 @@
 # %% [markdown]
-# # Vector Quantized Variational Autoencoders for 3D reconstruction of images
+# # Conditional Diffusion Probabilistic Model (CDPM) for 3D Images generation
 #
-# This tutorial illustrates how to use MONAI for training a Vector Quantized Variational Autoencoder (VQVAE)[1] on 3D images.
-#
-# Here, we will train our VQVAE model to be able to reconstruct the input images.  We will work with the Decathlon Dataset available on [MONAI](https://docs.monai.io/en/stable/apps.html#monai.apps.DecathlonDataset). In order to train faster, we will select just one of the available tasks ("Task01_BrainTumour").
-#
-# The VQVAE can also be used as a generative model if an autoregressor model (e.g., PixelCNN, Decoder Transformer) is trained on the discrete latent representations of the VQVAE bottleneck. This falls outside of the scope of this tutorial.
-#
-# [1] - [Oord et al. "Neural Discrete Representation Learning"](https://arxiv.org/abs/1711.00937)
-#
-# TODO: Add Open in Colab
-#
-# ### Setup environment
+# This tutorial illustrates how to use MONAI for training a 2D CDPM[1] for 3D images generation.
 
-# %% [markdown]
-# ### Setup imports
+# [1] - [Peng et al. "Generating Realistic 3D Brain MRIs Using a Conditional Diffusion Probabilistic Model"](https://arxiv.org/abs/2212.08034)
+
 
 # %%
 # Copyright 2020 MONAI Consortium
@@ -28,190 +18,241 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-import shutil
 import tempfile
 import time
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from monai import transforms
+import torch.nn.functional as F
 from monai.apps import DecathlonDataset
 from monai.config import print_config
 from monai.data import DataLoader
+from monai.transforms import AddChanneld, CenterSpatialCropd, Compose, Lambdad, LoadImaged, Resized, ScaleIntensityd
 from monai.utils import set_determinism
-from torch.nn import L1Loss
+from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
-from generative.networks.nets import VQVAE
+from generative.inferers import DiffusionInferer
+
+# TODO: Add right import reference after deployed
+from generative.networks.nets.cdpm import UNet_2Plus1_Model
+from generative.networks.schedulers import DDPMScheduler
 
 print_config()
 
-# %%
-# for reproducibility purposes set a seed
-set_determinism(42)
-
 # %% [markdown]
-# ### Setup a data directory
+# ## Setup data directory
 #
-# Specify a `MONAI_DATA_DIRECTORY` variable, where the data will be downloaded. If not
-# specified a temporary directory will be used.
+# You can specify a directory with the MONAI_DATA_DIRECTORY environment variable.
+#
+# This allows you to save results and reuse downloads.
+#
+# If not specified a temporary directory will be used.
 
-# %%
+
+# %%  export MONAI_DATA_DIRECTORY="/home/Nobias/data/MONAI_DATA_DIRECTORY/"
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
 root_dir = tempfile.mkdtemp() if directory is None else directory
 print(root_dir)
 
 # %% [markdown]
-# ### Setup used transforms and download dataset
+# ## Set deterministic training for reproducibility
 
 # %%
-train_transform = transforms.Compose(
+set_determinism(0)
+
+# %% [markdown]
+# ## Setup Decathlon Dataset and training and validation dataloaders
+
+# %%
+train_transform = Compose(
     [
-        transforms.LoadImaged(keys=["image"]),
-        transforms.Lambdad(keys="image", func=lambda x: x[:, :, :, 1]),
-        transforms.AddChanneld(keys=["image"]),
-        transforms.ScaleIntensityd(keys=["image"]),
-        transforms.CenterSpatialCropd(keys=["image"], roi_size=[176, 224, 155]),
-        transforms.Resized(keys=["image"], spatial_size=(32, 48, 32)),
+        LoadImaged(keys=["image"]),
+        Lambdad(keys="image", func=lambda x: x[:, :, :, 1]),
+        AddChanneld(keys=["image"]),
+        ScaleIntensityd(keys=["image"]),
+        CenterSpatialCropd(keys=["image"], roi_size=[176, 224, 155]),
+        Resized(keys=["image"], spatial_size=(32, 48, 32)),
     ]
 )
 
-val_transform = transforms.Compose(
+val_transform = Compose(
     [
-        transforms.LoadImaged(keys=["image"]),
-        transforms.Lambdad(keys="image", func=lambda x: x[:, :, :, 1]),
-        transforms.AddChanneld(keys=["image"]),
-        transforms.ScaleIntensityd(keys=["image"]),
-        transforms.CenterSpatialCropd(keys=["image"], roi_size=[176, 224, 155]),
-        transforms.Resized(keys=["image"], spatial_size=(32, 48, 32)),
+        LoadImaged(keys=["image"]),
+        Lambdad(keys="image", func=lambda x: x[:, :, :, 1]),
+        AddChanneld(keys=["image"]),
+        ScaleIntensityd(keys=["image"]),
+        CenterSpatialCropd(keys=["image"], roi_size=[176, 224, 155]),
+        Resized(keys=["image"], spatial_size=(32, 48, 32)),
     ]
 )
 
-# %%
+# %% Task01_BrainTumour
 train_ds = DecathlonDataset(
-    root_dir=root_dir, task="Task01_BrainTumour", transform=train_transform, section="training", download=True
+    root_dir=root_dir, task="Task01_BrainTumour", transform=train_transform, section="training", download=False
 )
 
-train_loader = DataLoader(train_ds, batch_size=16, shuffle=True, num_workers=8)
+train_loader = DataLoader(train_ds, batch_size=2, shuffle=True, num_workers=1)
 
 val_ds = DecathlonDataset(
-    root_dir=root_dir, task="Task01_BrainTumour", transform=val_transform, section="validation", download=True
+    root_dir=root_dir, task="Task01_BrainTumour", transform=val_transform, section="validation", download=False
 )
 
-val_loader = DataLoader(val_ds, batch_size=16, shuffle=False, num_workers=8)
+val_loader = DataLoader(val_ds, batch_size=2, shuffle=False, num_workers=1)
+
 
 # %% [markdown]
-# ### Visualize the training images
+# ### Visualization of the training images
 
-# %%
-plt.subplots(1, 4, figsize=(10, 6))
-for i in range(4):
-    plt.subplot(1, 4, i + 1)
-    plt.imshow(train_ds[i * 20]["image"][0, :, :, 15].detach().cpu(), vmin=0, vmax=1, cmap="gray")
-    plt.axis("off")
-plt.tight_layout()
-plt.show()
+# # %%
+# plt.subplots(1, 4, figsize=(10, 6))
+# for i in range(4):
+#     plt.subplot(1, 4, i + 1)
+#     plt.imshow(train_ds[i * 20]["image"][0, :, :, 15].detach().cpu(), vmin=0, vmax=1, cmap="gray")
+#     plt.axis("off")
+# plt.tight_layout()
+# plt.show()
 
 # %% [markdown]
-# ### Define network, optimizer and losses
+# ### Define network, scheduler, optimizer, and inferer
 
 # %%
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Using {device}")
-model = VQVAE(
-    spatial_dims=3,
+device = torch.device("cuda")
+
+model = UNet_2Plus1_Model(
     in_channels=1,
     out_channels=1,
-    num_channels=(256, 256),
-    num_res_channels=256,
-    num_res_layers=2,
-    downsample_parameters=((2, 4, 1, 1), (2, 4, 1, 1)),
-    upsample_parameters=((2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
-    num_embeddings=256,
-    embedding_dim=32,
+    model_channels=128,
+    attention_resolutions=[16, 8],
+    num_res_blocks=2,
+    channel_mult=[1, 1, 2, 4],
+    num_heads=1,
 )
 model.to(device)
 
-# %%
-optimizer = torch.optim.Adam(params=model.parameters(), lr=1e-4)
-l1_loss = L1Loss()
+scheduler = DDPMScheduler(num_train_timesteps=1000)
+
+inferer = DiffusionInferer(scheduler)
+
+optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
+
 
 # %% [markdown]
 # ### Model training
-# Here, we are training our model for 100 epochs (training time: ~60 minutes).
 
 # %%
-n_epochs = 100
-val_interval = 10
-epoch_recon_loss_list = []
-epoch_quant_loss_list = []
-val_recon_epoch_loss_list = []
-intermediary_images = []
-n_example_images = 4
+n_epochs = 200
+val_interval = 50
+epoch_loss_list = []
+val_epoch_loss_list = []
 
+scaler = GradScaler()
 total_start = time.time()
 for epoch in range(n_epochs):
     model.train()
     epoch_loss = 0
-    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=110)
+    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=70)
     progress_bar.set_description(f"Epoch {epoch}")
+    # At most sample 16 slices for each batch
+    max_frames=16
     for step, batch in progress_bar:
-        images = batch["image"].to(device)
+        images = batch["image"].to(device)#[1, 1, 32, 48, 32]
+
+        ### Create images and context
+        # randomly sample next batch to fill the unused tensor
+        batch_1 = next(iter(train_loader))["image"].to(device)
+        context = model.get_image_context(images.permute(0,4,1,2,3), batch_1.permute(0,4,1,2,3), max_frames)
+        # Create timesteps
+        timesteps = torch.randint(
+            0, inferer.scheduler.num_train_timesteps, (images.shape[0],), device=images.device
+        ).long()
         optimizer.zero_grad(set_to_none=True)
 
-        # model outputs reconstruction and the quantization error
-        reconstruction, quantization_loss = model(images=images)
+        with autocast(enabled=True):
+            # Generate random noise
+            images = context[-1]
+            noise = torch.randn_like(images).to(device)
 
-        recons_loss = l1_loss(reconstruction.float(), images.float())
+            # Get model prediction
+            # images = context[-1]
+            noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps, condition=context)
 
-        loss = recons_loss + quantization_loss
+            loss = F.mse_loss(noise_pred.float(), noise.float())
 
-        loss.backward()
-        optimizer.step()
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
 
-        epoch_loss += recons_loss.item()
+        epoch_loss += loss.item()
 
-        progress_bar.set_postfix(
-            {"recons_loss": epoch_loss / (step + 1), "quantization_loss": quantization_loss.item() / (step + 1)}
-        )
-    epoch_recon_loss_list.append(epoch_loss / (step + 1))
-    epoch_quant_loss_list.append(quantization_loss.item() / (step + 1))
+        progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
+    epoch_loss_list.append(epoch_loss / (step + 1))
 
     if (epoch + 1) % val_interval == 0:
         model.eval()
-        val_loss = 0
-        with torch.no_grad():
-            for val_step, batch in enumerate(val_loader, start=1):
-                images = batch["image"].to(device)
+        val_epoch_loss = 0
+        for step, batch in enumerate(val_loader):
+            images = batch["image"].to(device)
 
-                reconstruction, quantization_loss = model(images=images)
+            batch_1 = next(iter(val_loader))["image"].to(device)
+            context = model.get_image_context(images.permute(0,4,1,2,3), batch_1.permute(0,4,1,2,3), max_frames)
+            # Create timesteps
+            timesteps = torch.randint(
+                0, inferer.scheduler.num_train_timesteps, (images.shape[0],), device=images.device
+            ).long()
 
-                # get the first sample from the first validation batch for
-                # visualizing how the training evolves
-                if val_step == 1:
-                    intermediary_images.append(reconstruction[:n_example_images, 0])
+            images = context[-1]
+            noise = torch.randn_like(images).to(device)
+            with torch.no_grad():
+                with autocast(enabled=True):
+                    noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps, condition=context)
+                    val_loss = F.mse_loss(noise_pred.float(), noise.float())
 
-                recons_loss = l1_loss(reconstruction.float(), images.float())
+            val_epoch_loss += val_loss.item()
+            progress_bar.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
+        val_epoch_loss_list.append(val_epoch_loss / (step + 1))
 
-                val_loss += recons_loss.item()
+        # Sampling image during training
+        done_frames = [0]
+        mri_length = 32
+        max_frames = 16
+        step_size = 8
+        Sample = torch.zeros((1, 32, 1, 32, 48))
+        while len(done_frames)<mri_length:
+            obs_frame_indices, latent_frame_indices, obs_mask, latent_mask = model.next_indices(done_frames, mri_length, max_frames, step_size)
+            frame_indices = torch.cat([torch.tensor(obs_frame_indices), torch.tensor(latent_frame_indices)]).long()
 
-        val_loss /= val_step
-        val_recon_epoch_loss_list.append(val_loss)
+            sampled = Sample[:,frame_indices]
+            print(f'Conditioning on {sorted(obs_frame_indices)} slices, predicting {sorted(latent_frame_indices)}.')
+
+            sampled = sampled.to(device)
+            context = (frame_indices.view(1,-1).to(device), obs_mask.to(device), latent_mask.to(device), sampled)
+
+            scheduler.set_timesteps(num_inference_steps=1000)
+            done_frames = done_frames + latent_frame_indices
+            with autocast(enabled=True):
+                image = inferer.sample(input_noise=sampled, diffusion_model=model, scheduler=scheduler, conditioning=context)
+                Sample[0,latent_frame_indices] = image[len(obs_frame_indices):]
+
+        plt.figure(figsize=(2, 2))
+        plt.imshow(image[0,15, 0, :, :].cpu(), vmin=0, vmax=1, cmap="gray")
+        plt.tight_layout()
+        plt.axis("off")
+        plt.show()
 
 total_time = time.time() - total_start
 print(f"train completed, total time: {total_time}.")
-
 # %% [markdown]
 # ### Learning curves
 
 # %%
-plt.style.use("ggplot")
+plt.style.use("seaborn-v0_8")
 plt.title("Learning Curves", fontsize=20)
-plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_recon_loss_list, color="C0", linewidth=2.0, label="Train")
+plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, color="C0", linewidth=2.0, label="Train")
 plt.plot(
     np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
-    val_recon_epoch_loss_list,
+    val_epoch_loss_list,
     color="C1",
     linewidth=2.0,
     label="Validation",
@@ -223,60 +264,23 @@ plt.ylabel("Loss", fontsize=16)
 plt.legend(prop={"size": 14})
 plt.show()
 
-# %% [markdown]
-# ###  Plotting  evolution of reconstructed images
-
-# %%
-# Plot every evaluation as a new line and example as columns
-val_samples = np.linspace(val_interval, n_epochs, int(n_epochs / val_interval))
-fig, ax = plt.subplots(nrows=len(val_samples), ncols=1, sharey=True)
-fig.set_size_inches(18.5, 30.5)
-for image_n in range(len(val_samples)):
-    reconstructions = intermediary_images[image_n]
-    reconstructions = np.concatenate(
-        [
-            reconstructions[0, :, :, 15],
-            np.flipud(reconstructions[0, :, 24, :].T),
-            np.flipud(reconstructions[0, 15, :, :].T),
-        ],
-        axis=1,
-    )
-
-    ax[image_n].imshow(reconstructions, cmap="gray")
-    ax[image_n].set_xticks([])
-    ax[image_n].set_yticks([])
-    ax[image_n].set_ylabel(f"Epoch {val_samples[image_n]:.0f}")
-
 
 # %% [markdown]
-# ### Plotting the reconstructions from final trained model
+# ### Plotting synthetic sample
 
 # %%
-fig, ax = plt.subplots(nrows=1, ncols=2)
+model.eval()
+noise = torch.randn((1, 1, 32, 48, 32))
+noise = noise.to(device)
+scheduler.set_timesteps(num_inference_steps=1000)
+image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=scheduler)
+
+
+# %%
 plt.style.use("default")
-plotting_image_0 = np.concatenate([images[0, 0, :, :, 15].cpu(), np.flipud(images[0, 0, :, 24, :].cpu().T)], axis=1)
-plotting_image_1 = np.concatenate([np.flipud(images[0, 0, 15, :, :].cpu().T), np.zeros((32, 32))], axis=1)
-image = np.concatenate([plotting_image_0, plotting_image_1], axis=0)
-
-ax[0].imshow(image, vmin=0, vmax=1, cmap="gray")
-ax[0].axis("off")
-ax[0].title.set_text("Inputted Image")
-
-plotting_image_2 = np.concatenate(
-    [reconstruction[0, 0, :, :, 15].cpu(), np.flipud(reconstruction[0, 0, :, 24, :].cpu().T)], axis=1
-)
-plotting_image_3 = np.concatenate([np.flipud(reconstruction[0, 0, 15, :, :].cpu().T), np.zeros((32, 32))], axis=1)
-reconstruction_3d = np.concatenate([plotting_image_2, plotting_image_3], axis=0)
-ax[1].imshow(reconstruction_3d, vmin=0, vmax=1, cmap="gray")
-ax[1].axis("off")
-ax[1].title.set_text("Reconstruction")
+plotting_image_0 = np.concatenate([image[0, 0, :, :, 15].cpu(), np.flipud(image[0, 0, :, 24, :].cpu().T)], axis=1)
+plotting_image_1 = np.concatenate([np.flipud(image[0, 0, 15, :, :].cpu().T), np.zeros((32, 32))], axis=1)
+plt.imshow(np.concatenate([plotting_image_0, plotting_image_1], axis=0), vmin=0, vmax=1, cmap="gray")
+plt.tight_layout()
+plt.axis("off")
 plt.show()
-
-# %% [markdown]
-# ### Cleanup data directory
-#
-# Remove directory if a temporary was used.
-
-# %%
-if directory is None:
-    shutil.rmtree(root_dir)

@@ -116,13 +116,13 @@ val_transform = Compose(
 
 # %%
 train_ds = DecathlonDataset(
-    root_dir=root_dir, task="Task01_BrainTumour", transform=train_transform, section="training", download=True
+    root_dir=root_dir, task="Task01_BrainTumour", transform=train_transform, section="training", download=False
 )
 
 train_loader = DataLoader(train_ds, batch_size=16, shuffle=True, num_workers=8)
 
 val_ds = DecathlonDataset(
-    root_dir=root_dir, task="Task01_BrainTumour", transform=val_transform, section="validation", download=True
+    root_dir=root_dir, task="Task01_BrainTumour", transform=val_transform, section="validation", download=False
 )
 
 val_loader = DataLoader(val_ds, batch_size=16, shuffle=False, num_workers=8)
@@ -131,14 +131,14 @@ val_loader = DataLoader(val_ds, batch_size=16, shuffle=False, num_workers=8)
 # %% [markdown]
 # ### Visualization of the training images
 
-# %%
-plt.subplots(1, 4, figsize=(10, 6))
-for i in range(4):
-    plt.subplot(1, 4, i + 1)
-    plt.imshow(train_ds[i * 20]["image"][0, :, :, 15].detach().cpu(), vmin=0, vmax=1, cmap="gray")
-    plt.axis("off")
-plt.tight_layout()
-plt.show()
+# # %%
+# plt.subplots(1, 4, figsize=(10, 6))
+# for i in range(4):
+#     plt.subplot(1, 4, i + 1)
+#     plt.imshow(train_ds[i * 20]["image"][0, :, :, 15].detach().cpu(), vmin=0, vmax=1, cmap="gray")
+#     plt.axis("off")
+# plt.tight_layout()
+# plt.show()
 
 # %% [markdown]
 # ### Define network, scheduler, optimizer, and inferer

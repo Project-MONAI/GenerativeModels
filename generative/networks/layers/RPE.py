@@ -13,8 +13,8 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
-from monai.networks.blocks import MLPBlock
-from monai.networks.layers import Act
+# from monai.networks.blocks import MLPBlock
+# from monai.networks.layers import Act
 
 
 class RPENet(nn.Module):
@@ -64,32 +64,20 @@ class RPE(nn.Module):
         channels : number of channels of the input.
         num_heads: number of heads in the attention model.
         time_embed_dim: number of channels of the time embedding.
-        use_rpe_net: Flag of using RPE_net or lookup_table.
     """
     def __init__(
         self,
         channels: int,
         num_heads: int,
         time_embed_dim: int,
-        use_rpe_net: bool = False,
     ):
         super().__init__()
         self.num_heads = num_heads
         self.head_dim = channels // self.num_heads
-        self.use_rpe_net = use_rpe_net
-        if use_rpe_net:
-            self.rpe_net = RPENet(channels, num_heads, time_embed_dim)
-        else:
-            self.lookup_table_weight = nn.Parameter(
-                torch.zeros(2 * self.beta + 1,
-                         self.num_heads,
-                         self.head_dim))
+        self.rpe_net = RPENet(channels, num_heads, time_embed_dim)
 
     def get_R(self, pairwise_distances, temb):
-        if self.use_rpe_net:
-            return self.rpe_net(temb, pairwise_distances)
-        else:
-            return self.lookup_table_weight[pairwise_distances]  # BxTxTxHx(C/H)
+        return self.rpe_net(temb, pairwise_distances)
 
     def forward(self, x, pairwise_distances, temb, mode):
         if mode == "qk":
@@ -138,7 +126,6 @@ class RPEAttention(nn.Module):
         channels : number of channels of the input.
         num_heads: number of heads in the attention model.
         time_embed_dim: number of channels of the time embedding.
-        use_rpe_net: Flag of using RPE_net or lookup_table.
         use_rpe_q: Flag of using RPE attention mode q or not.
         use_rpe_k: Flag of using RPE attention mode k or not.
         use_rpe_v: Flag of using RPE attention mode v or not.
@@ -147,8 +134,7 @@ class RPEAttention(nn.Module):
         self,
         channels: int,
         num_heads: int,
-        time_embed_dim: int,
-        use_rpe_net: bool = False,
+        time_embed_dim: int = None,
         use_rpe_q: bool = True,
         use_rpe_k: bool = True,
         use_rpe_v: bool = True,
@@ -161,12 +147,10 @@ class RPEAttention(nn.Module):
         self.proj_out = nn.Linear(channels, channels)
         self.norm = nn.GroupNorm(32, channels)# Separate channels into 32 groups
 
-        if use_rpe_q or use_rpe_k or use_rpe_v:
-            assert use_rpe_net is not None
         def make_rpe_func():
             return RPE(
                 channels=channels, num_heads=num_heads,
-                time_embed_dim=time_embed_dim, use_rpe_net=use_rpe_net,
+                time_embed_dim=time_embed_dim,
             )
         self.rpe_q = make_rpe_func() if use_rpe_q else None
         self.rpe_k = make_rpe_func() if use_rpe_k else None
