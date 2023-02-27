@@ -26,20 +26,14 @@ This model achieves the following results on UK Biobank: a FID of 0.0076, a MS-S
 For more details regarding evaluation results, we refer to table 1 of the original paper.
 
 
-## **Additinal Usage Steps** (Optional)
-*If your bundle requires steps outside the normal flow of usage, describe those here in bash style commands.*
-
-Example:
-
-My first special instruction for training:
+## **commands example**
+Execute sampling:
 ```
-$ python -m monai.bundle <my special instructions>
+export PYTHONPATH=$PYTHONPATH:"<path to 'GenerativeModels'>"
+$ python -m monai.bundle run save_nii --config_file configs/inference.json --gender 1.0 --age 0.5 --ventricular_vol 0.5 --brain_vol 0.5
+$ python -m monai.bundle run save_nii --config_file configs/inference.json
 ```
-My special instruction for inference 2:
-```
-$ python -m monai.bundle <my special instructions 2>
-```
-
+All conditioning are expected to have values between 0 and 1
 
 ## **Citation Info**
 
