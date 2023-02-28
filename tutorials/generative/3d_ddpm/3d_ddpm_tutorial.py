@@ -119,13 +119,13 @@ train_ds = DecathlonDataset(
     root_dir=root_dir, task="Task01_BrainTumour", transform=train_transform, section="training", download=True
 )
 
-train_loader = DataLoader(train_ds, batch_size=8, shuffle=True, num_workers=8)
+train_loader = DataLoader(train_ds, batch_size=4, shuffle=True, num_workers=8)
 
 val_ds = DecathlonDataset(
     root_dir=root_dir, task="Task01_BrainTumour", transform=val_transform, section="validation", download=True
 )
 
-val_loader = DataLoader(val_ds, batch_size=8, shuffle=False, num_workers=8)
+val_loader = DataLoader(val_ds, batch_size=4, shuffle=False, num_workers=8)
 
 
 # %% [markdown]
@@ -157,7 +157,7 @@ model = DiffusionModelUNet(
 )
 model.to(device)
 
-scheduler = DDPMScheduler(num_train_timesteps=1000, beta_schedule="scaled_linear", beta_start=0.0015, beta_end=0.0195)
+scheduler = DDPMScheduler(num_train_timesteps=1000)
 
 inferer = DiffusionInferer(scheduler)
 
@@ -283,3 +283,5 @@ plt.imshow(np.concatenate([plotting_image_0, plotting_image_1], axis=0), vmin=0,
 plt.tight_layout()
 plt.axis("off")
 plt.show()
+
+# %%
