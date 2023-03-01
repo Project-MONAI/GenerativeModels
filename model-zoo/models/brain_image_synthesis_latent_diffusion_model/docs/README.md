@@ -10,20 +10,20 @@ Synthetic data, Latent Diffusion Model, Generative model, Brain Imaging
 
 ## **Model Description**
 This model is trained using the Latent Diffusion Model architecture [1] and is used for the synthesis of conditioned 3D
-brain MRI data. The model is divided into two parts: a autoencoder with KL-regularisation model that compresses data
-into a latent space, and a diffusion model that learns the to generated conditioned synthetic latent representations. This
+brain MRI data. The model is divided into two parts: an autoencoder with a KL-regularisation model that compresses data
+into a latent space and a diffusion model that learns to generate conditioned synthetic latent representations. This
 model is conditioned on age, sex, the volume of ventricular cerebrospinal fluid, and brain volume normalised for head size.
 
 ## **Data**
 The model was trained on brain data from 31,740 participants from the UK Biobank [2]. We used high-resolution 3D T1w MRI with voxel size of 1mm3, resulting in volumes with 160 x 224 x 160 voxels
 
 #### **Preprocessing**
-For the image pre-processing, we used UniRes [3] to perform a rigid body registration to a common MNI space. The voxel intensity was normalised to be between [0, 1].
+We used UniRes [3] to perform a rigid body registration to a common MNI space for image pre-processing. The voxel intensity was normalised to be between [0, 1].
 
 ## **Performance**
-This model achieves the following results on UK Biobank: a FID of 0.0076, a MS-SSIM of 0.6555, and a 4-G-R-SSIM of 0.3883.
+This model achieves the following results on UK Biobank: an FID of 0.0076, an MS-SSIM of 0.6555, and a 4-G-R-SSIM of 0.3883.
 
-For more details regarding evaluation results, we refer to table 1 of the original paper.
+Please, check Table 1 of the original paper for more details regarding evaluation results.
 
 
 ## **commands example**
@@ -47,7 +47,7 @@ All conditioning are expected to have values between 0 and 1
 }
 ```
 
-## **References** (Optional)
+## **References**
 
 Example:
 

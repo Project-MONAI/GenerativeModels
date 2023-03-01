@@ -96,6 +96,7 @@
     "sample": "$@sampler.sampling_fn(@noise, @autoencoder, @diffusion, @scheduler, @conditioning)",
     "saver": {
         "_target_": "scripts.saver.NiftiSaver",
+        "_requires_": "@create_output_dir",
         "output_dir": "@output_dir"
     },
     "save_nii": "$@saver.save(@sample, @out_file)",

@@ -23,7 +23,7 @@
         "msssim": 0.6555,
         "4gmsssim": 0.3883
     },
-    "intended_use": "This is an example, not to be used for diagnostic purposes",
+    "intended_use": "This is a research tool/prototype and not to be used clinically",
     "references": [
         "Pinaya, Walter HL, et al. \"Brain imaging generation with latent diffusion models.\" MICCAI Workshop on Deep Generative Models. Springer, Cham, 2022."
     ],
