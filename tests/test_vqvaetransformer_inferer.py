@@ -97,6 +97,29 @@ class TestVQVAETransformerInferer(unittest.TestCase):
         prediction = inferer(inputs=input, vqvae_model=stage_1, transformer_model=stage_2, ordering=ordering)
         self.assertEqual(prediction.shape, logits_shape)
 
+    @parameterized.expand(TEST_CASES)
+    def test_prediction_shape_shorter_sequence(
+        self, stage_1_params, stage_2_params, ordering_params, input_shape, logits_shape, latent_shape
+    ):
+        stage_1 = VQVAE(**stage_1_params)
+        max_seq_len = 3
+        stage_2_params['max_seq_len'] = max_seq_len
+        stage_2 = DecoderOnlyTransformer(**stage_2_params)
+        ordering = Ordering(**ordering_params)
+
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        stage_1.to(device)
+        stage_2.to(device)
+        stage_1.eval()
+        stage_2.eval()
+
+        input = torch.randn(input_shape).to(device)
+
+        inferer = VQVAETransformerInferer()
+        prediction = inferer(inputs=input, vqvae_model=stage_1, transformer_model=stage_2, ordering=ordering)
+        cropped_logits_shape = (logits_shape[0], max_seq_len, logits_shape[2])
+        self.assertEqual(prediction.shape, cropped_logits_shape)
+
     def test_sample(self):
         stage_1 = VQVAE(
             spatial_dims=2,
