@@ -454,9 +454,16 @@ class VQVAETransformerInferer(Inferer):
         latent = F.pad(latent, (1, 0), "constant", vqvae_model.num_embeddings)
         latent = latent.long()
 
-        prediction = transformer_model(x=latent, context=condition)
+        # train on a part of the sequence if it is longer than max_seq_length
+        seq_len = latent.shape[1]
+        max_seq_len = transformer_model.max_seq_len
+        if max_seq_len < seq_len:
+            start = torch.randint(low=0, high=seq_len + 1 -max_seq_len, size=(1,)).item()
+        else:
+            start = 0
+        prediction = transformer_model(x=latent[:,start:start+max_seq_len], context=condition)
         if return_latent:
-            return prediction, latent, latent_spatial_dim
+            return prediction, latent[:, start:start + max_seq_len], latent_spatial_dim
         else:
             return prediction
 
