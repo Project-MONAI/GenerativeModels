@@ -458,12 +458,12 @@ class VQVAETransformerInferer(Inferer):
         seq_len = latent.shape[1]
         max_seq_len = transformer_model.max_seq_len
         if max_seq_len < seq_len:
-            start = torch.randint(low=0, high=seq_len + 1 -max_seq_len, size=(1,)).item()
+            start = torch.randint(low=0, high=seq_len + 1 - max_seq_len, size=(1,)).item()
         else:
             start = 0
-        prediction = transformer_model(x=latent[:,start:start+max_seq_len], context=condition)
+        prediction = transformer_model(x=latent[:, start : start + max_seq_len], context=condition)
         if return_latent:
-            return prediction, latent[:, start:start + max_seq_len], latent_spatial_dim
+            return prediction, latent[:, start : start + max_seq_len], latent_spatial_dim
         else:
             return prediction
 
@@ -578,19 +578,19 @@ class VQVAETransformerInferer(Inferer):
         latent = latent.long()
 
         # get the first batch, up to max_seq_length, efficiently
-        logits = transformer_model(x=latent[:,:transformer_model.max_seq_len], context=condition)
+        logits = transformer_model(x=latent[:, : transformer_model.max_seq_len], context=condition)
         probs = F.softmax(logits, dim=-1)
-        probs = torch.gather(probs, 2, latent[:, :transformer_model.max_seq_len].unsqueeze(2)).squeeze(2)
+        probs = torch.gather(probs, 2, latent[:, : transformer_model.max_seq_len].unsqueeze(2)).squeeze(2)
 
         # if we have not covered the full sequence we continue with inefficient looping
         if probs.shape[1] < latent.shape[1]:
             if verbose and has_tqdm:
-                progress_bar = tqdm(range(transformer_model.max_seq_len,seq_len+1))
+                progress_bar = tqdm(range(transformer_model.max_seq_len, seq_len + 1))
             else:
-                progress_bar = iter(range(transformer_model.max_seq_len,seq_len+1))
+                progress_bar = iter(range(transformer_model.max_seq_len, seq_len + 1))
 
             for i in progress_bar:
-                idx_cond = latent[:,i+1-transformer_model.max_seq_len:i+1]
+                idx_cond = latent[:, i + 1 - transformer_model.max_seq_len : i + 1]
                 # forward the model to get the logits for the index in the sequence
                 logits = transformer_model(x=idx_cond, context=condition)
                 # pluck the logits at the final step
@@ -598,7 +598,7 @@ class VQVAETransformerInferer(Inferer):
                 # apply softmax to convert logits to (normalized) probabilities
                 p = F.softmax(logits, dim=-1)
                 # select correct values and append
-                p = torch.gather(p, 1, idx_cond[:,-1].unsqueeze(1))
+                p = torch.gather(p, 1, idx_cond[:, -1].unsqueeze(1))
                 probs = torch.cat((probs, p), dim=1)
 
         # remove starting token probability
