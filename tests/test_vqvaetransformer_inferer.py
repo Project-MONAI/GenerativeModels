@@ -103,8 +103,9 @@ class TestVQVAETransformerInferer(unittest.TestCase):
     ):
         stage_1 = VQVAE(**stage_1_params)
         max_seq_len = 3
-        stage_2_params['max_seq_len'] = max_seq_len
-        stage_2 = DecoderOnlyTransformer(**stage_2_params)
+        stage_2_params_shorter = {k: v for k, v in stage_2_params.items()}
+        stage_2_params_shorter['max_seq_len'] = max_seq_len
+        stage_2 = DecoderOnlyTransformer(**stage_2_params_shorter)
         ordering = Ordering(**ordering_params)
 
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -226,6 +227,30 @@ class TestVQVAETransformerInferer(unittest.TestCase):
         )
         self.assertEqual(likelihood.shape, latent_shape)
 
+    @parameterized.expand(TEST_CASES)
+    def test_get_likelihood_shorter_sequence(
+        self, stage_1_params, stage_2_params, ordering_params, input_shape, logits_shape, latent_shape
+    ):
+        stage_1 = VQVAE(**stage_1_params)
+        max_seq_len = 3
+        stage_2_params_shorter = {k: v for k, v in stage_2_params.items()}
+        stage_2_params_shorter['max_seq_len'] = max_seq_len
+        stage_2 = DecoderOnlyTransformer(**stage_2_params_shorter)
+        ordering = Ordering(**ordering_params)
+
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        stage_1.to(device)
+        stage_2.to(device)
+        stage_1.eval()
+        stage_2.eval()
+
+        input = torch.randn(input_shape).to(device)
+
+        inferer = VQVAETransformerInferer()
+        likelihood = inferer.get_likelihood(
+            inputs=input, vqvae_model=stage_1, transformer_model=stage_2, ordering=ordering
+        )
+        self.assertEqual(likelihood.shape, latent_shape)
     @parameterized.expand(TEST_CASES)
     def test_get_likelihood_resampling(
         self, stage_1_params, stage_2_params, ordering_params, input_shape, logits_shape, latent_shape
