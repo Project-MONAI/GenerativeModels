@@ -541,6 +541,7 @@ class VQVAETransformerInferer(Inferer):
         condition: torch.Tensor | None = None,
         resample_latent_likelihoods: bool = False,
         resample_interpolation_mode: str = "nearest",
+        verbose: bool = False,
     ) -> torch.Tensor:
         """
         Computes the log-likelihoods of the latent representations of the input.
@@ -555,24 +556,52 @@ class VQVAETransformerInferer(Inferer):
                 dimension as the input images.
             resample_interpolation_mode: if use resample_latent_likelihoods, select interpolation 'nearest', 'bilinear',
                 or 'trilinear;
+            verbose: if true, prints the progression bar of the sampling process.
+
         """
         if resample_latent_likelihoods and resample_interpolation_mode not in ("nearest", "bilinear", "trilinear"):
             raise ValueError(
                 f"resample_interpolation mode should be either nearest, bilinear, or trilinear, got {resample_interpolation_mode}"
             )
-        logits, latent, latent_spatial_dim = self(
-            inputs=inputs,
-            vqvae_model=vqvae_model,
-            transformer_model=transformer_model,
-            ordering=ordering,
-            condition=condition,
-            return_latent=True,
-        )
-        all_probs = F.softmax(logits, dim=-1)
-        probs = torch.gather(all_probs, 2, latent.unsqueeze(2))
-        probs = probs.squeeze(2)
 
-        # remove the probability of the starting token
+        with torch.no_grad():
+            latent = vqvae_model.index_quantize(inputs)
+
+        latent_spatial_dim = tuple(latent.shape[1:])
+        latent = latent.reshape(latent.shape[0], -1)
+        latent = latent[:, ordering.get_sequence_ordering()]
+        seq_len = math.prod(latent_spatial_dim)
+
+        # Use the value from vqvae_model's num_embeddings as the starting token, the "Begin Of Sentence" (BOS) token.
+        # Note the transformer_model must have vqvae_model.num_embeddings + 1 defined as num_tokens.
+        latent = F.pad(latent, (1, 0), "constant", vqvae_model.num_embeddings)
+        latent = latent.long()
+
+        # get the first batch, up to max_seq_length, efficiently
+        logits = transformer_model(x=latent[:,:transformer_model.max_seq_len], context=condition)
+        probs = F.softmax(logits, dim=-1)
+        probs = torch.gather(probs, 2, latent[:, :transformer_model.max_seq_len].unsqueeze(2)).squeeze(2)
+
+        # if we have not covered the full sequence we continue with inefficient looping
+        if probs.shape[1] < latent.shape[1]:
+            if verbose and has_tqdm:
+                progress_bar = tqdm(range(transformer_model.max_seq_len,seq_len+1))
+            else:
+                progress_bar = iter(range(transformer_model.max_seq_len,seq_len+1))
+
+            for i in progress_bar:
+                idx_cond = latent[:,i+1-transformer_model.max_seq_len:i+1]
+                # forward the model to get the logits for the index in the sequence
+                logits = transformer_model(x=idx_cond, context=condition)
+                # pluck the logits at the final step
+                logits = logits[:, -1, :]
+                # apply softmax to convert logits to (normalized) probabilities
+                p = F.softmax(logits, dim=-1)
+                # select correct values and append
+                p = torch.gather(p, 1, idx_cond[:,-1].unsqueeze(1))
+                probs = torch.cat((probs, p), dim=1)
+
+        # remove starting token probability
         probs = probs[:, 1:]
         probs = torch.log(probs)
 
