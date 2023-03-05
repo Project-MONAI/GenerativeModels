@@ -143,7 +143,6 @@ class TestAutoEncoderKL(unittest.TestCase):
             self.assertEqual(result[1].shape, expected_latent_shape)
             self.assertEqual(result[2].shape, expected_latent_shape)
 
-    # TODO: fix this test
     # def test_script(self):
     #     input_param, input_shape, _, _ = CASES[0]
     #     net = AutoencoderKL(**input_param)
