@@ -28,7 +28,7 @@ transformers package (https://github.com/huggingface/transformers) (pretrained m
 model.
 
 
-## **commands example**
+## **Commands Example**
 Execute sampling:
 ```shell
 export PYTHONPATH=$PYTHONPATH:"<path to 'GenerativeModels'>"
@@ -50,7 +50,6 @@ $ python -m monai.bundle run save_nii --config_file configs/inference.json --pro
 
 ## **References**
 
-Example:
 
 [1] Pinaya, Walter HL, et al. "Brain imaging generation with latent diffusion models." MICCAI Workshop on Deep Generative Models. Springer, Cham, 2022.
 
