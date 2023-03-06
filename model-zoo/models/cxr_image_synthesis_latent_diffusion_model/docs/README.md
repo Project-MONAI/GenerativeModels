@@ -29,22 +29,31 @@ model.
 
 
 ## **Commands Example**
-Execute sampling:
+Here we included a few examples of commands to sample images from the model and save them as .jpg files. The available
+arguments for this task are: "--prompt" (str) text prompt to condition the model on; "--guidance_scale" (float), the
+parameter that controls how much the image generation process follows the text prompt. The higher the value, the more
+the image sticks to a given text input (the common range is between 1-21).
+
+Examples:
+
 ```shell
 export PYTHONPATH=$PYTHONPATH:"<path to 'GenerativeModels'>"
-$ python -m monai.bundle run save_nii --config_file configs/inference.json --prompt "Big right-sided pleural effusion" --guidance_scale 7.0
+$ python -m monai.bundle run save_jpg --config_file configs/inference.json --prompt "Big right-sided pleural effusion" --guidance_scale 7.0
 ```
 
 ```shell
-$ python -m monai.bundle run save_nii --config_file configs/inference.json --prompt "Small right-sided pleural effusion" --guidance_scale 7.0
+export PYTHONPATH=$PYTHONPATH:"<path to 'GenerativeModels'>"
+$ python -m monai.bundle run save_jpg --config_file configs/inference.json --prompt "Small right-sided pleural effusion" --guidance_scale 7.0
 ```
 
 ```shell
-$ python -m monai.bundle run save_nii --config_file configs/inference.json --prompt "Bilateral pleural effusion" --guidance_scale 7.0
+export PYTHONPATH=$PYTHONPATH:"<path to 'GenerativeModels'>"
+$ python -m monai.bundle run save_jpg --config_file configs/inference.json --prompt "Bilateral pleural effusion" --guidance_scale 7.0
 ```
 
 ```shell
-$ python -m monai.bundle run save_nii --config_file configs/inference.json --prompt "Cardiomegaly" --guidance_scale 7.0
+export PYTHONPATH=$PYTHONPATH:"<path to 'GenerativeModels'>"
+$ python -m monai.bundle run save_jpg --config_file configs/inference.json --prompt "Cardiomegaly" --guidance_scale 7.0
 ```
 
 

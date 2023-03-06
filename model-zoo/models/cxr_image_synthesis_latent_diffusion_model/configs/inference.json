@@ -102,6 +102,6 @@
         "_requires_": "@create_output_dir",
         "output_dir": "@output_dir"
     },
-    "save_nii": "$@saver.save(@sample, @out_file)",
+    "save_jpg": "$@saver.save(@sample, @out_file)",
     "save": "$torch.save(@sample, @output_dir + '/' + @out_file + '.pt')"
 }
