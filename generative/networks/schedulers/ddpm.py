@@ -42,16 +42,17 @@ from generative.utils import unsqueeze_right
 
 
 class DDPMVarianceType(StrEnum):
-    FIXED_SMALL="fixed_small"
-    FIXED_LARGE="fixed_large"
-    LEARNED="learned"
-    LEARNED_RANGE="learned_range"
-    
-    
+    FIXED_SMALL = "fixed_small"
+    FIXED_LARGE = "fixed_large"
+    LEARNED = "learned"
+    LEARNED_RANGE = "learned_range"
+
+
 class DDPMPRedictionType(StrEnum):
-    EPSILON="epsiolon"
-    SAMPLE="sample"
-    V_PREDICTION="v_prediction"
+    EPSILON = "epsiolon"
+    SAMPLE = "sample"
+    V_PREDICTION = "v_prediction"
+
 
 class DDPMScheduler(Scheduler):
     """
@@ -88,10 +89,10 @@ class DDPMScheduler(Scheduler):
 
         if variance_type not in DDPMVarianceType.__members__.values():
             raise ValueError("Argument `variance_type` must be a member of `DDPMVarianceType`")
-            
+
         if prediction_type not in DDPMPRedictionType.__members__.values():
             raise ValueError("Argument `prediction_type` must be a member of `DDPMPRedictionType`")
-            
+
         self.clip_sample = clip_sample
         self.variance_type = variance_type
         self.prediction_type = prediction_type
@@ -236,4 +237,3 @@ class DDPMScheduler(Scheduler):
         pred_prev_sample = pred_prev_sample + variance
 
         return pred_prev_sample, pred_original_sample
-    

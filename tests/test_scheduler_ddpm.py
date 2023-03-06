@@ -54,13 +54,13 @@ class TestDDPMScheduler(unittest.TestCase):
         output_step = scheduler.step(model_output=model_output, timestep=500, sample=sample)
         self.assertEqual(output_step[0].shape, expected_shape)
         self.assertEqual(output_step[1].shape, expected_shape)
-        
+
     @parameterized.expand(TEST_CASES)
     def test_get_velocity_shape(self, input_param, input_shape, expected_shape):
         scheduler = DDPMScheduler(**input_param)
         sample = torch.randn(input_shape)
         timesteps = torch.randint(0, scheduler.num_train_timesteps, (input_shape[0],)).long()
-        velocity = scheduler.get_velocity(sample=sample, noise=sample,timesteps=timesteps)
+        velocity = scheduler.get_velocity(sample=sample, noise=sample, timesteps=timesteps)
         self.assertEqual(velocity.shape, expected_shape)
 
     def test_step_learned(self):
