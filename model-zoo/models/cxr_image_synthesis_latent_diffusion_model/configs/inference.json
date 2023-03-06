@@ -6,8 +6,7 @@
         "$from transformers import CLIPTextModel",
         "$from transformers import CLIPTokenizer"
     ],
-    "//bundle_root": ".",
-    "bundle_root": "/media/walter/Storage/Projects/GenerativeModels/model-zoo/models/cxr_image_synthesis_latent_diffusion_model",
+    "bundle_root": ".",
     "model_dir": "$@bundle_root + '/models'",
     "output_dir": "$@bundle_root + '/output'",
     "create_output_dir": "$Path(@output_dir).mkdir(exist_ok=True)",
