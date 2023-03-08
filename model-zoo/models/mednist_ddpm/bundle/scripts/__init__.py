@@ -32,8 +32,8 @@ class DiffusionPrepareBatch(PrepareBatch):
 
     def __call__(
         self,
-        batchdata: Dict[str, torch.Tensor],
-        device: Union[str, torch.device] | None = None,
+        batchdata: dict[str, torch.Tensor],
+        device: str | torch.device | None = None,
         non_blocking: bool = False,
         **kwargs,
     ):
