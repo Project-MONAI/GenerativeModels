@@ -39,8 +39,8 @@ class SNConv(nn.Module):
         spatial_dims: int,
         in_channels: int,
         out_channels: int,
-        strides: Sequence[int] | int = 1,
         kernel_size: Sequence[int] | int = 3,
+        strides: Sequence[int] | int = 1,
         padding: Sequence[int] | int | None = None,
         bias: bool = True,
     ) -> None:
@@ -79,6 +79,13 @@ class SNLinear(nn.Module):
 
 
 class CodeDiscriminator(nn.Module):
+    """
+    Code Discriminator to force the distribution of the code to be indistinguishable from that of random noise
+
+    Args:
+        code_size: size of the code.
+        num_units: number of units in the hidden layers.
+    """
     def __init__(self, code_size: int, num_units: int = 256) -> None:
         super().__init__()
 
@@ -95,6 +102,14 @@ class CodeDiscriminator(nn.Module):
 
 
 class SubEncoder(nn.Module):
+    """
+    Sub encoder
+
+    Args:
+        spatial_dims: number of spatial dimensions of the input data.
+        num_channels: number of input channels.
+        latent_dim: size of the latent code.
+    """
     def __init__(self, spatial_dims: int, num_channels: int = 256, latent_dim: int = 1024) -> None:
         super().__init__()
 
@@ -162,6 +177,13 @@ class SubEncoder(nn.Module):
 
 
 class Encoder(nn.Module):
+    """
+    Encoder
+
+    Args:
+        spatial_dims: number of spatial dimensions of the input data.
+        num_channels: number of input channels.
+    """
     def __init__(self, spatial_dims: int, num_channels: int = 64) -> None:
         super().__init__()
 
@@ -207,7 +229,15 @@ class Encoder(nn.Module):
 
 
 class SubDiscriminator(nn.Module):
-    def __init__(self, spatial_dims: int, num_class=0, num_channels=256):
+    """
+    Sub discriminator for the low resolution images.
+
+    Args:
+        spatial_dims: number of spatial dimensions of the input image.
+        num_channels: base number of channels for the convolutional layers.
+        num_class: number of classes for the conditional HA-GAN.
+    """
+    def __init__(self, spatial_dims: int, num_channels: int =256, num_class:int =0) -> None:
         super().__init__()
         self.channel = num_channels
         self.num_class = num_class
@@ -267,6 +297,14 @@ class SubDiscriminator(nn.Module):
 
 
 class Discriminator(nn.Module):
+    """
+    Discriminator network of the Hierarchical Amortized GAN (HA-GAN) model for 3D medical image generation.
+
+    Args:
+        spatial_dims: number of spatial dimensions of the input image.
+        num_channels: base number of channels for the convolutional layers.
+        num_class: number of classes for the conditional HA-GAN.
+    """
     def __init__(self, spatial_dims: int, num_class: int = 0, num_channels: int = 512) -> None:
         super().__init__()
         self.channel = num_channels
@@ -330,7 +368,7 @@ class Discriminator(nn.Module):
             self.fc2_class = SNLinear(num_channels // 8, num_class)
 
         # D^L
-        self.sub_D = SubDiscriminator(num_class)
+        self.sub_discriminator = SubDiscriminator(num_class)
 
     def forward(
         self, h: torch.Tensor, h_small: torch.Tensor, crop_idx
@@ -348,15 +386,23 @@ class Discriminator(nn.Module):
         if self.num_class > 0:
             h_class_logit = self.fc2_class(h)
 
-            h_small_logit, h_small_class_logit = self.sub_D(h_small)
+            h_small_logit, h_small_class_logit = self.sub_discriminator(h_small)
             return (h_logit + h_small_logit) / 2.0, (h_class_logit + h_small_class_logit) / 2.0
         else:
-            h_small_logit = self.sub_D(h_small)
+            h_small_logit = self.sub_discriminator(h_small)
             return (h_logit + h_small_logit) / 2.0
 
 
 class SubGenerator(nn.Module):
-    def __init__(self, spatial_dims: int, num_channels: int = 16):
+    """
+    Sub Generator for generating the low resolution images.
+
+    Args:
+        spatial_dims: number of spatial dimensions of the input image.
+        num_channels: base number of channels for the convolutional layers.
+        norm_num_groups: number of groups for the group normalization.
+    """
+    def __init__(self, spatial_dims: int, num_channels: int = 16, norm_num_groups: int = 8) -> None:
         super().__init__()
 
         self.conv1 = Convolution(
@@ -368,7 +414,7 @@ class SubGenerator(nn.Module):
             padding=1,
             adn_ordering="NA",
             act=Act.RELU,
-            norm=(Norm.GROUP, {"num_groups": 8, "num_channels": num_channels * 2}),
+            norm=(Norm.GROUP, {"num_groups": norm_num_groups, "num_channels": num_channels * 2}),
         )
         self.conv2 = Convolution(
             spatial_dims=spatial_dims,
@@ -379,7 +425,7 @@ class SubGenerator(nn.Module):
             padding=1,
             adn_ordering="NA",
             act=Act.RELU,
-            norm=(Norm.GROUP, {"num_groups": 8, "num_channels": num_channels}),
+            norm=(Norm.GROUP, {"num_groups": norm_num_groups, "num_channels": num_channels}),
         )
         self.conv3 = Convolution(
             spatial_dims=spatial_dims,
@@ -400,16 +446,33 @@ class SubGenerator(nn.Module):
 
 
 class Generator(nn.Module):
+    """
+    Generator network of the Hierarchical Amortized GAN (HA-GAN) model for 3D medical image generation.
+
+    Args:
+        spatial_dims: number of spatial dimensions of the input image.
+        num_channels: base number of channels for the convolutional layers.
+        num_latent_channels: number of channels for the latent space.
+        num_class: number of classes for the conditional HA-GAN.
+        mode: mode of the network, can be "train" or "eval".
+        norm_num_groups: number of groups for the group normalization.
+    """
     def __init__(
-        self, spatial_dims, mode: str = "train", latent_dim: int = 1024, num_channels: int = 32, num_class: int = 0
+        self,
+            spatial_dims: int,
+            num_channels: int = 32,
+            num_latent_channels: int = 1024,
+            num_class: int = 0,
+            mode: str = "train",
+            norm_num_groups: int = 8,
     ) -> None:
         super().__init__()
         self.mode = mode
         self.relu = nn.ReLU()
         self.num_class = num_class
 
-        # G^A and G^H
-        self.fc1 = nn.Linear(latent_dim + num_class, 4 * 4 * 4 * num_channels * 16)
+        # Common block (G^A) and high-resolution block (G^H) of the Generator
+        self.fc1 = nn.Linear(num_latent_channels + num_class, 4 * 4 * 4 * num_channels * 16)
 
         self.conv1 = Convolution(
             spatial_dims=spatial_dims,
@@ -420,7 +483,7 @@ class Generator(nn.Module):
             padding=1,
             adn_ordering="NA",
             act=Act.RELU,
-            norm=(Norm.GROUP, {"num_groups": 8, "num_channels": num_channels * 16}),
+            norm=(Norm.GROUP, {"num_groups": norm_num_groups, "num_channels": num_channels * 16}),
         )
         self.conv2 = Convolution(
             spatial_dims=spatial_dims,
@@ -431,7 +494,7 @@ class Generator(nn.Module):
             padding=1,
             adn_ordering="NA",
             act=Act.RELU,
-            norm=(Norm.GROUP, {"num_groups": 8, "num_channels": num_channels * 16}),
+            norm=(Norm.GROUP, {"num_groups": norm_num_groups, "num_channels": num_channels * 16}),
         )
         self.conv3 = Convolution(
             spatial_dims=spatial_dims,
@@ -442,7 +505,7 @@ class Generator(nn.Module):
             padding=1,
             adn_ordering="NA",
             act=Act.RELU,
-            norm=(Norm.GROUP, {"num_groups": 8, "num_channels": num_channels * 8}),
+            norm=(Norm.GROUP, {"num_groups": norm_num_groups, "num_channels": num_channels * 8}),
         )
         self.conv4 = Convolution(
             spatial_dims=spatial_dims,
@@ -453,7 +516,7 @@ class Generator(nn.Module):
             padding=1,
             adn_ordering="NA",
             act=Act.RELU,
-            norm=(Norm.GROUP, {"num_groups": 8, "num_channels": num_channels * 4}),
+            norm=(Norm.GROUP, {"num_groups": norm_num_groups, "num_channels": num_channels * 4}),
         )
         self.conv5 = Convolution(
             spatial_dims=spatial_dims,
@@ -464,7 +527,7 @@ class Generator(nn.Module):
             padding=1,
             adn_ordering="NA",
             act=Act.RELU,
-            norm=(Norm.GROUP, {"num_groups": 8, "num_channels": num_channels * 2}),
+            norm=(Norm.GROUP, {"num_groups": norm_num_groups, "num_channels": num_channels * 2}),
         )
         self.conv6 = Convolution(
             spatial_dims=spatial_dims,
@@ -475,10 +538,10 @@ class Generator(nn.Module):
             padding=1,
             adn_ordering="NA",
             act=Act.RELU,
-            norm=(Norm.GROUP, {"num_groups": 8, "num_channels": num_channels}),
+            norm=(Norm.GROUP, {"num_groups": norm_num_groups, "num_channels": num_channels}),
         )
 
-        self.conv6 = Convolution(
+        self.conv7 = Convolution(
             spatial_dims=spatial_dims,
             in_channels=num_channels,
             out_channels=1,
@@ -489,10 +552,10 @@ class Generator(nn.Module):
             act=Act.TANH,
         )
 
-        # G^L
-        self.sub_g = SubGenerator(num_channels=num_channels // 2)
+        # Low-resolution block (G^L) of the generator
+        self.sub_generator = SubGenerator(num_channels=num_channels // 2)
 
-    def forward(self, h: torch.Tensor, crop_idx=None, class_label=None):
+    def forward(self, h: torch.Tensor, crop_idx=None, class_label=None) -> torch.Tensor | Sequence[torch.Tensor, torch.Tensor]:
         # Generate from random noise
         if crop_idx != None or self.mode == "eval":
             if self.num_class > 0:
@@ -516,7 +579,7 @@ class Generator(nn.Module):
             h_latent = self.conv5(h)
 
             if self.mode == "train":
-                h_small = self.sub_g(h_latent)
+                h_small = self.sub_generator(h_latent)
                 h = h_latent[:, :, crop_idx // 4 : crop_idx // 4 + 8, :, :]  # Crop, out: (8, 64, 64)
             else:
                 h = h_latent
@@ -530,4 +593,5 @@ class Generator(nn.Module):
 
         if crop_idx != None and self.mode == "train":
             return h, h_small
+
         return h
