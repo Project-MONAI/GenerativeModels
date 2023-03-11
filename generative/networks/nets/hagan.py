@@ -80,7 +80,9 @@ class SNLinear(nn.Module):
 
 class CodeDiscriminator(nn.Module):
     """
-    Code Discriminator to force the distribution of the code to be indistinguishable from that of random noise
+    Code Discriminator to force the distribution of the code to be indistinguishable from that of random noise. Based
+    on Rosca et al. Variational Approaches for Auto-Encoding Generative Adversarial Networks
+    https://arxiv.org/abs/1706.04987
 
     Args:
         code_size: size of the code.
@@ -178,7 +180,9 @@ class SubEncoder(nn.Module):
 
 class Encoder(nn.Module):
     """
-    Encoder
+    Encoder network from HA-GAN.  Based on Sun et al. Hierarchical Amortized GAN for 3D High Resolution Medical Image
+    Synthesis https://doi.org/10.1109/JBHI.2022.3172976
+
 
     Args:
         spatial_dims: number of spatial dimensions of the input data.
@@ -298,7 +302,10 @@ class SubDiscriminator(nn.Module):
 
 class Discriminator(nn.Module):
     """
-    Discriminator network of the Hierarchical Amortized GAN (HA-GAN) model for 3D medical image generation.
+    Discriminator network of the Hierarchical Amortized GAN (HA-GAN) model for 3D medical image generation. Based on Sun
+    et al. Hierarchical Amortized GAN for 3D High Resolution Medical Image Synthesis
+    https://doi.org/10.1109/JBHI.2022.3172976
+
 
     Args:
         spatial_dims: number of spatial dimensions of the input image.
@@ -447,7 +454,9 @@ class SubGenerator(nn.Module):
 
 class Generator(nn.Module):
     """
-    Generator network of the Hierarchical Amortized GAN (HA-GAN) model for 3D medical image generation.
+    Generator network of the Hierarchical Amortized GAN (HA-GAN) model for 3D medical image generation. Based on Sun et
+    al. Hierarchical Amortized GAN for 3D High Resolution Medical Image Synthesis
+    https://doi.org/10.1109/JBHI.2022.3172976
 
     Args:
         spatial_dims: number of spatial dimensions of the input image.
