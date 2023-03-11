@@ -53,8 +53,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 import torch
-import torch.nn.functional as F
-from ignite.utils import convert_tensor
 from monai import transforms
 from monai.apps import MedNISTDataset
 from monai.config import print_config
@@ -99,9 +97,9 @@ train_transforms = transforms.Compose(
         transforms.ScaleIntensityRanged(keys=["image"], a_min=0.0, a_max=255.0, b_min=0.0, b_max=1.0, clip=True),
         transforms.RandAffined(
             keys=["image"],
-            rotate_range=[(-np.pi / 18, np.pi / 18), (-np.pi / 18, np.pi / 18)],
+            rotate_range=[(-np.pi / 36, np.pi / 36), (-np.pi / 36, np.pi / 36)],
             translate_range=[(-1, 1), (-1, 1)],
-            scale_range=[(-0.05, 0.05), (-0.05, 0.05)],
+            scale_range=[(-0.01, 0.01), (-0.01, 0.01)],
             spatial_size=[image_size, image_size],
             padding_mode="zeros",
             prob=0.5,
@@ -109,7 +107,7 @@ train_transforms = transforms.Compose(
     ]
 )
 train_ds = Dataset(data=train_datalist, transform=train_transforms)
-train_loader = DataLoader(train_ds, batch_size=64, shuffle=True, num_workers=4, persistent_workers=True)
+train_loader = DataLoader(train_ds, batch_size=256, shuffle=True, num_workers=4, persistent_workers=True)
 
 # %% [markdown]
 # ### Visualise some examples from the dataset
@@ -136,7 +134,7 @@ val_transforms = transforms.Compose(
     ]
 )
 val_ds = Dataset(data=val_datalist, transform=val_transforms)
-val_loader = DataLoader(val_ds, batch_size=64, shuffle=False, num_workers=4, persistent_workers=True)
+val_loader = DataLoader(val_ds, batch_size=256, shuffle=False, num_workers=4, persistent_workers=True)
 
 # %% [markdown]
 # ## Vector Quantized Variational Autoencoder
@@ -175,8 +173,8 @@ l1_loss = L1Loss()
 # We will train our VQ-VAE for 50 epochs.
 
 # %%
-n_epochs = 50
-val_interval = 10
+n_epochs = 75
+val_interval = 25
 epoch_losses = []
 val_epoch_losses = []
 
@@ -222,28 +220,6 @@ total_time = time.time() - total_start
 print(f"train completed, total time: {total_time}.")
 
 # %% [markdown]
-# ###  Learning curves
-
-# %%
-plt.style.use("ggplot")
-plt.title("Learning Curves", fontsize=20)
-plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_losses, color="C0", linewidth=2.0, label="Train")
-plt.plot(
-    np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
-    val_epoch_losses,
-    color="C1",
-    linewidth=2.0,
-    label="Validation",
-)
-plt.yticks(fontsize=12)
-plt.xticks(fontsize=12)
-plt.xlabel("Epochs", fontsize=16)
-plt.ylabel("Loss", fontsize=16)
-plt.legend(prop={"size": 14})
-plt.show()
-
-
-# %% [markdown]
 # ### Plot reconstructions of final trained vqvae model
 
 # %%
@@ -270,8 +246,8 @@ plt.show()
 # We can use the same dataloader with augmentations as used for training the VQVAE model. However given the memory intensive nature of Transformers we will need to reduce the batch size.
 
 # %%
-train_loader = DataLoader(train_ds, batch_size=8, shuffle=True, num_workers=4, persistent_workers=True)
-val_loader = DataLoader(val_ds, batch_size=8, shuffle=True, num_workers=4, persistent_workers=True)
+train_loader = DataLoader(train_ds, batch_size=32, shuffle=True, num_workers=4, persistent_workers=True)
+val_loader = DataLoader(val_ds, batch_size=32, shuffle=False, num_workers=4, persistent_workers=True)
 
 # %% [markdown]
 # ### 2D latent representation -> 1D sequence
@@ -288,29 +264,26 @@ spatial_shape = (int(spatial_shape[0] / 4), int(spatial_shape[1] / 4))
 
 ordering = Ordering(ordering_type=OrderingType.RASTER_SCAN.value, spatial_dims=2, dimensions=(1,) + spatial_shape)
 
-sequence_ordering = ordering.get_sequence_ordering()
-revert_sequence_ordering = ordering.get_revert_sequence_ordering()
-
 
 # %% [markdown]
-# ### Define Network, optimizer and losses
+# ### Define network, inferer, optimizer and loss function
 
 # %%
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 transformer_model = DecoderOnlyTransformer(
-    num_tokens=256,  # must be equal to num_embeddings input of VQVAE
+    num_tokens=16+1,
     max_seq_len=spatial_shape[0] * spatial_shape[1],
-    attn_layers_dim=64,
-    attn_layers_depth=12,
-    attn_layers_heads=8,
+    attn_layers_dim=256,
+    attn_layers_depth=20,
+    attn_layers_heads=16,
 )
 transformer_model.to(device)
 
 inferer = VQVAETransformerInferer()
 
 # %%
-optimizer = torch.optim.Adam(params=transformer_model.parameters(), lr=1e-3)
+optimizer = torch.optim.Adam(params=transformer_model.parameters(), lr=1e-4)
 ce_loss = CrossEntropyLoss()
 
 # %% [markdown]
@@ -318,8 +291,8 @@ ce_loss = CrossEntropyLoss()
 # We will train the Transformer for 100 epochs.
 
 # %%
-n_epochs = 100
-val_interval = 10
+n_epochs = 300
+val_interval = 25
 epoch_losses = []
 val_epoch_losses = []
 vqvae_model.eval()
@@ -334,24 +307,11 @@ for epoch in range(n_epochs):
 
         images = batch["image"].to(device)
 
-
-
-        # Encode images using vqvae and transformer to 1D sequence
-        quantizations = vqvae_model.index_quantize(images)
-        quantizations = quantizations.reshape(quantizations.shape[0], -1)
-        quantizations = quantizations[:, sequence_ordering]
-
-        # Pad input to give start of sequence token
-        quantizations = F.pad(quantizations, (1, 0), "constant", 255)  # pad with 0 i.e. vocab size of vqvae
-        quantizations = quantizations.long()
-
-        quantizations_input = convert_tensor(quantizations[:, :-1], device, non_blocking=True)
-        quantizations_target = convert_tensor(quantizations[:, 1:], device, non_blocking=True)
-
         optimizer.zero_grad(set_to_none=True)
 
 
-        logits = transformer_model(x=quantizations_input).transpose(1, 2)
+        logits, quantizations_target, _ = inferer(images, vqvae_model, transformer_model, ordering, return_latent=True)
+        logits = logits.transpose(1, 2)
 
         loss = ce_loss(logits, quantizations_target)
 
@@ -370,20 +330,9 @@ for epoch in range(n_epochs):
             for val_step, batch in enumerate(val_loader, start=1):
 
                 images = batch["image"].to(device)
-                # Encode images using vqvae and transformer to 1D sequence
-                quantizations = vqvae_model.index_quantize(images)
-                quantizations = quantizations.reshape(quantizations.shape[0], -1)
-                quantizations = quantizations[:, sequence_ordering]
 
-                # Pad input to give start of sequence token
-                quantizations = F.pad(quantizations, (1, 0), "constant", 255)  # pad with 255 i.e. vocab size of vqvae
-                quantizations = quantizations.long()
-
-                quantizations_input = convert_tensor(quantizations[:, :-1], device, non_blocking=True)
-                quantizations_target = convert_tensor(quantizations[:, 1:], device, non_blocking=True)
-
-                # model outputs
-                logits = transformer_model(x=quantizations_input).transpose(1, 2)
+                logits, quantizations_target, _ = inferer(images, vqvae_model, transformer_model, ordering, return_latent=True)
+                logits = logits.transpose(1, 2)
 
                 loss = ce_loss(logits, quantizations_target)
 
@@ -394,27 +343,6 @@ for epoch in range(n_epochs):
 
 total_time = time.time() - total_start
 print(f"train completed, total time: {total_time}.")
-
-# %% [markdown]
-# ### Learning Curves
-
-# %%
-plt.style.use("ggplot")
-plt.title("Learning Curves", fontsize=20)
-plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_losses, color="C0", linewidth=2.0, label="Train")
-plt.plot(
-    np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
-    val_epoch_losses,
-    color="C1",
-    linewidth=2.0,
-    label="Validation",
-)
-plt.yticks(fontsize=12)
-plt.xticks(fontsize=12)
-plt.xlabel("Epochs", fontsize=16)
-plt.ylabel("Loss", fontsize=16)
-plt.legend(prop={"size": 14})
-plt.show()
 
 # %% [markdown]
 # ## Image-wise anomaly detection
@@ -445,10 +373,10 @@ for step, batch in progress_bar:
 in_likelihoods = np.concatenate(in_likelihoods)
 
 # %% [markdown]
-# We will use the other classes of the dataset for the out-of-distribution examples.
+# We will use the "ChestCT" class of the dataset for the out-of-distribution examples.
 
 # %%
-ood_datalist = [{"image": item["image"]} for item in test_data.data if item["class_name"] != "HeadCT"]
+ood_datalist = [{"image": item["image"]} for item in test_data.data if item["class_name"] == "ChestCT"]
 ood_ds = Dataset(data=ood_datalist, transform=val_transforms)
 ood_loader = DataLoader(ood_ds, batch_size=64, shuffle=False, num_workers=4, persistent_workers=True)
 
@@ -472,8 +400,8 @@ ood_likelihoods = np.concatenate(ood_likelihoods)
 # Here, we plot the log-likelihood of the images. In this case, the lower the log-likelihood, the more unlikely the image belongs to the training set.
 
 # %%
-sns.kdeplot(in_likelihoods, color="dodgerblue", label="In-distribution")
-sns.kdeplot(ood_likelihoods, color="deeppink", label="OOD")
+sns.kdeplot(in_likelihoods, color="dodgerblue", bw_adjust=1000000, label="In-distribution")
+sns.kdeplot(ood_likelihoods, color="deeppink", bw_adjust=1,label="OOD")
 plt.legend()
 plt.xlabel("Log-likelihood")
 
