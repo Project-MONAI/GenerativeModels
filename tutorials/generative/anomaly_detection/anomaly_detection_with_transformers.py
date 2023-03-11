@@ -18,7 +18,7 @@
 #
 # This tutorial illustrates how to use MONAI to perform image-wise anomaly detection with transformers based on the method proposed in Pinaya et al.[1].
 #
-# Here, we will work with the [MedNIST dataset](https://docs.monai.io/en/stable/apps.html#monai.apps.MedNISTDataset) available on MONAI, and similar to "Experiment 2 – image-wise anomaly detection on 2D synthetic data" from [1], we will train our generative models on `HeadCT` images.
+# Here, we will work with the [MedNIST dataset](https://docs.monai.io/en/stable/apps.html#monai.apps.MedNISTDataset) available on MONAI, and similar to "Experiment 2 – image-wise anomaly detection on 2D synthetic data" from [1], we will train a general-purpose VQ-VAE (using all MEDNIST classes), and then a generative models (i.e., Transformer) on `HeadCT` images.
 #
 # Finally, we will compute the log-likelihood of images from the same class (in-distribution class) and images from other classes (out-of-distribution).
 #
@@ -87,9 +87,6 @@ print(root_dir)
 # ### Download training data
 
 # %%
-train_data = MedNISTDataset(root_dir=root_dir, section="training", download=True, seed=0)
-train_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "HeadCT"]
-image_size = 64
 train_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),
@@ -100,14 +97,14 @@ train_transforms = transforms.Compose(
             rotate_range=[(-np.pi / 36, np.pi / 36), (-np.pi / 36, np.pi / 36)],
             translate_range=[(-1, 1), (-1, 1)],
             scale_range=[(-0.01, 0.01), (-0.01, 0.01)],
-            spatial_size=[image_size, image_size],
+            spatial_size=[64, 64],
             padding_mode="zeros",
             prob=0.5,
         ),
     ]
 )
-train_ds = Dataset(data=train_datalist, transform=train_transforms)
-train_loader = DataLoader(train_ds, batch_size=256, shuffle=True, num_workers=4, persistent_workers=True)
+train_data = MedNISTDataset(root_dir=root_dir, section="training", download=True, seed=0, transform=train_transforms)
+train_loader = DataLoader(train_data, batch_size=256, shuffle=True, num_workers=4, persistent_workers=True)
 
 # %% [markdown]
 # ### Visualise some examples from the dataset
@@ -124,8 +121,6 @@ for image_n in range(3):
 # ### Download Validation Data
 
 # %%
-val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, seed=0)
-val_datalist = [{"image": item["image"]} for item in val_data.data if item["class_name"] == "HeadCT"]
 val_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),
@@ -133,8 +128,8 @@ val_transforms = transforms.Compose(
         transforms.ScaleIntensityRanged(keys=["image"], a_min=0.0, a_max=255.0, b_min=0.0, b_max=1.0, clip=True),
     ]
 )
-val_ds = Dataset(data=val_datalist, transform=val_transforms)
-val_loader = DataLoader(val_ds, batch_size=256, shuffle=False, num_workers=4, persistent_workers=True)
+val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, seed=0, transform=val_transforms)
+val_loader = DataLoader(val_data, batch_size=256, shuffle=False, num_workers=4, persistent_workers=True)
 
 # %% [markdown]
 # ## Vector Quantized Variational Autoencoder
@@ -173,8 +168,8 @@ l1_loss = L1Loss()
 # We will train our VQ-VAE for 50 epochs.
 
 # %%
-n_epochs = 75
-val_interval = 25
+n_epochs = 15
+val_interval = 5
 epoch_losses = []
 val_epoch_losses = []
 
@@ -243,10 +238,40 @@ plt.show()
 
 # %% [markdown]
 # ### Datasets
-# We can use the same dataloader with augmentations as used for training the VQVAE model. However given the memory intensive nature of Transformers we will need to reduce the batch size.
+# To train the transformer, we only use the `HeadCT` class.
 
 # %%
+train_data = MedNISTDataset(root_dir=root_dir, section="training", seed=0)
+train_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "HeadCT"]
+train_transforms = transforms.Compose(
+    [
+        transforms.LoadImaged(keys=["image"]),
+        transforms.EnsureChannelFirstd(keys=["image"]),
+        transforms.ScaleIntensityRanged(keys=["image"], a_min=0.0, a_max=255.0, b_min=0.0, b_max=1.0, clip=True),
+        transforms.RandAffined(
+            keys=["image"],
+            rotate_range=[(-np.pi / 36, np.pi / 36), (-np.pi / 36, np.pi / 36)],
+            translate_range=[(-1, 1), (-1, 1)],
+            scale_range=[(-0.01, 0.01), (-0.01, 0.01)],
+            spatial_size=[64, 64],
+            padding_mode="zeros",
+            prob=0.5,
+        ),
+    ]
+)
+train_ds = Dataset(data=train_datalist, transform=train_transforms)
 train_loader = DataLoader(train_ds, batch_size=32, shuffle=True, num_workers=4, persistent_workers=True)
+
+val_data = MedNISTDataset(root_dir=root_dir, section="validation", seed=0)
+val_datalist = [{"image": item["image"]} for item in val_data.data if item["class_name"] == "HeadCT"]
+val_transforms = transforms.Compose(
+    [
+        transforms.LoadImaged(keys=["image"]),
+        transforms.EnsureChannelFirstd(keys=["image"]),
+        transforms.ScaleIntensityRanged(keys=["image"], a_min=0.0, a_max=255.0, b_min=0.0, b_max=1.0, clip=True),
+    ]
+)
+val_ds = Dataset(data=val_datalist, transform=val_transforms)
 val_loader = DataLoader(val_ds, batch_size=32, shuffle=False, num_workers=4, persistent_workers=True)
 
 # %% [markdown]
@@ -272,10 +297,10 @@ ordering = Ordering(ordering_type=OrderingType.RASTER_SCAN.value, spatial_dims=2
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 transformer_model = DecoderOnlyTransformer(
-    num_tokens=16+1,
+    num_tokens=16 + 1,
     max_seq_len=spatial_shape[0] * spatial_shape[1],
     attn_layers_dim=256,
-    attn_layers_depth=20,
+    attn_layers_depth=16,
     attn_layers_heads=16,
 )
 transformer_model.to(device)
@@ -291,8 +316,8 @@ ce_loss = CrossEntropyLoss()
 # We will train the Transformer for 100 epochs.
 
 # %%
-n_epochs = 300
-val_interval = 25
+n_epochs = 5
+val_interval = 2
 epoch_losses = []
 val_epoch_losses = []
 vqvae_model.eval()
@@ -308,7 +333,6 @@ for epoch in range(n_epochs):
         images = batch["image"].to(device)
 
         optimizer.zero_grad(set_to_none=True)
-
 
         logits, quantizations_target, _ = inferer(images, vqvae_model, transformer_model, ordering, return_latent=True)
         logits = logits.transpose(1, 2)
@@ -331,7 +355,9 @@ for epoch in range(n_epochs):
 
                 images = batch["image"].to(device)
 
-                logits, quantizations_target, _ = inferer(images, vqvae_model, transformer_model, ordering, return_latent=True)
+                logits, quantizations_target, _ = inferer(
+                    images, vqvae_model, transformer_model, ordering, return_latent=True
+                )
                 logits = logits.transpose(1, 2)
 
                 loss = ce_loss(logits, quantizations_target)
@@ -350,6 +376,9 @@ print(f"train completed, total time: {total_time}.")
 # To verify the performance of the VQ-VAE + Transformerperforming unsupervised anomaly detection, we will use the images from the test set of the MedNIST dataset. We will consider images from the `HeadCT` class as in-distribution images.
 
 # %%
+vqvae_model.eval()
+transformer_model.eval()
+
 test_data = MedNISTDataset(root_dir=root_dir, section="test", download=True, seed=0)
 
 in_distribution_datalist = [{"image": item["image"]} for item in test_data.data if item["class_name"] == "HeadCT"]
@@ -400,8 +429,8 @@ ood_likelihoods = np.concatenate(ood_likelihoods)
 # Here, we plot the log-likelihood of the images. In this case, the lower the log-likelihood, the more unlikely the image belongs to the training set.
 
 # %%
-sns.kdeplot(in_likelihoods, color="dodgerblue", bw_adjust=1000000, label="In-distribution")
-sns.kdeplot(ood_likelihoods, color="deeppink", bw_adjust=1,label="OOD")
+sns.kdeplot(in_likelihoods, color="dodgerblue", bw_adjust=500, label="In-distribution")
+sns.kdeplot(ood_likelihoods, color="deeppink", bw_adjust=1, label="OOD")
 plt.legend()
 plt.xlabel("Log-likelihood")
 
