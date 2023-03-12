@@ -168,8 +168,8 @@ l1_loss = L1Loss()
 # We will train our VQ-VAE for 50 epochs.
 
 # %%
-n_epochs = 15
-val_interval = 5
+n_epochs = 30
+val_interval = 10
 epoch_losses = []
 val_epoch_losses = []
 
@@ -299,9 +299,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 transformer_model = DecoderOnlyTransformer(
     num_tokens=16 + 1,
     max_seq_len=spatial_shape[0] * spatial_shape[1],
-    attn_layers_dim=256,
+    attn_layers_dim=128,
     attn_layers_depth=16,
-    attn_layers_heads=16,
+    attn_layers_heads=12,
 )
 transformer_model.to(device)
 
@@ -429,7 +429,7 @@ ood_likelihoods = np.concatenate(ood_likelihoods)
 # Here, we plot the log-likelihood of the images. In this case, the lower the log-likelihood, the more unlikely the image belongs to the training set.
 
 # %%
-sns.kdeplot(in_likelihoods, color="dodgerblue", bw_adjust=500, label="In-distribution")
+sns.kdeplot(in_likelihoods, color="dodgerblue", bw_adjust=50, label="In-distribution")
 sns.kdeplot(ood_likelihoods, color="deeppink", bw_adjust=1, label="OOD")
 plt.legend()
 plt.xlabel("Log-likelihood")
