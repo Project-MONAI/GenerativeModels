@@ -9,14 +9,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import importlib.util
 import math
-from typing import Optional, Sequence, Tuple
+from collections.abc import Sequence
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from monai.networks.blocks import Convolution
+from monai.utils import ensure_tuple_rep
 
 # To install xformers, use pip install xformers==0.0.16rc401
 if importlib.util.find_spec("xformers") is not None:
@@ -184,17 +187,20 @@ class AttentionBlock(nn.Module):
         norm_num_groups: number of groups involved for the group normalisation layer. Ensure that your number of
             channels is divisible by this number.
         norm_eps: epsilon value to use for the normalisation.
+        use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
     """
 
     def __init__(
         self,
         spatial_dims: int,
         num_channels: int,
-        num_head_channels: Optional[int] = None,
+        num_head_channels: int | None = None,
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
+        use_flash_attention: bool = False,
     ) -> None:
         super().__init__()
+        self.use_flash_attention = use_flash_attention
         self.spatial_dims = spatial_dims
         self.num_channels = num_channels
 
@@ -273,7 +279,7 @@ class AttentionBlock(nn.Module):
         key = self.reshape_heads_to_batch_dim(key)
         value = self.reshape_heads_to_batch_dim(value)
 
-        if has_xformers:
+        if self.use_flash_attention:
             x = self._memory_efficient_attention_xformers(query, key, value)
         else:
             x = self._attention(query, key, value)
@@ -296,37 +302,30 @@ class Encoder(nn.Module):
     Args:
         spatial_dims: number of spatial dimensions (1D, 2D, 3D).
         in_channels: number of input channels.
-        num_channels: number of filters in the first downsampling.
+        num_channels: sequence of block output channels.
         out_channels: number of channels in the bottom layer (latent space) of the autoencoder.
-        ch_mult: list of multipliers of num_channels in the initial layer and in  each downsampling layer. Example: if
-            you want three downsamplings, you have to input a 4-element list. If you input [1, 1, 2, 2],
-            the first downsampling will leave num_channels to num_channels, the next will multiply num_channels by 2,
-            and the next will multiply num_channels*2 by 2 again, resulting in 8, 8, 16 and 32 channels.
         num_res_blocks: number of residual blocks (see ResBlock) per level.
         norm_num_groups: number of groups for the GroupNorm layers, num_channels must be divisible by this number.
         norm_eps: epsilon for the normalization.
-        attention_levels: indicate which level from ch_mult contain an attention block.
+        attention_levels: indicate which level from num_channels contain an attention block.
         with_nonlocal_attn: if True use non-local attention block.
+        use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
     """
 
     def __init__(
         self,
         spatial_dims: int,
         in_channels: int,
-        num_channels: int,
+        num_channels: Sequence[int],
         out_channels: int,
-        ch_mult: Sequence[int],
-        num_res_blocks: int,
+        num_res_blocks: Sequence[int],
         norm_num_groups: int,
         norm_eps: float,
-        attention_levels: Optional[Sequence[bool]] = None,
+        attention_levels: Sequence[bool],
         with_nonlocal_attn: bool = True,
+        use_flash_attention: bool = False,
     ) -> None:
         super().__init__()
-
-        if attention_levels is None:
-            attention_levels = (False,) * len(ch_mult)
-
         self.spatial_dims = spatial_dims
         self.in_channels = in_channels
         self.num_channels = num_channels
@@ -336,15 +335,13 @@ class Encoder(nn.Module):
         self.norm_eps = norm_eps
         self.attention_levels = attention_levels
 
-        in_ch_mult = (1,) + tuple(ch_mult)
-
         blocks = []
         # Initial convolution
         blocks.append(
             Convolution(
                 spatial_dims=spatial_dims,
                 in_channels=in_channels,
-                out_channels=num_channels,
+                out_channels=num_channels[0],
                 strides=1,
                 kernel_size=3,
                 padding=1,
@@ -353,52 +350,75 @@ class Encoder(nn.Module):
         )
 
         # Residual and downsampling blocks
-        for i in range(len(ch_mult)):
-            block_in_ch = num_channels * in_ch_mult[i]
-            block_out_ch = num_channels * ch_mult[i]
-            for _ in range(self.num_res_blocks):
+        output_channel = num_channels[0]
+        for i in range(len(num_channels)):
+            input_channel = output_channel
+            output_channel = num_channels[i]
+            is_final_block = i == len(num_channels) - 1
+
+            for _ in range(self.num_res_blocks[i]):
                 blocks.append(
                     ResBlock(
                         spatial_dims=spatial_dims,
-                        in_channels=block_in_ch,
+                        in_channels=input_channel,
                         norm_num_groups=norm_num_groups,
                         norm_eps=norm_eps,
-                        out_channels=block_out_ch,
+                        out_channels=output_channel,
                     )
                 )
-                block_in_ch = block_out_ch
+                input_channel = output_channel
                 if attention_levels[i]:
                     blocks.append(
                         AttentionBlock(
                             spatial_dims=spatial_dims,
-                            num_channels=block_in_ch,
+                            num_channels=input_channel,
                             norm_num_groups=norm_num_groups,
                             norm_eps=norm_eps,
+                            use_flash_attention=use_flash_attention,
                         )
                     )
 
-            if i != len(ch_mult) - 1:
-                blocks.append(Downsample(spatial_dims, block_in_ch))
+            if not is_final_block:
+                blocks.append(Downsample(spatial_dims=spatial_dims, in_channels=input_channel))
 
         # Non-local attention block
         if with_nonlocal_attn is True:
-            blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_in_ch))
+            blocks.append(
+                ResBlock(
+                    spatial_dims=spatial_dims,
+                    in_channels=num_channels[-1],
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                    out_channels=num_channels[-1],
+                )
+            )
+
             blocks.append(
                 AttentionBlock(
                     spatial_dims=spatial_dims,
-                    num_channels=block_in_ch,
+                    num_channels=num_channels[-1],
                     norm_num_groups=norm_num_groups,
                     norm_eps=norm_eps,
+                    use_flash_attention=use_flash_attention,
                 )
             )
-            blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_in_ch))
-
+            blocks.append(
+                ResBlock(
+                    spatial_dims=spatial_dims,
+                    in_channels=num_channels[-1],
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                    out_channels=num_channels[-1],
+                )
+            )
         # Normalise and convert to latent size
-        blocks.append(nn.GroupNorm(num_groups=norm_num_groups, num_channels=block_in_ch, eps=norm_eps, affine=True))
+        blocks.append(
+            nn.GroupNorm(num_groups=norm_num_groups, num_channels=num_channels[-1], eps=norm_eps, affine=True)
+        )
         blocks.append(
             Convolution(
                 spatial_dims=self.spatial_dims,
-                in_channels=block_in_ch,
+                in_channels=num_channels[-1],
                 out_channels=out_channels,
                 strides=1,
                 kernel_size=3,
@@ -421,48 +441,41 @@ class Decoder(nn.Module):
 
     Args:
         spatial_dims: number of spatial dimensions (1D, 2D, 3D).
-        num_channels: number of filters in the last upsampling.
+        num_channels: sequence of block output channels.
         in_channels: number of channels in the bottom layer (latent space) of the autoencoder.
         out_channels: number of output channels.
-        ch_mult: list of multipliers of num_channels that make for all the upsampling layers before the last. In the
-            last layer, there will be a transition from num_channels to out_channels. In the layers before that,
-            channels will be the product of the previous number of channels by ch_mult.
         num_res_blocks: number of residual blocks (see ResBlock) per level.
         norm_num_groups: number of groups for the GroupNorm layers, num_channels must be divisible by this number.
         norm_eps: epsilon for the normalization.
-        attention_levels: indicate which level from ch_mult contain an attention block.
+        attention_levels: indicate which level from num_channels contain an attention block.
         with_nonlocal_attn: if True use non-local attention block.
+        use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
     """
 
     def __init__(
         self,
         spatial_dims: int,
-        num_channels: int,
+        num_channels: Sequence[int],
         in_channels: int,
         out_channels: int,
-        ch_mult: Sequence[int],
-        num_res_blocks: int,
+        num_res_blocks: Sequence[int],
         norm_num_groups: int,
         norm_eps: float,
-        attention_levels: Optional[Sequence[bool]] = None,
+        attention_levels: Sequence[bool],
         with_nonlocal_attn: bool = True,
+        use_flash_attention: bool = False,
     ) -> None:
         super().__init__()
-
-        if attention_levels is None:
-            attention_levels = (False,) * len(ch_mult)
-
         self.spatial_dims = spatial_dims
         self.num_channels = num_channels
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.ch_mult = ch_mult
         self.num_res_blocks = num_res_blocks
         self.norm_num_groups = norm_num_groups
         self.norm_eps = norm_eps
         self.attention_levels = attention_levels
 
-        block_in_ch = num_channels * self.ch_mult[-1]
+        reversed_block_out_channels = list(reversed(num_channels))
 
         blocks = []
         # Initial convolution
@@ -470,7 +483,7 @@ class Decoder(nn.Module):
             Convolution(
                 spatial_dims=spatial_dims,
                 in_channels=in_channels,
-                out_channels=block_in_ch,
+                out_channels=reversed_block_out_channels[0],
                 strides=1,
                 kernel_size=3,
                 padding=1,
@@ -480,36 +493,67 @@ class Decoder(nn.Module):
 
         # Non-local attention block
         if with_nonlocal_attn is True:
-            blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_in_ch))
+            blocks.append(
+                ResBlock(
+                    spatial_dims=spatial_dims,
+                    in_channels=reversed_block_out_channels[0],
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                    out_channels=reversed_block_out_channels[0],
+                )
+            )
             blocks.append(
                 AttentionBlock(
                     spatial_dims=spatial_dims,
-                    num_channels=block_in_ch,
+                    num_channels=reversed_block_out_channels[0],
                     norm_num_groups=norm_num_groups,
                     norm_eps=norm_eps,
+                    use_flash_attention=use_flash_attention,
                 )
             )
-            blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_in_ch))
+            blocks.append(
+                ResBlock(
+                    spatial_dims=spatial_dims,
+                    in_channels=reversed_block_out_channels[0],
+                    norm_num_groups=norm_num_groups,
+                    norm_eps=norm_eps,
+                    out_channels=reversed_block_out_channels[0],
+                )
+            )
 
-        for i in reversed(range(len(ch_mult))):
-            block_out_ch = num_channels * self.ch_mult[i]
+        reversed_attention_levels = list(reversed(attention_levels))
+        reversed_num_res_blocks = list(reversed(num_res_blocks))
+        block_out_ch = reversed_block_out_channels[0]
+        for i in range(len(reversed_block_out_channels)):
+            block_in_ch = block_out_ch
+            block_out_ch = reversed_block_out_channels[i]
+            is_final_block = i == len(num_channels) - 1
 
-            for _ in range(self.num_res_blocks):
-                blocks.append(ResBlock(spatial_dims, block_in_ch, norm_num_groups, norm_eps, block_out_ch))
+            for _ in range(reversed_num_res_blocks[i]):
+                blocks.append(
+                    ResBlock(
+                        spatial_dims=spatial_dims,
+                        in_channels=block_in_ch,
+                        norm_num_groups=norm_num_groups,
+                        norm_eps=norm_eps,
+                        out_channels=block_out_ch,
+                    )
+                )
                 block_in_ch = block_out_ch
 
-                if attention_levels[i]:
+                if reversed_attention_levels[i]:
                     blocks.append(
                         AttentionBlock(
                             spatial_dims=spatial_dims,
                             num_channels=block_in_ch,
                             norm_num_groups=norm_num_groups,
                             norm_eps=norm_eps,
+                            use_flash_attention=use_flash_attention,
                         )
                     )
 
-            if i != 0:
-                blocks.append(Upsample(spatial_dims, block_in_ch))
+            if not is_final_block:
+                blocks.append(Upsample(spatial_dims=spatial_dims, in_channels=block_in_ch))
 
         blocks.append(nn.GroupNorm(num_groups=norm_num_groups, num_channels=block_in_ch, eps=norm_eps, affine=True))
         blocks.append(
@@ -542,67 +586,78 @@ class AutoencoderKL(nn.Module):
         spatial_dims: number of spatial dimensions (1D, 2D, 3D).
         in_channels: number of input channels.
         out_channels: number of output channels.
-        num_channels: number of filters in the first downsampling / last upsampling.
-        latent_channels: latent embedding dimension.
-        ch_mult: multiplier of the number of channels in each downsampling layer (+ initial one). i.e.: If you want 3
-            downsamplings, it should be a 4-element list.
         num_res_blocks: number of residual blocks (see ResBlock) per level.
+        num_channels: sequence of block output channels.
+        attention_levels: sequence of levels to add attention.
+        latent_channels: latent embedding dimension.
         norm_num_groups: number of groups for the GroupNorm layers, num_channels must be divisible by this number.
         norm_eps: epsilon for the normalization.
-        attention_levels: indicate which level from ch_mult contain an attention block.
         with_encoder_nonlocal_attn: if True use non-local attention block in the encoder.
         with_decoder_nonlocal_attn: if True use non-local attention block in the decoder.
+        use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
     """
 
     def __init__(
         self,
         spatial_dims: int,
-        in_channels: int,
-        out_channels: int,
-        num_channels: int,
-        latent_channels: int,
-        ch_mult: Sequence[int],
-        num_res_blocks: int,
+        in_channels: int = 1,
+        out_channels: int = 1,
+        num_res_blocks: Sequence[int] | int = (2, 2, 2, 2),
+        num_channels: Sequence[int] = (32, 64, 64, 64),
+        attention_levels: Sequence[bool] = (False, False, True, True),
+        latent_channels: int = 3,
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
-        attention_levels: Optional[Sequence[bool]] = None,
         with_encoder_nonlocal_attn: bool = True,
         with_decoder_nonlocal_attn: bool = True,
+        use_flash_attention: bool = False,
     ) -> None:
         super().__init__()
-        if attention_levels is None:
-            attention_levels = (False,) * len(ch_mult)
 
-        # The number of channels should be multiple of num_groups
-        if (num_channels % norm_num_groups) != 0:
-            raise ValueError("AutoencoderKL expects number of channels being multiple of number of groups")
+        # All number of channels should be multiple of num_groups
+        if any((out_channel % norm_num_groups) != 0 for out_channel in num_channels):
+            raise ValueError("AutoencoderKL expects all num_channels being multiple of norm_num_groups")
 
-        if len(ch_mult) != len(attention_levels):
-            raise ValueError("AutoencoderKL expects ch_mult being same size of attention_levels")
+        if len(num_channels) != len(attention_levels):
+            raise ValueError("AutoencoderKL expects num_channels being same size of attention_levels")
+
+        if isinstance(num_res_blocks, int):
+            num_res_blocks = ensure_tuple_rep(num_res_blocks, len(num_channels))
+
+        if len(num_res_blocks) != len(num_channels):
+            raise ValueError(
+                "`num_res_blocks` should be a single integer or a tuple of integers with the same length as "
+                "`num_channels`."
+            )
+
+        if use_flash_attention is True and not torch.cuda.is_available():
+            raise ValueError(
+                "torch.cuda.is_available() should be True but is False. Flash attention is only available for GPU."
+            )
 
         self.encoder = Encoder(
             spatial_dims=spatial_dims,
             in_channels=in_channels,
             num_channels=num_channels,
             out_channels=latent_channels,
-            ch_mult=ch_mult,
             num_res_blocks=num_res_blocks,
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
             attention_levels=attention_levels,
             with_nonlocal_attn=with_encoder_nonlocal_attn,
+            use_flash_attention=use_flash_attention,
         )
         self.decoder = Decoder(
             spatial_dims=spatial_dims,
             num_channels=num_channels,
             in_channels=latent_channels,
             out_channels=out_channels,
-            ch_mult=ch_mult,
             num_res_blocks=num_res_blocks,
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
             attention_levels=attention_levels,
             with_nonlocal_attn=with_decoder_nonlocal_attn,
+            use_flash_attention=use_flash_attention,
         )
         self.quant_conv_mu = Convolution(
             spatial_dims=spatial_dims,
@@ -633,7 +688,7 @@ class AutoencoderKL(nn.Module):
         )
         self.latent_channels = latent_channels
 
-    def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def encode(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Forwards an image through the spatial encoder, obtaining the latent mean and sigma representations.
 
@@ -695,7 +750,7 @@ class AutoencoderKL(nn.Module):
         dec = self.decoder(z)
         return dec
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         z_mu, z_sigma = self.encode(x)
         z = self.sampling(z_mu, z_sigma)
         reconstruction = self.decode(z)

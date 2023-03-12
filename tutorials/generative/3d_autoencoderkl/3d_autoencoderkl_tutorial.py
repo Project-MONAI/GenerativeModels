@@ -51,8 +51,7 @@ from monai.utils import first, set_determinism
 from torch.cuda.amp import autocast
 from tqdm import tqdm
 
-from generative.losses.adversarial_loss import PatchAdversarialLoss
-from generative.losses.perceptual import PerceptualLoss
+from generative.losses import PatchAdversarialLoss, PerceptualLoss
 from generative.networks.nets import AutoencoderKL, PatchDiscriminator
 
 print_config()
@@ -175,9 +174,8 @@ model = AutoencoderKL(
     spatial_dims=3,
     in_channels=1,
     out_channels=1,
-    num_channels=32,
+    num_channels=(32, 64, 64),
     latent_channels=3,
-    ch_mult=(1, 2, 2),
     num_res_blocks=1,
     norm_num_groups=32,
     attention_levels=(False, False, True),

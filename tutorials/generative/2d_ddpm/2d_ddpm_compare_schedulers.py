@@ -131,7 +131,7 @@ train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=4,
 
 # %%
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, seed=0)
-val_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "Hand"]
+val_datalist = [{"image": item["image"]} for item in val_data.data if item["class_name"] == "Hand"]
 val_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),
@@ -207,7 +207,7 @@ inferer = DiffusionInferer(scheduler=ddpm_scheduler)
 use_pretrained = False
 
 if use_pretrained:
-    model = torch.hub.load("marksgraham/pretrained_generative_models", model="ddpm_2d", verbose=True).to(device)
+    model = torch.hub.load("marksgraham/pretrained_generative_models:v0.2", model="ddpm_2d", verbose=True).to(device)
 else:
     n_epochs = 100
     val_interval = 10

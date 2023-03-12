@@ -47,8 +47,7 @@ from monai.utils import first, set_determinism
 from torch.nn import L1Loss
 from tqdm import tqdm
 
-from generative.losses.adversarial_loss import PatchAdversarialLoss
-from generative.losses.perceptual import PerceptualLoss
+from generative.losses import PatchAdversarialLoss, PerceptualLoss
 from generative.networks.nets import AutoencoderKL, PatchDiscriminator
 
 print_config()
@@ -102,7 +101,7 @@ for image_n in range(3):
 # ### Download the validation set
 
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, seed=0)
-val_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "Hand"]
+val_datalist = [{"image": item["image"]} for item in val_data.data if item["class_name"] == "Hand"]
 val_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),
@@ -121,9 +120,8 @@ model = AutoencoderKL(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
-    num_channels=128,
+    num_channels=(128, 256, 384),
     latent_channels=8,
-    ch_mult=(1, 2, 3),
     num_res_blocks=1,
     norm_num_groups=32,
     attention_levels=(False, False, True),

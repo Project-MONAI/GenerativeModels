@@ -9,7 +9,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Tuple, Union
+from __future__ import annotations
 
 import torch
 import torch.nn.functional as F
@@ -42,9 +42,9 @@ class JukeboxLoss(_Loss):
     def __init__(
         self,
         spatial_dims: int,
-        fft_signal_size: Optional[Tuple[int]] = None,
+        fft_signal_size: tuple[int] | None = None,
         fft_norm: str = "ortho",
-        reduction: Union[LossReduction, str] = LossReduction.MEAN,
+        reduction: LossReduction | str = LossReduction.MEAN,
     ) -> None:
         super().__init__(reduction=LossReduction(reduction).value)
 

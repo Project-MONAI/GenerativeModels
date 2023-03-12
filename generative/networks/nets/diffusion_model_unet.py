@@ -8,12 +8,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+#
 # =========================================================================
 # Adapted from https://github.com/huggingface/diffusers
 # which has the following license:
 # https://github.com/huggingface/diffusers/blob/main/LICENSE
-
+#
 # Copyright 2022 UC Berkeley Team and The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,14 +29,17 @@
 # limitations under the License.
 # =========================================================================
 
+from __future__ import annotations
+
 import importlib.util
 import math
-from typing import List, Optional, Sequence, Tuple, Union
+from collections.abc import Sequence
 
 import torch
 import torch.nn.functional as F
 from monai.networks.blocks import Convolution, MLPBlock
 from monai.networks.layers.factories import Pool
+from monai.utils import ensure_tuple_rep
 from torch import nn
 
 # To install xformers, use pip install xformers==0.0.16rc401
@@ -77,18 +80,21 @@ class CrossAttention(nn.Module):
         num_head_channels: number of channels in each head.
         dropout: dropout probability to use.
         upcast_attention: if True, upcast attention operations to full precision.
+        use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
     """
 
     def __init__(
         self,
         query_dim: int,
-        cross_attention_dim: Optional[int] = None,
+        cross_attention_dim: int | None = None,
         num_attention_heads: int = 8,
         num_head_channels: int = 64,
         dropout: float = 0.0,
         upcast_attention: bool = False,
+        use_flash_attention: bool = False,
     ) -> None:
         super().__init__()
+        self.use_flash_attention = use_flash_attention
         inner_dim = num_head_channels * num_attention_heads
         cross_attention_dim = cross_attention_dim if cross_attention_dim is not None else query_dim
 
@@ -147,7 +153,7 @@ class CrossAttention(nn.Module):
         x = torch.bmm(attention_probs, value)
         return x
 
-    def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, context: torch.Tensor | None = None) -> torch.Tensor:
         query = self.to_q(x)
         context = context if context is not None else x
         key = self.to_k(context)
@@ -158,7 +164,7 @@ class CrossAttention(nn.Module):
         key = self.reshape_heads_to_batch_dim(key)
         value = self.reshape_heads_to_batch_dim(value)
 
-        if has_xformers:
+        if self.use_flash_attention:
             x = self._memory_efficient_attention_xformers(query, key, value)
         else:
             x = self._attention(query, key, value)
@@ -180,6 +186,7 @@ class BasicTransformerBlock(nn.Module):
         dropout: dropout probability to use.
         cross_attention_dim: size of the context vector for cross attention.
         upcast_attention: if True, upcast attention operations to full precision.
+        use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
     """
 
     def __init__(
@@ -188,8 +195,9 @@ class BasicTransformerBlock(nn.Module):
         num_attention_heads: int,
         num_head_channels: int,
         dropout: float = 0.0,
-        cross_attention_dim: Optional[int] = None,
+        cross_attention_dim: int | None = None,
         upcast_attention: bool = False,
+        use_flash_attention: bool = False,
     ) -> None:
         super().__init__()
         self.attn1 = CrossAttention(
@@ -198,6 +206,7 @@ class BasicTransformerBlock(nn.Module):
             num_head_channels=num_head_channels,
             dropout=dropout,
             upcast_attention=upcast_attention,
+            use_flash_attention=use_flash_attention,
         )  # is a self-attention
         self.ff = MLPBlock(hidden_size=num_channels, mlp_dim=num_channels * 4, act="GEGLU", dropout_rate=dropout)
         self.attn2 = CrossAttention(
@@ -207,12 +216,13 @@ class BasicTransformerBlock(nn.Module):
             num_head_channels=num_head_channels,
             dropout=dropout,
             upcast_attention=upcast_attention,
+            use_flash_attention=use_flash_attention,
         )  # is a self-attention if context is None
         self.norm1 = nn.LayerNorm(num_channels)
         self.norm2 = nn.LayerNorm(num_channels)
         self.norm3 = nn.LayerNorm(num_channels)
 
-    def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, context: torch.Tensor | None = None) -> torch.Tensor:
         # 1. Self-Attention
         x = self.attn1(self.norm1(x)) + x
 
@@ -240,6 +250,7 @@ class SpatialTransformer(nn.Module):
         norm_eps: epsilon for the normalization.
         cross_attention_dim: number of context dimensions to use.
         upcast_attention: if True, upcast attention operations to full precision.
+        use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
     """
 
     def __init__(
@@ -252,8 +263,9 @@ class SpatialTransformer(nn.Module):
         dropout: float = 0.0,
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
-        cross_attention_dim: Optional[int] = None,
+        cross_attention_dim: int | None = None,
         upcast_attention: bool = False,
+        use_flash_attention: bool = False,
     ) -> None:
         super().__init__()
         self.spatial_dims = spatial_dims
@@ -281,6 +293,7 @@ class SpatialTransformer(nn.Module):
                     dropout=dropout,
                     cross_attention_dim=cross_attention_dim,
                     upcast_attention=upcast_attention,
+                    use_flash_attention=use_flash_attention,
                 )
                 for _ in range(num_layers)
             ]
@@ -298,7 +311,7 @@ class SpatialTransformer(nn.Module):
             )
         )
 
-    def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, context: torch.Tensor | None = None) -> torch.Tensor:
         # note: if no context is given, cross-attention defaults to self-attention
         batch = channel = height = width = depth = -1
         if self.spatial_dims == 2:
@@ -341,17 +354,20 @@ class AttentionBlock(nn.Module):
         norm_num_groups: number of groups involved for the group normalisation layer. Ensure that your number of
             channels is divisible by this number.
         norm_eps: epsilon value to use for the normalisation.
+        use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
     """
 
     def __init__(
         self,
         spatial_dims: int,
         num_channels: int,
-        num_head_channels: Optional[int] = None,
+        num_head_channels: int | None = None,
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
+        use_flash_attention: bool = False,
     ) -> None:
         super().__init__()
+        self.use_flash_attention = use_flash_attention
         self.spatial_dims = spatial_dims
         self.num_channels = num_channels
 
@@ -426,7 +442,7 @@ class AttentionBlock(nn.Module):
         key = self.reshape_heads_to_batch_dim(key)
         value = self.reshape_heads_to_batch_dim(value)
 
-        if has_xformers:
+        if self.use_flash_attention:
             x = self._memory_efficient_attention_xformers(query, key, value)
         else:
             x = self._attention(query, key, value)
@@ -444,7 +460,7 @@ class AttentionBlock(nn.Module):
 
 def get_timestep_embedding(timesteps: torch.Tensor, embedding_dim: int, max_period: int = 10000) -> torch.Tensor:
     """
-    Create sinusoidal timestep embeddingsfollowing the implementation in Ho et al. "Denoising Diffusion Probabilistic
+    Create sinusoidal timestep embeddings following the implementation in Ho et al. "Denoising Diffusion Probabilistic
     Models" https://arxiv.org/abs/2006.11239.
 
     Args:
@@ -482,7 +498,7 @@ class Downsample(nn.Module):
     """
 
     def __init__(
-        self, spatial_dims: int, num_channels: int, use_conv: bool, out_channels: Optional[int] = None, padding: int = 1
+        self, spatial_dims: int, num_channels: int, use_conv: bool, out_channels: int | None = None, padding: int = 1
     ) -> None:
         super().__init__()
         self.num_channels = num_channels
@@ -502,7 +518,7 @@ class Downsample(nn.Module):
             assert self.num_channels == self.out_channels
             self.op = Pool[Pool.AVG, spatial_dims](kernel_size=2, stride=2)
 
-    def forward(self, x: torch.Tensor, emb: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, emb: torch.Tensor | None = None) -> torch.Tensor:
         del emb
         assert x.shape[1] == self.num_channels
         return self.op(x)
@@ -522,7 +538,7 @@ class Upsample(nn.Module):
     """
 
     def __init__(
-        self, spatial_dims: int, num_channels: int, use_conv: bool, out_channels: Optional[int] = None, padding: int = 1
+        self, spatial_dims: int, num_channels: int, use_conv: bool, out_channels: int | None = None, padding: int = 1
     ) -> None:
         super().__init__()
         self.num_channels = num_channels
@@ -541,7 +557,7 @@ class Upsample(nn.Module):
         else:
             self.conv = None
 
-    def forward(self, x: torch.Tensor, emb: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, emb: torch.Tensor | None = None) -> torch.Tensor:
         del emb
         assert x.shape[1] == self.num_channels
 
@@ -582,7 +598,7 @@ class ResnetBlock(nn.Module):
         spatial_dims: int,
         in_channels: int,
         temb_channels: int,
-        out_channels: Optional[int] = None,
+        out_channels: int | None = None,
         up: bool = False,
         down: bool = False,
         norm_num_groups: int = 32,
@@ -745,8 +761,8 @@ class DownBlock(nn.Module):
             self.downsampler = None
 
     def forward(
-        self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+        self, hidden_states: torch.Tensor, temb: torch.Tensor, context: torch.Tensor | None = None
+    ) -> tuple[torch.Tensor, list[torch.Tensor]]:
         del context
         output_states = []
 
@@ -777,6 +793,7 @@ class AttnDownBlock(nn.Module):
         resblock_updown: if True use residual blocks for downsampling.
         downsample_padding: padding used in the downsampling block.
         num_head_channels: number of channels in each attention head.
+        use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
     """
 
     def __init__(
@@ -792,6 +809,7 @@ class AttnDownBlock(nn.Module):
         resblock_updown: bool = False,
         downsample_padding: int = 1,
         num_head_channels: int = 1,
+        use_flash_attention: bool = False,
     ) -> None:
         super().__init__()
         self.resblock_updown = resblock_updown
@@ -818,6 +836,7 @@ class AttnDownBlock(nn.Module):
                     num_head_channels=num_head_channels,
                     norm_num_groups=norm_num_groups,
                     norm_eps=norm_eps,
+                    use_flash_attention=use_flash_attention,
                 )
             )
 
@@ -847,8 +866,8 @@ class AttnDownBlock(nn.Module):
             self.downsampler = None
 
     def forward(
-        self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+        self, hidden_states: torch.Tensor, temb: torch.Tensor, context: torch.Tensor | None = None
+    ) -> tuple[torch.Tensor, list[torch.Tensor]]:
         del context
         output_states = []
 
@@ -883,6 +902,7 @@ class CrossAttnDownBlock(nn.Module):
         transformer_num_layers: number of layers of Transformer blocks to use.
         cross_attention_dim: number of context dimensions to use.
         upcast_attention: if True, upcast attention operations to full precision.
+        use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
     """
 
     def __init__(
@@ -899,8 +919,9 @@ class CrossAttnDownBlock(nn.Module):
         downsample_padding: int = 1,
         num_head_channels: int = 1,
         transformer_num_layers: int = 1,
-        cross_attention_dim: Optional[int] = None,
+        cross_attention_dim: int | None = None,
         upcast_attention: bool = False,
+        use_flash_attention: bool = False,
     ) -> None:
         super().__init__()
         self.resblock_updown = resblock_updown
@@ -932,6 +953,7 @@ class CrossAttnDownBlock(nn.Module):
                     norm_eps=norm_eps,
                     cross_attention_dim=cross_attention_dim,
                     upcast_attention=upcast_attention,
+                    use_flash_attention=use_flash_attention,
                 )
             )
 
@@ -961,8 +983,8 @@ class CrossAttnDownBlock(nn.Module):
             self.downsampler = None
 
     def forward(
-        self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+        self, hidden_states: torch.Tensor, temb: torch.Tensor, context: torch.Tensor | None = None
+    ) -> tuple[torch.Tensor, list[torch.Tensor]]:
         output_states = []
 
         for resnet, attn in zip(self.resnets, self.attentions):
@@ -988,6 +1010,7 @@ class AttnMidBlock(nn.Module):
         norm_num_groups: number of groups for the group normalization.
         norm_eps: epsilon for the group normalization.
         num_head_channels: number of channels in each attention head.
+        use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
     """
 
     def __init__(
@@ -998,6 +1021,7 @@ class AttnMidBlock(nn.Module):
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
         num_head_channels: int = 1,
+        use_flash_attention: bool = False,
     ) -> None:
         super().__init__()
         self.attention = None
@@ -1016,6 +1040,7 @@ class AttnMidBlock(nn.Module):
             num_head_channels=num_head_channels,
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
+            use_flash_attention=use_flash_attention,
         )
 
         self.resnet_2 = ResnetBlock(
@@ -1028,7 +1053,7 @@ class AttnMidBlock(nn.Module):
         )
 
     def forward(
-        self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
+        self, hidden_states: torch.Tensor, temb: torch.Tensor, context: torch.Tensor | None = None
     ) -> torch.Tensor:
         del context
         hidden_states = self.resnet_1(hidden_states, temb)
@@ -1052,6 +1077,7 @@ class CrossAttnMidBlock(nn.Module):
         transformer_num_layers: number of layers of Transformer blocks to use.
         cross_attention_dim: number of context dimensions to use.
         upcast_attention: if True, upcast attention operations to full precision.
+        use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
     """
 
     def __init__(
@@ -1063,8 +1089,9 @@ class CrossAttnMidBlock(nn.Module):
         norm_eps: float = 1e-6,
         num_head_channels: int = 1,
         transformer_num_layers: int = 1,
-        cross_attention_dim: Optional[int] = None,
+        cross_attention_dim: int | None = None,
         upcast_attention: bool = False,
+        use_flash_attention: bool = False,
     ) -> None:
         super().__init__()
         self.attention = None
@@ -1087,6 +1114,7 @@ class CrossAttnMidBlock(nn.Module):
             norm_eps=norm_eps,
             cross_attention_dim=cross_attention_dim,
             upcast_attention=upcast_attention,
+            use_flash_attention=use_flash_attention,
         )
         self.resnet_2 = ResnetBlock(
             spatial_dims=spatial_dims,
@@ -1098,7 +1126,7 @@ class CrossAttnMidBlock(nn.Module):
         )
 
     def forward(
-        self, hidden_states: torch.Tensor, temb: torch.Tensor, context: Optional[torch.Tensor] = None
+        self, hidden_states: torch.Tensor, temb: torch.Tensor, context: torch.Tensor | None = None
     ) -> torch.Tensor:
         hidden_states = self.resnet_1(hidden_states, temb)
         hidden_states = self.attention(hidden_states, context=context)
@@ -1179,9 +1207,9 @@ class UpBlock(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        res_hidden_states_list: List[torch.Tensor],
+        res_hidden_states_list: list[torch.Tensor],
         temb: torch.Tensor,
-        context: Optional[torch.Tensor] = None,
+        context: torch.Tensor | None = None,
     ) -> torch.Tensor:
         del context
         for resnet in self.resnets:
@@ -1214,6 +1242,7 @@ class AttnUpBlock(nn.Module):
         add_upsample: if True add downsample block.
         resblock_updown: if True use residual blocks for upsampling.
         num_head_channels: number of channels in each attention head.
+        use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
     """
 
     def __init__(
@@ -1229,6 +1258,7 @@ class AttnUpBlock(nn.Module):
         add_upsample: bool = True,
         resblock_updown: bool = False,
         num_head_channels: int = 1,
+        use_flash_attention: bool = False,
     ) -> None:
         super().__init__()
         self.resblock_updown = resblock_updown
@@ -1257,6 +1287,7 @@ class AttnUpBlock(nn.Module):
                     num_head_channels=num_head_channels,
                     norm_num_groups=norm_num_groups,
                     norm_eps=norm_eps,
+                    use_flash_attention=use_flash_attention,
                 )
             )
 
@@ -1284,9 +1315,9 @@ class AttnUpBlock(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        res_hidden_states_list: List[torch.Tensor],
+        res_hidden_states_list: list[torch.Tensor],
         temb: torch.Tensor,
-        context: Optional[torch.Tensor] = None,
+        context: torch.Tensor | None = None,
     ) -> torch.Tensor:
         del context
         for resnet, attn in zip(self.resnets, self.attentions):
@@ -1323,6 +1354,7 @@ class CrossAttnUpBlock(nn.Module):
         transformer_num_layers: number of layers of Transformer blocks to use.
         cross_attention_dim: number of context dimensions to use.
         upcast_attention: if True, upcast attention operations to full precision.
+        use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
     """
 
     def __init__(
@@ -1339,8 +1371,9 @@ class CrossAttnUpBlock(nn.Module):
         resblock_updown: bool = False,
         num_head_channels: int = 1,
         transformer_num_layers: int = 1,
-        cross_attention_dim: Optional[int] = None,
+        cross_attention_dim: int | None = None,
         upcast_attention: bool = False,
+        use_flash_attention: bool = False,
     ) -> None:
         super().__init__()
         self.resblock_updown = resblock_updown
@@ -1373,6 +1406,7 @@ class CrossAttnUpBlock(nn.Module):
                     num_layers=transformer_num_layers,
                     cross_attention_dim=cross_attention_dim,
                     upcast_attention=upcast_attention,
+                    use_flash_attention=use_flash_attention,
                 )
             )
 
@@ -1400,9 +1434,9 @@ class CrossAttnUpBlock(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        res_hidden_states_list: List[torch.Tensor],
+        res_hidden_states_list: list[torch.Tensor],
         temb: torch.Tensor,
-        context: Optional[torch.Tensor] = None,
+        context: torch.Tensor | None = None,
     ) -> torch.Tensor:
         for resnet, attn in zip(self.resnets, self.attentions):
             # pop res hidden states
@@ -1433,8 +1467,9 @@ def get_down_block(
     with_cross_attn: bool,
     num_head_channels: int,
     transformer_num_layers: int,
-    cross_attention_dim: Optional[int],
+    cross_attention_dim: int | None,
     upcast_attention: bool = False,
+    use_flash_attention: bool = False,
 ) -> nn.Module:
     if with_attn:
         return AttnDownBlock(
@@ -1448,6 +1483,7 @@ def get_down_block(
             add_downsample=add_downsample,
             resblock_updown=resblock_updown,
             num_head_channels=num_head_channels,
+            use_flash_attention=use_flash_attention,
         )
     elif with_cross_attn:
         return CrossAttnDownBlock(
@@ -1464,6 +1500,7 @@ def get_down_block(
             transformer_num_layers=transformer_num_layers,
             cross_attention_dim=cross_attention_dim,
             upcast_attention=upcast_attention,
+            use_flash_attention=use_flash_attention,
         )
     else:
         return DownBlock(
@@ -1488,8 +1525,9 @@ def get_mid_block(
     with_conditioning: bool,
     num_head_channels: int,
     transformer_num_layers: int,
-    cross_attention_dim: Optional[int],
+    cross_attention_dim: int | None,
     upcast_attention: bool = False,
+    use_flash_attention: bool = False,
 ) -> nn.Module:
     if with_conditioning:
         return CrossAttnMidBlock(
@@ -1502,6 +1540,7 @@ def get_mid_block(
             transformer_num_layers=transformer_num_layers,
             cross_attention_dim=cross_attention_dim,
             upcast_attention=upcast_attention,
+            use_flash_attention=use_flash_attention,
         )
     else:
         return AttnMidBlock(
@@ -1511,6 +1550,7 @@ def get_mid_block(
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
             num_head_channels=num_head_channels,
+            use_flash_attention=use_flash_attention,
         )
 
 
@@ -1529,8 +1569,9 @@ def get_up_block(
     with_cross_attn: bool,
     num_head_channels: int,
     transformer_num_layers: int,
-    cross_attention_dim: Optional[int],
+    cross_attention_dim: int | None,
     upcast_attention: bool = False,
+    use_flash_attention: bool = False,
 ) -> nn.Module:
     if with_attn:
         return AttnUpBlock(
@@ -1545,6 +1586,7 @@ def get_up_block(
             add_upsample=add_upsample,
             resblock_updown=resblock_updown,
             num_head_channels=num_head_channels,
+            use_flash_attention=use_flash_attention,
         )
     elif with_cross_attn:
         return CrossAttnUpBlock(
@@ -1562,6 +1604,7 @@ def get_up_block(
             transformer_num_layers=transformer_num_layers,
             cross_attention_dim=cross_attention_dim,
             upcast_attention=upcast_attention,
+            use_flash_attention=use_flash_attention,
         )
     else:
         return UpBlock(
@@ -1601,6 +1644,7 @@ class DiffusionModelUNet(nn.Module):
         num_class_embeds: if specified (as an int), then this model will be class-conditional with `num_class_embeds`
         classes.
         upcast_attention: if True, upcast attention operations to full precision.
+        use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
     """
 
     def __init__(
@@ -1608,18 +1652,19 @@ class DiffusionModelUNet(nn.Module):
         spatial_dims: int,
         in_channels: int,
         out_channels: int,
-        num_res_blocks: int,
+        num_res_blocks: Sequence[int] | int = (2, 2, 2, 2),
         num_channels: Sequence[int] = (32, 64, 64, 64),
         attention_levels: Sequence[bool] = (False, False, True, True),
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
         resblock_updown: bool = False,
-        num_head_channels: Union[int, Sequence[int]] = 8,
+        num_head_channels: int | Sequence[int] = 8,
         with_conditioning: bool = False,
         transformer_num_layers: int = 1,
-        cross_attention_dim: Optional[int] = None,
-        num_class_embeds: Optional[int] = None,
+        cross_attention_dim: int | None = None,
+        num_class_embeds: int | None = None,
         upcast_attention: bool = False,
+        use_flash_attention: bool = False,
     ) -> None:
         super().__init__()
         if with_conditioning is True and cross_attention_dim is None:
@@ -1636,13 +1681,30 @@ class DiffusionModelUNet(nn.Module):
         if any((out_channel % norm_num_groups) != 0 for out_channel in num_channels):
             raise ValueError("DiffusionModelUNet expects all num_channels being multiple of norm_num_groups")
 
+        if len(num_channels) != len(attention_levels):
+            raise ValueError("DiffusionModelUNet expects num_channels being same size of attention_levels")
+
         if isinstance(num_head_channels, int):
-            num_head_channels = (num_head_channels,) * len(attention_levels)
+            num_head_channels = ensure_tuple_rep(num_head_channels, len(attention_levels))
 
         if len(num_head_channels) != len(attention_levels):
             raise ValueError(
                 "num_head_channels should have the same length as attention_levels. For the i levels without attention,"
                 " i.e. `attention_level[i]=False`, the num_head_channels[i] will be ignored."
+            )
+
+        if isinstance(num_res_blocks, int):
+            num_res_blocks = ensure_tuple_rep(num_res_blocks, len(num_channels))
+
+        if len(num_res_blocks) != len(num_channels):
+            raise ValueError(
+                "`num_res_blocks` should be a single integer or a tuple of integers with the same length as "
+                "`num_channels`."
+            )
+
+        if use_flash_attention is True and not torch.cuda.is_available():
+            raise ValueError(
+                "torch.cuda.is_available() should be True but is False. Flash attention is only available for GPU."
             )
 
         self.in_channels = in_channels
@@ -1688,7 +1750,7 @@ class DiffusionModelUNet(nn.Module):
                 in_channels=input_channel,
                 out_channels=output_channel,
                 temb_channels=time_embed_dim,
-                num_res_blocks=num_res_blocks,
+                num_res_blocks=num_res_blocks[i],
                 norm_num_groups=norm_num_groups,
                 norm_eps=norm_eps,
                 add_downsample=not is_final_block,
@@ -1699,6 +1761,7 @@ class DiffusionModelUNet(nn.Module):
                 transformer_num_layers=transformer_num_layers,
                 cross_attention_dim=cross_attention_dim,
                 upcast_attention=upcast_attention,
+                use_flash_attention=use_flash_attention,
             )
 
             self.down_blocks.append(down_block)
@@ -1715,11 +1778,13 @@ class DiffusionModelUNet(nn.Module):
             transformer_num_layers=transformer_num_layers,
             cross_attention_dim=cross_attention_dim,
             upcast_attention=upcast_attention,
+            use_flash_attention=use_flash_attention,
         )
 
         # up
         self.up_blocks = nn.ModuleList([])
         reversed_block_out_channels = list(reversed(num_channels))
+        reversed_num_res_blocks = list(reversed(num_res_blocks))
         reversed_attention_levels = list(reversed(attention_levels))
         reversed_num_head_channels = list(reversed(num_head_channels))
         output_channel = reversed_block_out_channels[0]
@@ -1736,7 +1801,7 @@ class DiffusionModelUNet(nn.Module):
                 prev_output_channel=prev_output_channel,
                 out_channels=output_channel,
                 temb_channels=time_embed_dim,
-                num_res_blocks=num_res_blocks + 1,
+                num_res_blocks=reversed_num_res_blocks[i] + 1,
                 norm_num_groups=norm_num_groups,
                 norm_eps=norm_eps,
                 add_upsample=not is_final_block,
@@ -1747,6 +1812,7 @@ class DiffusionModelUNet(nn.Module):
                 transformer_num_layers=transformer_num_layers,
                 cross_attention_dim=cross_attention_dim,
                 upcast_attention=upcast_attention,
+                use_flash_attention=use_flash_attention,
             )
 
             self.up_blocks.append(up_block)
@@ -1772,8 +1838,8 @@ class DiffusionModelUNet(nn.Module):
         self,
         x: torch.Tensor,
         timesteps: torch.Tensor,
-        context: Optional[torch.Tensor] = None,
-        class_labels: Optional[torch.Tensor] = None,
+        context: torch.Tensor | None = None,
+        class_labels: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -1805,7 +1871,7 @@ class DiffusionModelUNet(nn.Module):
         # 4. down
         if context is not None and self.with_conditioning is False:
             raise ValueError("model should have with_conditioning = True if context is provided")
-        down_block_res_samples: List[torch.Tensor] = [h]
+        down_block_res_samples: list[torch.Tensor] = [h]
         for downsample_block in self.down_blocks:
             h, res_samples = downsample_block(hidden_states=h, temb=emb, context=context)
             for residual in res_samples:
