@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 
+import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
@@ -21,21 +22,25 @@ class SABlock(nn.Module):
     """
     A self-attention block, based on: "Dosovitskiy et al.,
     An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale <https://arxiv.org/abs/2010.11929>"
+
+    Args:
+        hidden_size: dimension of hidden layer.
+        num_heads: number of attention heads.
+        dropout_rate: dropout ratio. Defaults to no dropout.
+        qkv_bias: bias term for the qkv linear layer.
+        causal: whether to use causal attention.
+        sequence_length: if causal is True, it is necessary to specify the sequence length.
     """
 
     def __init__(
-        self, hidden_size: int, num_heads: int, causal: bool = False, dropout_rate: float = 0.0, qkv_bias: bool = False
+        self,
+        hidden_size: int,
+        num_heads: int,
+        dropout_rate: float = 0.0,
+        qkv_bias: bool = False,
+        causal: bool = False,
+        sequence_length: int | None = None,
     ) -> None:
-        """
-        Args:
-            hidden_size: dimension of hidden layer.
-            num_heads: number of attention heads.
-            causal: whether to use causal attention.
-            dropout_rate: faction of the input units to drop.
-            qkv_bias: bias term for the qkv linear layer.
-
-        """
-
         super().__init__()
 
         if not (0 <= dropout_rate <= 1):
@@ -44,35 +49,54 @@ class SABlock(nn.Module):
         if hidden_size % num_heads != 0:
             raise ValueError("hidden size should be divisible by num_heads.")
 
+        if causal and sequence_length is None:
+            raise ValueError("sequence_length is necessary for causal attention.")
+
         # output projection
         self.out_proj = nn.Linear(hidden_size, hidden_size)
         # key, query, value projections for all heads, but in a batch
         self.qkv = nn.Linear(hidden_size, hidden_size * 3, bias=qkv_bias)
         # regularization
-        self.drop_output = nn.Dropout(dropout_rate)
         self.drop_weights = nn.Dropout(dropout_rate)
+        self.drop_output = nn.Dropout(dropout_rate)
 
+        self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.head_dim = hidden_size // num_heads
         self.scale = 1.0 / math.sqrt(self.head_dim)
         self.causal = causal
+        self.sequence_length = sequence_length
+
+        if causal and sequence_length is not None:
+            # causal mask to ensure that attention is only applied to the left in the input sequence
+            self.mask = torch.tril(torch.ones(sequence_length, sequence_length)).view(
+                1, 1, sequence_length, sequence_length
+            )
+        else:
+            self.mask = None
 
     def forward(self, x):
-        B, T, C = x.size()  # batch size, sequence length, embedding dimensionality (n_embd)
+        b, t, c = x.size()  # batch size, sequence length, embedding dimensionality (hidden_size)
+
+        if self.sequence_length is not None and t != self.sequence_length:
+            raise ValueError("sequence length should be equal to the one specified in the SABlock constructor.")
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        q, k, v = self.qkv(x).split(self.n_embd, dim=2)
-        k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
-        q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
-        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
+        query, key, value = self.qkv(x).split(self.hidden_size, dim=2)
+        key = key.view(b, t, self.num_heads, c // self.num_heads).transpose(1, 2)  # (b, nh, t, hs)
+        query = query.view(b, t, self.num_heads, c // self.num_heads).transpose(1, 2)  # (b, nh, t, hs)
+        value = value.view(b, t, self.num_heads, c // self.num_heads).transpose(1, 2)  # (b, nh, t, hs)
 
         # manual implementation of attention
-        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-        att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float("-inf"))
-        att = F.softmax(att, dim=-1)
-        att = self.drop_weights(att)
-        y = att @ v  # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
-        y = y.transpose(1, 2).contiguous().view(B, T, C)  # re-assemble all head outputs side by side
+        attention_scores = (query @ key.transpose(-2, -1)) * self.scale
+
+        if self.causal:
+            attention_scores = attention_scores.masked_fill(self.mask[:, :, :t, :t] == 0, float("-inf"))
+
+        attention_probs = F.softmax(attention_scores, dim=-1)
+        attention_probs = self.drop_weights(attention_probs)
+        y = attention_probs @ value  # (b, nh, t, t) x (b, nh, t, hs) -> (b, nh, t, hs)
+        y = y.transpose(1, 2).contiguous().view(b, t, c)  # re-assemble all head outputs side by side
 
         y = self.out_proj(y)
         y = self.drop_output(y)
