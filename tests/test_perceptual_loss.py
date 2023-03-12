@@ -16,7 +16,7 @@ import unittest
 import torch
 from parameterized import parameterized
 
-from generative.losses.perceptual import PerceptualLoss
+from generative.losses import PerceptualLoss
 
 TEST_CASES = [
     [{"spatial_dims": 2, "network_type": "squeeze"}, (2, 1, 64, 64), (2, 1, 64, 64)],

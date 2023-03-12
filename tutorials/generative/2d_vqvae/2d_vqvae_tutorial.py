@@ -99,7 +99,7 @@ for image_n in range(3):
 # ### Download the validation set
 
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, seed=0)
-val_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "HeadCT"]
+val_datalist = [{"image": item["image"]} for item in val_data.data if item["class_name"] == "HeadCT"]
 val_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),
@@ -118,12 +118,11 @@ model = VQVAE(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
+    num_channels=(256, 256),
+    num_res_channels=256,
+    num_res_layers=2,
     downsample_parameters=((2, 4, 1, 1), (2, 4, 1, 1)),
     upsample_parameters=((2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
-    num_res_layers=2,
-    num_levels=2,
-    num_channels=256,
-    num_res_channels=256,
     num_embeddings=256,
     embedding_dim=32,
 )
