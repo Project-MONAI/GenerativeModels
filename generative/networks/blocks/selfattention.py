@@ -75,7 +75,7 @@ class SABlock(nn.Module):
         else:
             self.mask = None
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         b, t, c = x.size()  # batch size, sequence length, embedding dimensionality (hidden_size)
 
         if self.sequence_length is not None and t != self.sequence_length:
