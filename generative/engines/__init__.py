@@ -11,4 +11,5 @@
 
 from __future__ import annotations
 
+from .prepare_batch import DiffusionPrepareBatch, VPredictionPrepareBatch
 from .trainer import AdversarialTrainer

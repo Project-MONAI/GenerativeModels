@@ -124,7 +124,7 @@ train_loader = DataLoader(train_ds, batch_size=256, shuffle=True, num_workers=4,
 
 # %%
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, progress=False, seed=0)
-val_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "HeadCT"]
+val_datalist = [{"image": item["image"]} for item in val_data.data if item["class_name"] == "HeadCT"]
 val_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),

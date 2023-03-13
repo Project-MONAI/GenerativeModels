@@ -91,7 +91,7 @@ optimizer:
   lr: '@lr'
   
 prepare_batch:
-  _target_: scripts.DiffusionPrepareBatch
+  _target_: generative.engines.DiffusionPrepareBatch
   num_train_timesteps: '@num_train_timesteps'
   
 val_handlers:
