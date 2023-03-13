@@ -11,7 +11,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Mapping, Callable, Iterable, Sequence, Optional, Dict, Union
+from typing import Dict, Mapping, Optional, Union
+
 import torch
 import torch.nn as nn
 from monai.engines import PrepareBatch, default_prepare_batch
@@ -34,15 +35,15 @@ class DiffusionPrepareBatch(PrepareBatch):
         self.condition_name = condition_name
         self.num_train_timesteps = num_train_timesteps
 
-    def get_noise(self, images:torch.Tensor) -> torch.Tensor:
+    def get_noise(self, images: torch.Tensor) -> torch.Tensor:
         """Returns the noise tensor for input tensor `images`, override this for different noise distributions."""
         return torch.randn_like(images)
 
-    def get_timesteps(self, images:torch.Tensor) -> torch.Tensor:
+    def get_timesteps(self, images: torch.Tensor) -> torch.Tensor:
         """Get a timestep, by default this is a random integer between 0 and `self.num_train_timesteps`."""
         return torch.randint(0, self.num_train_timesteps, (images.shape[0],), device=images.device).long()
 
-    def get_target(self, images:torch.Tensor, noise:torch.Tensor, timesteps:torch.Tensor) -> torch.Tensor:
+    def get_target(self, images: torch.Tensor, noise: torch.Tensor, timesteps: torch.Tensor) -> torch.Tensor:
         """Return the target for the loss function, this is the `noise` value by default."""
         return noise
 
@@ -61,7 +62,9 @@ class DiffusionPrepareBatch(PrepareBatch):
         infer_kwargs = {"noise": noise, "timesteps": timesteps}
 
         if self.condition_name is not None and isinstance(batchdata, Mapping):
-            infer_kwargs["conditioning"] = batchdata[self.condition_name].to(device, non_blocking=non_blocking, **kwargs)
+            infer_kwargs["conditioning"] = batchdata[self.condition_name].to(
+                device, non_blocking=non_blocking, **kwargs
+            )
 
         # return input, target, arguments, and keyword arguments where noise is the target and also a keyword value
         return images, target, (), infer_kwargs
@@ -87,4 +90,3 @@ class VPredictionPrepareBatch(DiffusionPrepareBatch):
 
     def get_target(self, images, noise, timesteps):
         return self.scheduler.get_velocity(images, noise, timesteps)
-    

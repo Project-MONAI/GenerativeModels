@@ -576,7 +576,6 @@ class TimedCall:
             results.put(e)
 
     def __call__(self, obj):
-
         if self.skip_timing:
             return obj
 
