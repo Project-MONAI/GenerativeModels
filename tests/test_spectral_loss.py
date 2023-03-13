@@ -9,20 +9,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import unittest
 
 import numpy as np
 import torch
 from parameterized import parameterized
-from tests.utils import test_script_save
 
 from generative.losses import JukeboxLoss
+from tests.utils import test_script_save
 
 TEST_CASES = [
     [
-        {
-            "spatial_dims": 2,
-        },
+        {"spatial_dims": 2},
         {
             "input": torch.tensor([[[[1.0, 1.0, 0.0], [0.0, 0.0, 1.0]], [[1.0, 0.0, 1.0], [0.0, 1.0, 0.0]]]]),
             "target": torch.tensor([[[[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]], [[1.0, 0.0, 1.0], [0.0, 1.0, 0.0]]]]),
@@ -30,10 +30,7 @@ TEST_CASES = [
         0.070648,
     ],
     [
-        {
-            "spatial_dims": 2,
-            "reduction": "sum",
-        },
+        {"spatial_dims": 2, "reduction": "sum"},
         {
             "input": torch.tensor([[[[1.0, 1.0, 0.0], [0.0, 0.0, 1.0]], [[1.0, 0.0, 1.0], [0.0, 1.0, 0.0]]]]),
             "target": torch.tensor([[[[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]], [[1.0, 0.0, 1.0], [0.0, 1.0, 0.0]]]]),
@@ -41,9 +38,7 @@ TEST_CASES = [
         0.8478,
     ],
     [
-        {
-            "spatial_dims": 3,
-        },
+        {"spatial_dims": 3},
         {
             "input": torch.tensor(
                 [
@@ -73,11 +68,11 @@ class TestJukeboxLoss(unittest.TestCase):
         results = JukeboxLoss(**input_param).forward(**input_data)
         np.testing.assert_allclose(results.detach().cpu().numpy(), expected_val, rtol=1e-4)
 
-    def test_2D_shape(self):
+    def test_2d_shape(self):
         results = JukeboxLoss(spatial_dims=2, reduction="none").forward(**TEST_CASES[0][1])
         self.assertEqual(results.shape, (1, 2, 2, 3))
 
-    def test_3D_shape(self):
+    def test_3d_shape(self):
         results = JukeboxLoss(spatial_dims=3, reduction="none").forward(**TEST_CASES[2][1])
         self.assertEqual(results.shape, (1, 2, 2, 2, 3))
 

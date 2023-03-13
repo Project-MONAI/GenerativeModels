@@ -9,6 +9,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import unittest
 
 import torch
@@ -50,12 +52,15 @@ class TestDDPMScheduler(unittest.TestCase):
         self.assertEqual(output_step[1].shape, expected_shape)
 
     def test_set_timesteps(self):
-        scheduler = DDIMScheduler(
-            num_train_timesteps=1000,
-        )
+        scheduler = DDIMScheduler(num_train_timesteps=1000)
         scheduler.set_timesteps(num_inference_steps=100)
         self.assertEqual(scheduler.num_inference_steps, 100)
         self.assertEqual(len(scheduler.timesteps), 100)
+
+    def test_set_timesteps_with_num_inference_steps_bigger_than_num_train_timesteps(self):
+        scheduler = DDIMScheduler(num_train_timesteps=1000)
+        with self.assertRaises(ValueError):
+            scheduler.set_timesteps(num_inference_steps=2000)
 
 
 if __name__ == "__main__":

@@ -1,3 +1,18 @@
+# ---
+# jupyter:
+#   jupytext:
+#     formats: ipynb,py
+#     text_representation:
+#       extension: .py
+#       format_name: light
+#       format_version: '1.5'
+#       jupytext_version: 1.14.4
+#   kernelspec:
+#     display_name: Python 3 (ipykernel)
+#     language: python
+#     name: python3
+# ---
+
 # # 3D AutoencoderKL
 
 # This demo is a toy example of how to use MONAI's AutoencoderKL. In particular, it uses the Autoencoder with a Kullback-Leibler regularisation as implemented by Rombach et. al [1].
@@ -36,8 +51,7 @@ from monai.utils import first, set_determinism
 from torch.cuda.amp import autocast
 from tqdm import tqdm
 
-from generative.losses.adversarial_loss import PatchAdversarialLoss
-from generative.losses.perceptual import PerceptualLoss
+from generative.losses import PatchAdversarialLoss, PerceptualLoss
 from generative.networks.nets import AutoencoderKL, PatchDiscriminator
 
 print_config()
@@ -70,11 +84,7 @@ train_transforms = transforms.Compose(
         transforms.AddChanneld(keys=["image"]),
         transforms.EnsureTyped(keys=["image"]),
         transforms.Orientationd(keys=["image"], axcodes="RAS"),
-        transforms.Spacingd(
-            keys=["image"],
-            pixdim=(2.4, 2.4, 2.2),
-            mode=("bilinear"),
-        ),
+        transforms.Spacingd(keys=["image"], pixdim=(2.4, 2.4, 2.2), mode=("bilinear")),
         transforms.CenterSpatialCropd(keys=["image"], roi_size=(96, 96, 64)),
         transforms.ScaleIntensityRangePercentilesd(keys="image", lower=0, upper=99.5, b_min=0, b_max=1),
     ]
@@ -121,11 +131,7 @@ val_transforms = transforms.Compose(
         transforms.AddChanneld(keys=["image"]),
         transforms.EnsureTyped(keys=["image"]),
         transforms.Orientationd(keys=["image"], axcodes="RAS"),
-        transforms.Spacingd(
-            keys=["image"],
-            pixdim=(2.4, 2.4, 2.2),
-            mode=("bilinear"),
-        ),
+        transforms.Spacingd(keys=["image"], pixdim=(2.4, 2.4, 2.2), mode=("bilinear")),
         transforms.CenterSpatialCropd(keys=["image"], roi_size=(96, 96, 64)),
         transforms.ScaleIntensityRangePercentilesd(keys="image", lower=0, upper=99.5, b_min=0, b_max=1),
     ]
@@ -168,9 +174,8 @@ model = AutoencoderKL(
     spatial_dims=3,
     in_channels=1,
     out_channels=1,
-    num_channels=32,
+    num_channels=(32, 64, 64),
     latent_channels=3,
-    ch_mult=(1, 2, 2),
     num_res_blocks=1,
     norm_num_groups=32,
     attention_levels=(False, False, True),

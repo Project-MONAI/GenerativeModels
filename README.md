@@ -3,7 +3,7 @@
 </p>
 
 # MONAI Generative Models
-Prototyping repo for generative models to be integrated into MONAI core.
+Prototyping repository for generative models to be integrated into MONAI core.
 ## Features
 * Network architectures: Diffusion Model, Autoencoder-KL, VQ-VAE, (Multi-scale) Patch-GAN discriminator.
 * Diffusion Model Schedulers: DDPM, DDIM, and PNDM.
@@ -15,7 +15,9 @@ Prototyping repo for generative models to be integrated into MONAI core.
   * How to train VQ-VAEs, VQ-GANs, AutoencoderKLs, Diffusion Models and Latent Diffusion Models on 2D and 3D data.
   * Train diffusion model to perform conditional image generation with classifier-free guidance.
   * Comparison of different diffusion model schedulers.
-  * Diffusion models with different parametrisations (e.g. v prediction and epsilon parametrisation).
+  * Diffusion models with different parameterisation (e.g. v prediction and epsilon parameterisation).
+  * Inpainting with diffusion model (using Repaint method)
+  * Super-resolution with Latent Diffusion Models (using Noise Conditioning Augmentation)
 
 ## Roadmap
 Our short-term goals are available in the [Milestones](https://github.com/Project-MONAI/GenerativeModels/milestones)

@@ -6,9 +6,9 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.14.1
+#       jupytext_version: 1.14.4
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: Python 3 (ipykernel)
 #     language: python
 #     name: python3
 # ---
@@ -25,7 +25,7 @@
 # ## Setup environment
 
 # %%
-# !python -c "import monai" || pip install -q "monai-weekly[gdown, nibabel, tqdm, ignite]"
+# !python -c "import monai" || pip install -q "monai-weekly[nibabel, tqdm]"
 # !python -c "import matplotlib" || pip install -q matplotlib
 # %matplotlib inline
 
@@ -116,24 +116,16 @@ val_transform = Compose(
 
 # %%
 train_ds = DecathlonDataset(
-    root_dir=root_dir,
-    task="Task01_BrainTumour",
-    transform=train_transform,
-    section="training",
-    download=True,
+    root_dir=root_dir, task="Task01_BrainTumour", transform=train_transform, section="training", download=True
 )
 
-train_loader = DataLoader(train_ds, batch_size=16, shuffle=True, num_workers=8)
+train_loader = DataLoader(train_ds, batch_size=4, shuffle=True, num_workers=8)
 
 val_ds = DecathlonDataset(
-    root_dir=root_dir,
-    task="Task01_BrainTumour",
-    transform=val_transform,
-    section="validation",
-    download=True,
+    root_dir=root_dir, task="Task01_BrainTumour", transform=val_transform, section="validation", download=True
 )
 
-val_loader = DataLoader(val_ds, batch_size=16, shuffle=False, num_workers=8)
+val_loader = DataLoader(val_ds, batch_size=4, shuffle=False, num_workers=8)
 
 
 # %% [markdown]
@@ -158,17 +150,14 @@ model = DiffusionModelUNet(
     spatial_dims=3,
     in_channels=1,
     out_channels=1,
-    model_channels=128,
-    attention_resolutions=[8],
-    num_res_blocks=1,
-    channel_mult=[1, 1, 2, 2],
-    num_heads=1,
+    num_channels=[256, 256, 512],
+    attention_levels=[False, False, True],
+    num_head_channels=[256, 256, 512],
+    num_res_blocks=2,
 )
 model.to(device)
 
-scheduler = DDPMScheduler(
-    num_train_timesteps=1000,
-)
+scheduler = DDPMScheduler(num_train_timesteps=1000)
 
 inferer = DiffusionInferer(scheduler)
 
@@ -179,8 +168,8 @@ optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
 # ### Model training
 
 # %%
-n_epochs = 200
-val_interval = 50
+n_epochs = 150
+val_interval = 25
 epoch_loss_list = []
 val_epoch_loss_list = []
 
@@ -199,8 +188,13 @@ for epoch in range(n_epochs):
             # Generate random noise
             noise = torch.randn_like(images).to(device)
 
+            # Create timesteps
+            timesteps = torch.randint(
+                0, inferer.scheduler.num_train_timesteps, (images.shape[0],), device=images.device
+            ).long()
+
             # Get model prediction
-            noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise)
+            noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
 
             loss = F.mse_loss(noise_pred.float(), noise.float())
 
@@ -210,11 +204,7 @@ for epoch in range(n_epochs):
 
         epoch_loss += loss.item()
 
-        progress_bar.set_postfix(
-            {
-                "loss": epoch_loss / (step + 1),
-            }
-        )
+        progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
     epoch_loss_list.append(epoch_loss / (step + 1))
 
     if (epoch + 1) % val_interval == 0:
@@ -225,15 +215,16 @@ for epoch in range(n_epochs):
             noise = torch.randn_like(images).to(device)
             with torch.no_grad():
                 with autocast(enabled=True):
-                    noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise)
+                    timesteps = torch.randint(
+                        0, inferer.scheduler.num_train_timesteps, (images.shape[0],), device=images.device
+                    ).long()
+
+                    # Get model prediction
+                    noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
                     val_loss = F.mse_loss(noise_pred.float(), noise.float())
 
             val_epoch_loss += val_loss.item()
-            progress_bar.set_postfix(
-                {
-                    "val_loss": val_epoch_loss / (step + 1),
-                }
-            )
+            progress_bar.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
         val_epoch_loss_list.append(val_epoch_loss / (step + 1))
 
         # Sampling image during training
@@ -241,7 +232,7 @@ for epoch in range(n_epochs):
         image = image.to(device)
         scheduler.set_timesteps(num_inference_steps=1000)
         with autocast(enabled=True):
-            image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=scheduler)
+            image = inferer.sample(input_noise=image, diffusion_model=model, scheduler=scheduler)
 
         plt.figure(figsize=(2, 2))
         plt.imshow(image[0, 0, :, :, 15].cpu(), vmin=0, vmax=1, cmap="gray")
@@ -292,3 +283,5 @@ plt.imshow(np.concatenate([plotting_image_0, plotting_image_1], axis=0), vmin=0,
 plt.tight_layout()
 plt.axis("off")
 plt.show()
+
+# %%

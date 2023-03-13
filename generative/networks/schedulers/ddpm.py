@@ -8,12 +8,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+#
 # =========================================================================
 # Adapted from https://github.com/huggingface/diffusers
 # which has the following license:
 # https://github.com/huggingface/diffusers/blob/main/LICENSE
-
+#
 # Copyright 2022 UC Berkeley Team and The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,7 +29,7 @@
 # limitations under the License.
 # =========================================================================
 
-from typing import Optional, Tuple, Union
+from __future__ import annotations
 
 import numpy as np
 import torch
@@ -51,6 +51,10 @@ class DDPMScheduler(nn.Module):
         variance_type: {``"fixed_small"``, ``"fixed_large"``, ``"learned"``, ``"learned_range"``}
             options to clip the variance used when adding noise to the denoised sample.
         clip_sample: option to clip predicted sample between -1 and 1 for numerical stability.
+        prediction_type: {``"epsilon"``, ``"sample"``, ``"v_prediction"``}
+            prediction type of the scheduler function, one of `epsilon` (predicting the noise of the diffusion
+            process), `sample` (directly predicting the noisy sample`) or `v_prediction` (see section 2.4
+            https://imagen.research.google/video/paper.pdf)
     """
 
     def __init__(
@@ -94,7 +98,7 @@ class DDPMScheduler(nn.Module):
         self.num_inference_steps = None
         self.timesteps = torch.from_numpy(np.arange(0, num_train_timesteps)[::-1].copy())
 
-    def set_timesteps(self, num_inference_steps: int, device: Optional[Union[str, torch.device]] = None) -> None:
+    def set_timesteps(self, num_inference_steps: int, device: str | torch.device | None = None) -> None:
         """
         Sets the discrete timesteps used for the diffusion chain. Supporting function to be run before inference.
 
@@ -102,11 +106,18 @@ class DDPMScheduler(nn.Module):
             num_inference_steps: number of diffusion steps used when generating samples with a pre-trained model.
             device: target device to put the data.
         """
-        num_inference_steps = min(self.num_train_timesteps, num_inference_steps)
+        if num_inference_steps > self.num_train_timesteps:
+            raise ValueError(
+                f"`num_inference_steps`: {num_inference_steps} cannot be larger than `self.num_train_timesteps`:"
+                f" {self.num_train_timesteps} as the unet model trained with this scheduler can only handle"
+                f" maximal {self.num_train_timesteps} timesteps."
+            )
+
         self.num_inference_steps = num_inference_steps
-        timesteps = np.arange(0, self.num_train_timesteps, self.num_train_timesteps // self.num_inference_steps)[
-            ::-1
-        ].copy()
+        step_ratio = self.num_train_timesteps // self.num_inference_steps
+        # creates integer timesteps by multiplying by ratio
+        # casting to int to avoid issues when num_inference_step is power of 3
+        timesteps = (np.arange(0, num_inference_steps) * step_ratio).round()[::-1].astype(np.int64)
         self.timesteps = torch.from_numpy(timesteps).to(device)
 
     def _get_mean(self, timestep: int, x_0: torch.Tensor, x_t: torch.Tensor) -> torch.Tensor:
@@ -134,7 +145,7 @@ class DDPMScheduler(nn.Module):
 
         return mean
 
-    def _get_variance(self, timestep: int, predicted_variance: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def _get_variance(self, timestep: int, predicted_variance: torch.Tensor | None = None) -> torch.Tensor:
         """
         Compute the variance of the posterior at timestep t.
 
@@ -168,13 +179,8 @@ class DDPMScheduler(nn.Module):
         return variance
 
     def step(
-        self,
-        model_output: torch.Tensor,
-        timestep: int,
-        sample: torch.Tensor,
-        predict_epsilon=True,
-        generator: Optional[torch.Generator] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        self, model_output: torch.Tensor, timestep: int, sample: torch.Tensor, generator: torch.Generator | None = None
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Predict the sample at the previous timestep by reversing the SDE. Core function to propagate the diffusion
         process from the learned model outputs (most often the predicted noise).
@@ -183,7 +189,6 @@ class DDPMScheduler(nn.Module):
             model_output: direct output from learned diffusion model.
             timestep: current discrete timestep in the diffusion chain.
             sample: current instance of sample being created by diffusion process.
-            predict_epsilon: flag to use when model predicts the samples directly instead of the noise, epsilon.
             generator: random number generator.
 
         Returns:
@@ -234,12 +239,7 @@ class DDPMScheduler(nn.Module):
 
         return pred_prev_sample, pred_original_sample
 
-    def add_noise(
-        self,
-        original_samples: torch.Tensor,
-        noise: torch.Tensor,
-        timesteps: torch.Tensor,
-    ) -> torch.Tensor:
+    def add_noise(self, original_samples: torch.Tensor, noise: torch.Tensor, timesteps: torch.Tensor) -> torch.Tensor:
         """
         Add noise to the original samples.
 

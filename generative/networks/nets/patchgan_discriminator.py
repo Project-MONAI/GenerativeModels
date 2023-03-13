@@ -9,11 +9,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Optional, Sequence, Tuple, Union
+from __future__ import annotations
+
+from collections.abc import Sequence
 
 import torch
 import torch.nn as nn
 from monai.networks.blocks import Convolution
+from monai.networks.layers import Act
 
 
 class MultiScalePatchDiscriminator(nn.Sequential):
@@ -29,8 +32,8 @@ class MultiScalePatchDiscriminator(nn.Sequential):
     Args:
         num_d: number of discriminators
         num_layers_d: number of Convolution layers (Conv + activation + normalisation + [dropout]) in each
-        of the discriminators. In each layer, the number of channels are doubled and the spatial size is
-        divided by 2.
+            of the discriminators. In each layer, the number of channels are doubled and the spatial size is
+            divided by 2.
         spatial_dims: number of spatial dimensions (1D, 2D etc.)
         num_channels: number of filters in the first convolutional layer (double of the value is taken from then on)
         in_channels: number of input channels
@@ -41,7 +44,7 @@ class MultiScalePatchDiscriminator(nn.Sequential):
         bias: introduction of layer bias
         dropout: proportion of dropout applied, defaults to 0.
         minimum_size_im: minimum spatial size of the input image. Introduced to make sure the architecture
-        requested isn't going to downsample the input image beyond value of 1.
+            requested isn't going to downsample the input image beyond value of 1.
         last_conv_kernel_size: kernel size of the last convolutional layer.
     """
 
@@ -52,12 +55,12 @@ class MultiScalePatchDiscriminator(nn.Sequential):
         spatial_dims: int,
         num_channels: int,
         in_channels: int,
-        out_channels: int,
-        kernel_size: int,
-        activation: Union[str, tuple] = "PRELU",
-        norm: Union[str, tuple] = "INSTANCE",
+        out_channels: int = 1,
+        kernel_size: int = 4,
+        activation: str | tuple = (Act.LEAKYRELU, {"negative_slope": 0.2}),
+        norm: str | tuple = "BATCH",
         bias: bool = False,
-        dropout: Union[float, tuple] = 0.0,
+        dropout: float | tuple = 0.0,
         minimum_size_im: int = 256,
         last_conv_kernel_size: int = 1,
     ) -> None:
@@ -75,11 +78,11 @@ class MultiScalePatchDiscriminator(nn.Sequential):
                     "Please reduce num_layers, reduce num_D or enter bigger images." % (i_, num_layers_d_i)
                 )
             subnet_d = PatchDiscriminator(
-                num_layers_d_i,
                 spatial_dims=spatial_dims,
                 num_channels=self.num_channels,
                 in_channels=in_channels,
                 out_channels=out_channels,
+                num_layers_d=num_layers_d_i,
                 kernel_size=kernel_size,
                 activation=activation,
                 norm=norm,
@@ -91,7 +94,7 @@ class MultiScalePatchDiscriminator(nn.Sequential):
 
             self.add_module("discriminator_%d" % i_, subnet_d)
 
-    def forward(self, i: torch.Tensor) -> Tuple[List[torch.Tensor], List[List[torch.Tensor]]]:
+    def forward(self, i: torch.Tensor) -> tuple[list[torch.Tensor], list[list[torch.Tensor]]]:
         """
 
         Args:
@@ -101,10 +104,10 @@ class MultiScalePatchDiscriminator(nn.Sequential):
             of each discriminator.
         """
 
-        out: List[torch.Tensor] = []
-        intermediate_features: List[List[torch.Tensor]] = []
+        out: list[torch.Tensor] = []
+        intermediate_features: list[list[torch.Tensor]] = []
         for disc in self.children():
-            out_d: List[torch.Tensor] = disc(i)
+            out_d: list[torch.Tensor] = disc(i)
             out.append(out_d[-1])
             intermediate_features.append(out_d[:-1])
 
@@ -120,13 +123,13 @@ class PatchDiscriminator(nn.Sequential):
     In CVPR 2018.
 
     Args:
-        num_layers_d: number of Convolution layers (Conv + activation + normalisation + [dropout]) in each
-        of the discriminators. In each layer, the number of channels are doubled and the spatial size is
-        divided by 2.
         spatial_dims: number of spatial dimensions (1D, 2D etc.)
         num_channels: number of filters in the first convolutional layer (double of the value is taken from then on)
         in_channels: number of input channels
         out_channels: number of output channels in each discriminator
+        num_layers_d: number of Convolution layers (Conv + activation + normalisation + [dropout]) in each
+            of the discriminators. In each layer, the number of channels are doubled and the spatial size is
+            divided by 2.
         kernel_size: kernel size of the convolution layers
         activation: activation layer type
         norm: normalisation type
@@ -138,20 +141,19 @@ class PatchDiscriminator(nn.Sequential):
 
     def __init__(
         self,
-        num_layers_d: int,
         spatial_dims: int,
         num_channels: int,
         in_channels: int,
-        out_channels: int,
-        kernel_size: int,
-        activation: Union[str, tuple] = "PRELU",
-        norm: Union[str, tuple] = "INSTANCE",
+        out_channels: int = 1,
+        num_layers_d: int = 3,
+        kernel_size: int = 4,
+        activation: str | tuple = (Act.LEAKYRELU, {"negative_slope": 0.2}),
+        norm: str | tuple = "BATCH",
         bias: bool = False,
-        padding: Union[int, Sequence[int]] = 1,
-        dropout: Union[float, tuple] = 0.0,
-        last_conv_kernel_size: Optional[int] = None,
+        padding: int | Sequence[int] = 1,
+        dropout: float | tuple = 0.0,
+        last_conv_kernel_size: int | None = None,
     ) -> None:
-
         super().__init__()
         self.num_layers_d = num_layers_d
         self.num_channels = num_channels
@@ -217,7 +219,7 @@ class PatchDiscriminator(nn.Sequential):
 
         self.apply(self.initialise_weights)
 
-    def forward(self, x: torch.Tensor) -> List[torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> list[torch.Tensor]:
         """
 
         Args:

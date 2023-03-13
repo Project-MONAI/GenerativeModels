@@ -8,12 +8,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+#
 # =========================================================================
 # Adapted from https://github.com/huggingface/diffusers
 # which has the following license:
 # https://github.com/huggingface/diffusers/blob/main/LICENSE
-
+#
 # Copyright 2022 UC Berkeley Team and The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,7 +29,7 @@
 # limitations under the License.
 # =========================================================================
 
-from typing import Optional, Tuple, Union
+from __future__ import annotations
 
 import numpy as np
 import torch
@@ -55,8 +55,9 @@ class DDIMScheduler(nn.Module):
         steps_offset: an offset added to the inference steps. You can use a combination of `steps_offset=1` and
             `set_alpha_to_one=False`, to make the last step use step 0 for the previous alpha product, as done in
             stable diffusion.
-        prediction_type: prediction type of the scheduler function, one of `epsilon` (predicting the noise of the
-            diffusion process), `sample` (directly predicting the noisy sample`) or `v_prediction` (see section 2.4
+        prediction_type: {``"epsilon"``, ``"sample"``, ``"v_prediction"``}
+            prediction type of the scheduler function, one of `epsilon` (predicting the noise of the diffusion
+            process), `sample` (directly predicting the noisy sample`) or `v_prediction` (see section 2.4
             https://imagen.research.google/video/paper.pdf)
     """
 
@@ -102,14 +103,15 @@ class DDIMScheduler(nn.Module):
         # standard deviation of the initial noise distribution
         self.init_noise_sigma = 1.0
 
-        # setable values
-        self.num_inference_steps = None
-        self.timesteps = torch.from_numpy(np.arange(0, num_train_timesteps)[::-1].copy().astype(np.int64))
+        self.timesteps = torch.from_numpy(np.arange(0, num_train_timesteps)[::-1].astype(np.int64))
 
         self.clip_sample = clip_sample
         self.steps_offset = steps_offset
 
-    def set_timesteps(self, num_inference_steps: int, device: Optional[Union[str, torch.device]] = None) -> None:
+        # default the number of inference timesteps to the number of train steps
+        self.set_timesteps(num_train_timesteps)
+
+    def set_timesteps(self, num_inference_steps: int, device: str | torch.device | None = None) -> None:
         """
         Sets the discrete timesteps used for the diffusion chain. Supporting function to be run before inference.
 
@@ -117,6 +119,13 @@ class DDIMScheduler(nn.Module):
             num_inference_steps: number of diffusion steps used when generating samples with a pre-trained model.
             device: target device to put the data.
         """
+        if num_inference_steps > self.num_train_timesteps:
+            raise ValueError(
+                f"`num_inference_steps`: {num_inference_steps} cannot be larger than `self.num_train_timesteps`:"
+                f" {self.num_train_timesteps} as the unet model trained with this scheduler can only handle"
+                f" maximal {self.num_train_timesteps} timesteps."
+            )
+
         self.num_inference_steps = num_inference_steps
         step_ratio = self.num_train_timesteps // self.num_inference_steps
         # creates integer timesteps by multiplying by ratio
@@ -141,8 +150,8 @@ class DDIMScheduler(nn.Module):
         timestep: int,
         sample: torch.Tensor,
         eta: float = 0.0,
-        generator: Optional[torch.Generator] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        generator: torch.Generator | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Predict the sample at the previous timestep by reversing the SDE. Core function to propagate the diffusion
         process from the learned model outputs (most often the predicted noise).
@@ -183,12 +192,13 @@ class DDIMScheduler(nn.Module):
         # "predicted x_0" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
         if self.prediction_type == "epsilon":
             pred_original_sample = (sample - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
+            pred_epsilon = model_output
         elif self.prediction_type == "sample":
             pred_original_sample = model_output
+            pred_epsilon = (sample - alpha_prod_t ** (0.5) * pred_original_sample) / beta_prod_t ** (0.5)
         elif self.prediction_type == "v_prediction":
             pred_original_sample = (alpha_prod_t**0.5) * sample - (beta_prod_t**0.5) * model_output
-            # predict V
-            model_output = (alpha_prod_t**0.5) * model_output + (beta_prod_t**0.5) * sample
+            pred_epsilon = (alpha_prod_t**0.5) * model_output + (beta_prod_t**0.5) * sample
 
         # 4. Clip "predicted x_0"
         if self.clip_sample:
@@ -200,7 +210,7 @@ class DDIMScheduler(nn.Module):
         std_dev_t = eta * variance ** (0.5)
 
         # 6. compute "direction pointing to x_t" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
-        pred_sample_direction = (1 - alpha_prod_t_prev - std_dev_t**2) ** (0.5) * model_output
+        pred_sample_direction = (1 - alpha_prod_t_prev - std_dev_t**2) ** (0.5) * pred_epsilon
 
         # 7. compute x_t-1 without "random noise" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
         pred_prev_sample = alpha_prod_t_prev ** (0.5) * pred_original_sample + pred_sample_direction
@@ -215,12 +225,7 @@ class DDIMScheduler(nn.Module):
 
         return pred_prev_sample, pred_original_sample
 
-    def add_noise(
-        self,
-        original_samples: torch.Tensor,
-        noise: torch.Tensor,
-        timesteps: torch.Tensor,
-    ) -> torch.Tensor:
+    def add_noise(self, original_samples: torch.Tensor, noise: torch.Tensor, timesteps: torch.Tensor) -> torch.Tensor:
         """
         Add noise to the original samples.
 

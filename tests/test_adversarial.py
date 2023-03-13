@@ -9,12 +9,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import unittest
 
 import torch
 from parameterized import parameterized
 
-from generative.losses.adversarial_loss import PatchAdversarialLoss
+from generative.losses import PatchAdversarialLoss
 
 shapes_tensors = {"2d": [4, 1, 64, 64], "3d": [4, 1, 64, 64, 64]}
 reductions = ["sum", "mean"]

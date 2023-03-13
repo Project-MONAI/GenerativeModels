@@ -9,7 +9,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Tuple
+from __future__ import annotations
 
 import torch
 import torch.nn as nn
@@ -19,18 +19,23 @@ from lpips import LPIPS
 class PerceptualLoss(nn.Module):
     """
     Perceptual loss using features from pretrained deep neural networks trained. The function supports networks
-    pretrained on ImageNet that use the LPIPS approach from: Zhang, et al. "The unreasonable effectiveness of deep
-    features as a perceptual metric." https://arxiv.org/abs/1801.03924
+    pretrained on: ImageNet that use the LPIPS approach from Zhang, et al. "The unreasonable effectiveness of deep
+    features as a perceptual metric." https://arxiv.org/abs/1801.03924 ; RadImagenet from Mei, et al. "RadImageNet: An
+    Open Radiologic Deep Learning Research Dataset for Effective Transfer Learning"
+    https://pubs.rsna.org/doi/full/10.1148/ryai.210315 ; and MedicalNet from Chen et al. "Med3D: Transfer Learning for
+    3D Medical Image Analysis" https://arxiv.org/abs/1904.00625 .
+
     The fake 3D implementation is based on a 2.5D approach where we calculate the 2D perceptual on slices from the
     three axis.
 
     Args:
         spatial_dims: number of spatial dimensions.
-        network_type: {``"alex"``, ``"vgg"``, ``"squeeze"``, ``"medicalnet_resnet10_23datasets"``,
-            ``"medicalnet_resnet50_23datasets"``}
+        network_type: {``"alex"``, ``"vgg"``, ``"squeeze"``, ``"radimagenet_resnet50"``,
+        ``"medicalnet_resnet10_23datasets"``, ``"medicalnet_resnet50_23datasets"``}
             Specifies the network architecture to use. Defaults to ``"alex"``.
         is_fake_3d: if True use 2.5D approach for a 3D perceptual loss.
         fake_3d_ratio: ratio of how many slices per axis are used in the 2.5D approach.
+        cache_dir: path to cache directory to save the pretrained network weights.
     """
 
     def __init__(
@@ -39,21 +44,29 @@ class PerceptualLoss(nn.Module):
         network_type: str = "alex",
         is_fake_3d: bool = True,
         fake_3d_ratio: float = 0.5,
+        cache_dir: str | None = None,
     ):
         super().__init__()
 
         if spatial_dims not in [2, 3]:
             raise NotImplementedError("Perceptual loss is implemented only in 2D and 3D.")
 
+        if (spatial_dims == 2 or is_fake_3d) and "medicalnet_" in network_type:
+            raise ValueError(
+                "MedicalNet networks are only compatible with ``spatial_dims=3``."
+                "Argument is_fake_3d must be set to False."
+            )
+
+        if cache_dir:
+            torch.hub.set_dir(cache_dir)
+
         self.spatial_dims = spatial_dims
         if spatial_dims == 3 and is_fake_3d is False:
-            self.perceptual_function = MedicalNetPerceptualComponent(net=network_type, verbose=False)
+            self.perceptual_function = MedicalNetPerceptualSimilarity(net=network_type, verbose=False)
+        elif "radimagenet_" in network_type:
+            self.perceptual_function = RadImageNetPerceptualSimilarity(net=network_type, verbose=False)
         else:
-            self.perceptual_function = LPIPS(
-                pretrained=True,
-                net=network_type,
-                verbose=False,
-            )
+            self.perceptual_function = LPIPS(pretrained=True, net=network_type, verbose=False)
         self.is_fake_3d = is_fake_3d
         self.fake_3d_ratio = fake_3d_ratio
 
@@ -68,7 +81,7 @@ class PerceptualLoss(nn.Module):
             spatial_axis: spatial axis to obtain the 2D slices.
         """
 
-        def batchify_axis(x: torch.Tensor, fake_3d_perm: Tuple) -> torch.Tensor:
+        def batchify_axis(x: torch.Tensor, fake_3d_perm: tuple) -> torch.Tensor:
             """
             Transform slices from one spatial axis into different instances in the batch.
             """
@@ -81,26 +94,12 @@ class PerceptualLoss(nn.Module):
         preserved_axes.remove(spatial_axis)
 
         channel_axis = 1
-        input_slices = batchify_axis(
-            x=input,
-            fake_3d_perm=(
-                spatial_axis,
-                channel_axis,
-            )
-            + tuple(preserved_axes),
-        )
+        input_slices = batchify_axis(x=input, fake_3d_perm=(spatial_axis, channel_axis) + tuple(preserved_axes))
         indices = torch.randperm(input_slices.shape[0])[: int(input_slices.shape[0] * self.fake_3d_ratio)].to(
             input_slices.device
         )
         input_slices = torch.index_select(input_slices, dim=0, index=indices)
-        target_slices = batchify_axis(
-            x=target,
-            fake_3d_perm=(
-                spatial_axis,
-                channel_axis,
-            )
-            + tuple(preserved_axes),
-        )
+        target_slices = batchify_axis(x=target, fake_3d_perm=(spatial_axis, channel_axis) + tuple(preserved_axes))
         target_slices = torch.index_select(target_slices, dim=0, index=indices)
 
         axis_loss = torch.mean(self.perceptual_function(input_slices, target_slices))
@@ -116,21 +115,20 @@ class PerceptualLoss(nn.Module):
         if target.shape != input.shape:
             raise ValueError(f"ground truth has differing shape ({target.shape}) from input ({input.shape})")
 
-        if self.spatial_dims == 2:
-            loss = self.perceptual_function(input, target)
-        elif self.spatial_dims == 3 and self.is_fake_3d:
+        if self.spatial_dims == 3 and self.is_fake_3d:
             # Compute 2.5D approach
             loss_sagittal = self._calculate_axis_loss(input, target, spatial_axis=2)
             loss_coronal = self._calculate_axis_loss(input, target, spatial_axis=3)
             loss_axial = self._calculate_axis_loss(input, target, spatial_axis=4)
             loss = loss_sagittal + loss_axial + loss_coronal
-        if self.spatial_dims == 3 and self.is_fake_3d is False:
+        else:
+            # 2D and real 3D cases
             loss = self.perceptual_function(input, target)
 
         return torch.mean(loss)
 
 
-class MedicalNetPerceptualComponent(nn.Module):
+class MedicalNetPerceptualSimilarity(nn.Module):
     """
     Component to perform the perceptual evaluation with the networks pretrained by Chen, et al. "Med3D: Transfer
     Learning for 3D Medical Image Analysis". This class uses torch Hub to download the networks from
@@ -142,15 +140,14 @@ class MedicalNetPerceptualComponent(nn.Module):
         verbose: if false, mute messages from torch Hub load function.
     """
 
-    def __init__(
-        self,
-        net: str = "medicalnet_resnet10_23datasets",
-        verbose: bool = False,
-    ) -> None:
+    def __init__(self, net: str = "medicalnet_resnet10_23datasets", verbose: bool = False) -> None:
         super().__init__()
         torch.hub._validate_not_a_forked_repo = lambda a, b, c: True
         self.model = torch.hub.load("Warvito/MedicalNet-models", model=net, verbose=verbose)
         self.eval()
+
+        for param in self.parameters():
+            param.requires_grad = False
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """
@@ -194,3 +191,69 @@ def medicalnet_intensity_normalisation(volume):
     mean = volume.mean()
     std = volume.std()
     return (volume - mean) / std
+
+
+class RadImageNetPerceptualSimilarity(nn.Module):
+    """
+    Component to perform the perceptual evaluation with the networks pretrained on RadImagenet (pretrained by Mei, et
+    al. "RadImageNet: An Open Radiologic Deep Learning Research Dataset for Effective Transfer Learning"). This class
+    uses torch Hub to download the networks from "Warvito/radimagenet-models".
+
+    Args:
+        net: {``"radimagenet_resnet50"``}
+            Specifies the network architecture to use. Defaults to ``"radimagenet_resnet50"``.
+        verbose: if false, mute messages from torch Hub load function.
+    """
+
+    def __init__(self, net: str = "radimagenet_resnet50", verbose: bool = False) -> None:
+        super().__init__()
+        self.model = torch.hub.load("Warvito/radimagenet-models", model=net, verbose=verbose)
+        self.eval()
+
+        for param in self.parameters():
+            param.requires_grad = False
+
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        We expect that the input is normalised between [0, 1]. Given the preprocessing performed during the training at
+        https://github.com/BMEII-AI/RadImageNet, we make sure that the input and target have 3 channels, reorder it from
+         'RGB' to 'BGR', and then remove the mean components of each input data channel. The outputs are normalised
+        across the channels, and we obtain the mean from the spatial dimensions (similar approach to the lpips package).
+        """
+        # If input has just 1 channel, repeat channel to have 3 channels
+        if input.shape[1] == 1 and target.shape[1] == 1:
+            input = input.repeat(1, 3, 1, 1)
+            target = target.repeat(1, 3, 1, 1)
+
+        # Change order from 'RGB' to 'BGR'
+        input = input[:, [2, 1, 0], ...]
+        target = target[:, [2, 1, 0], ...]
+
+        # Subtract mean used during training
+        input = subtract_mean(input)
+        target = subtract_mean(target)
+
+        # Get model outputs
+        outs_input = self.model.forward(input)
+        outs_target = self.model.forward(target)
+
+        # Normalise through the channels
+        feats_input = normalize_tensor(outs_input)
+        feats_target = normalize_tensor(outs_target)
+
+        results = (feats_input - feats_target) ** 2
+        results = spatial_average(results.sum(dim=1, keepdim=True), keepdim=True)
+
+        return results
+
+
+def spatial_average(x: torch.Tensor, keepdim: bool = True) -> torch.Tensor:
+    return x.mean([2, 3], keepdim=keepdim)
+
+
+def subtract_mean(x: torch.Tensor) -> torch.Tensor:
+    mean = [0.406, 0.456, 0.485]
+    x[:, 0, :, :] -= mean[0]
+    x[:, 1, :, :] -= mean[1]
+    x[:, 2, :, :] -= mean[2]
+    return x

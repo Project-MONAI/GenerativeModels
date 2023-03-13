@@ -9,12 +9,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
 
 import math
-from typing import Callable, List, Optional, Tuple, Union
+from collections.abc import Callable, Sequence
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from monai.inferers import Inferer
 from monai.utils import optional_import
 
@@ -41,7 +43,7 @@ class DiffusionInferer(Inferer):
         diffusion_model: Callable[..., torch.Tensor],
         noise: torch.Tensor,
         timesteps: torch.Tensor,
-        condition: Optional[torch.Tensor] = None,
+        condition: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Implements the forward pass for a supervised training iteration.
@@ -58,16 +60,17 @@ class DiffusionInferer(Inferer):
 
         return prediction
 
+    @torch.no_grad()
     def sample(
         self,
         input_noise: torch.Tensor,
         diffusion_model: Callable[..., torch.Tensor],
-        scheduler: Optional[Callable[..., torch.Tensor]] = None,
-        save_intermediates: Optional[bool] = False,
-        intermediate_steps: Optional[int] = 100,
-        conditioning: Optional[torch.Tensor] = None,
-        verbose: Optional[bool] = True,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
+        scheduler: Callable[..., torch.Tensor] | None = None,
+        save_intermediates: bool | None = False,
+        intermediate_steps: int | None = 100,
+        conditioning: torch.Tensor | None = None,
+        verbose: bool = True,
+    ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Args:
             input_noise: random noise, of the same shape as the desired sample.
@@ -88,10 +91,9 @@ class DiffusionInferer(Inferer):
         intermediates = []
         for t in progress_bar:
             # 1. predict noise model_output
-            with torch.no_grad():
-                model_output = diffusion_model(
-                    image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning
-                )
+            model_output = diffusion_model(
+                image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning
+            )
 
             # 2. compute previous image: x_t -> x_t-1
             image, _ = scheduler.step(model_output, t, image)
@@ -107,15 +109,15 @@ class DiffusionInferer(Inferer):
         self,
         inputs: torch.Tensor,
         diffusion_model: Callable[..., torch.Tensor],
-        scheduler: Optional[Callable[..., torch.Tensor]] = None,
-        save_intermediates: Optional[bool] = False,
-        conditioning: Optional[torch.Tensor] = None,
-        original_input_range: Optional[Tuple] = (0, 255),
-        scaled_input_range: Optional[Tuple] = (0, 1),
-        verbose: Optional[bool] = True,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
+        scheduler: Callable[..., torch.Tensor] | None = None,
+        save_intermediates: bool | None = False,
+        conditioning: torch.Tensor | None = None,
+        original_input_range: tuple | None = (0, 255),
+        scaled_input_range: tuple | None = (0, 1),
+        verbose: bool = True,
+    ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
-        Computes the likelihoods for an input.
+        Computes the log-likelihoods for an input.
 
         Args:
             inputs: input images, NxCxHxW[xD]
@@ -141,7 +143,7 @@ class DiffusionInferer(Inferer):
             progress_bar = iter(scheduler.timesteps)
         intermediates = []
         noise = torch.randn_like(inputs).to(inputs.device)
-        total_kl = torch.zeros((inputs.shape[0])).to(inputs.device)
+        total_kl = torch.zeros(inputs.shape[0]).to(inputs.device)
         for t in progress_bar:
             timesteps = torch.full(inputs.shape[:1], t, device=inputs.device).long()
             noisy_image = self.scheduler.add_noise(original_samples=inputs, noise=noise, timesteps=timesteps)
@@ -228,8 +230,8 @@ class DiffusionInferer(Inferer):
         inputs: torch.Tensor,
         means: torch.Tensor,
         log_scales: torch.Tensor,
-        original_input_range: Optional[Tuple] = [0, 255],
-        scaled_input_range: Optional[Tuple] = [0, 1],
+        original_input_range: tuple | None = (0, 255),
+        scaled_input_range: tuple | None = (0, 1),
     ) -> torch.Tensor:
         """
         Compute the log-likelihood of a Gaussian distribution discretizing to a
@@ -287,7 +289,7 @@ class LatentDiffusionInferer(DiffusionInferer):
         diffusion_model: Callable[..., torch.Tensor],
         noise: torch.Tensor,
         timesteps: torch.Tensor,
-        condition: Optional[torch.Tensor] = None,
+        condition: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Implements the forward pass for a supervised training iteration.
@@ -304,26 +306,23 @@ class LatentDiffusionInferer(DiffusionInferer):
             latent = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
 
         prediction = super().__call__(
-            inputs=latent,
-            diffusion_model=diffusion_model,
-            noise=noise,
-            timesteps=timesteps,
-            condition=condition,
+            inputs=latent, diffusion_model=diffusion_model, noise=noise, timesteps=timesteps, condition=condition
         )
 
         return prediction
 
+    @torch.no_grad()
     def sample(
         self,
         input_noise: torch.Tensor,
         autoencoder_model: Callable[..., torch.Tensor],
         diffusion_model: Callable[..., torch.Tensor],
-        scheduler: Optional[Callable[..., torch.Tensor]] = None,
-        save_intermediates: Optional[bool] = False,
-        intermediate_steps: Optional[int] = 100,
-        conditioning: Optional[torch.Tensor] = None,
-        verbose: Optional[bool] = True,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
+        scheduler: Callable[..., torch.Tensor] | None = None,
+        save_intermediates: bool | None = False,
+        intermediate_steps: int | None = 100,
+        conditioning: torch.Tensor | None = None,
+        verbose: bool = True,
+    ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Args:
             input_noise: random noise, of the same shape as the desired latent representation.
@@ -350,16 +349,12 @@ class LatentDiffusionInferer(DiffusionInferer):
         else:
             latent = outputs
 
-        with torch.no_grad():
-            image = autoencoder_model.decode_stage_2_outputs(latent) * self.scale_factor
+        image = autoencoder_model.decode_stage_2_outputs(latent / self.scale_factor)
 
         if save_intermediates:
             intermediates = []
             for latent_intermediate in latent_intermediates:
-                with torch.no_grad():
-                    intermediates.append(
-                        autoencoder_model.decode_stage_2_outputs(latent_intermediate) * self.scale_factor
-                    )
+                intermediates.append(autoencoder_model.decode_stage_2_outputs(latent_intermediate / self.scale_factor))
             return image, intermediates
 
         else:
@@ -371,17 +366,17 @@ class LatentDiffusionInferer(DiffusionInferer):
         inputs: torch.Tensor,
         autoencoder_model: Callable[..., torch.Tensor],
         diffusion_model: Callable[..., torch.Tensor],
-        scheduler: Optional[Callable[..., torch.Tensor]] = None,
-        save_intermediates: Optional[bool] = False,
-        conditioning: Optional[torch.Tensor] = None,
-        original_input_range: Optional[Tuple] = (0, 255),
-        scaled_input_range: Optional[Tuple] = (0, 1),
-        verbose: Optional[bool] = True,
-        resample_latent_likelihoods: Optional[bool] = False,
-        resample_interpolation_mode: Optional[str] = "bilinear",
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
+        scheduler: Callable[..., torch.Tensor] | None = None,
+        save_intermediates: bool | None = False,
+        conditioning: torch.Tensor | None = None,
+        original_input_range: tuple | None = (0, 255),
+        scaled_input_range: tuple | None = (0, 1),
+        verbose: bool = True,
+        resample_latent_likelihoods: bool = False,
+        resample_interpolation_mode: str = "nearest",
+    ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
-        Computes the likelihoods of the latent representations of the input.
+        Computes the log-likelihoods of the latent representations of the input.
 
         Args:
             inputs: input images, NxCxHxW[xD]
@@ -395,9 +390,13 @@ class LatentDiffusionInferer(DiffusionInferer):
             verbose: if true, prints the progression bar of the sampling process.
             resample_latent_likelihoods: if true, resamples the intermediate likelihood maps to have the same spatial
                 dimension as the input images.
-            resample_interpolation_mode: if use resample_latent_likelihoods, select interpolation 'nearest' or 'bilinear'
+            resample_interpolation_mode: if use resample_latent_likelihoods, select interpolation 'nearest', 'bilinear',
+                or 'trilinear;
         """
-
+        if resample_latent_likelihoods and resample_interpolation_mode not in ("nearest", "bilinear", "trilinear"):
+            raise ValueError(
+                f"resample_interpolation mode should be either nearest, bilinear, or trilinear, got {resample_interpolation_mode}"
+            )
         latents = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
         outputs = super().get_likelihood(
             inputs=latents,
@@ -409,14 +408,208 @@ class LatentDiffusionInferer(DiffusionInferer):
         )
         if save_intermediates and resample_latent_likelihoods:
             intermediates = outputs[1]
-            from torchvision.transforms import Resize
-
-            interpolation_modes = {"nearest": 0, "bilinear": 2}
-            if resample_interpolation_mode not in interpolation_modes.keys():
-                raise ValueError(
-                    f"resample_interpolation mode should be either nearest or bilinear, not {resample_interpolation_mode}"
-                )
-            resizer = Resize(size=inputs.shape[2:], interpolation=interpolation_modes[resample_interpolation_mode])
+            resizer = nn.Upsample(size=inputs.shape[2:], mode=resample_interpolation_mode)
             intermediates = [resizer(x) for x in intermediates]
             outputs = (outputs[0], intermediates)
         return outputs
+
+
+class VQVAETransformerInferer(Inferer):
+    """
+    Class to perform inference with a VQVAE + Transformer model.
+    """
+
+    def __init__(self) -> None:
+        Inferer.__init__(self)
+
+    def __call__(
+        self,
+        inputs: torch.Tensor,
+        vqvae_model: Callable[..., torch.Tensor],
+        transformer_model: Callable[..., torch.Tensor],
+        ordering: Callable[..., torch.Tensor],
+        condition: torch.Tensor | None = None,
+        return_latent: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor, tuple]:
+        """
+        Implements the forward pass for a supervised training iteration.
+
+        Args:
+            inputs: input image to which the latent representation will be extracted.
+            vqvae_model: first stage model.
+            transformer_model: autoregressive transformer model.
+            ordering: ordering of the quantised latent representation.
+            return_latent: also return latent sequence and spatial dim of the latent.
+            condition: conditioning for network input.
+        """
+        with torch.no_grad():
+            latent = vqvae_model.index_quantize(inputs)
+
+        latent_spatial_dim = tuple(latent.shape[1:])
+        latent = latent.reshape(latent.shape[0], -1)
+        latent = latent[:, ordering.get_sequence_ordering()]
+
+        # Use the value from vqvae_model's num_embeddings as the starting token, the "Begin Of Sentence" (BOS) token.
+        # Note the transformer_model must have vqvae_model.num_embeddings + 1 defined as num_tokens.
+        latent = F.pad(latent, (1, 0), "constant", vqvae_model.num_embeddings)
+        latent = latent.long()
+
+        # train on a part of the sequence if it is longer than max_seq_length
+        seq_len = latent.shape[1]
+        max_seq_len = transformer_model.max_seq_len
+        if max_seq_len < seq_len:
+            start = torch.randint(low=0, high=seq_len + 1 - max_seq_len, size=(1,)).item()
+        else:
+            start = 0
+        prediction = transformer_model(x=latent[:, start : start + max_seq_len], context=condition)
+        if return_latent:
+            return prediction, latent[:, start : start + max_seq_len], latent_spatial_dim
+        else:
+            return prediction
+
+    @torch.no_grad()
+    def sample(
+        self,
+        latent_spatial_dim: Sequence[int, int, int] | Sequence[int, int],
+        starting_tokens: torch.Tensor,
+        vqvae_model: Callable[..., torch.Tensor],
+        transformer_model: Callable[..., torch.Tensor],
+        ordering: Callable[..., torch.Tensor],
+        conditioning: torch.Tensor | None = None,
+        temperature: float = 1.0,
+        top_k: int | None = None,
+        verbose: bool = True,
+    ) -> torch.Tensor:
+        """
+        Sampling function for the VQVAE + Transformer model.
+
+        Args:
+            latent_spatial_dim: shape of the sampled image.
+            starting_tokens: starting tokens for the sampling. It must be vqvae_model.num_embeddings value.
+            vqvae_model: first stage model.
+            transformer_model: model to sample from.
+            conditioning: Conditioning for network input.
+            temperature: temperature for sampling.
+            top_k: top k sampling.
+            verbose: if true, prints the progression bar of the sampling process.
+        """
+        seq_len = math.prod(latent_spatial_dim)
+
+        if verbose and has_tqdm:
+            progress_bar = tqdm(range(seq_len))
+        else:
+            progress_bar = iter(range(seq_len))
+
+        latent_seq = starting_tokens.long()
+        for _ in progress_bar:
+            # if the sequence context is growing too long we must crop it at block_size
+            if latent_seq.size(1) <= transformer_model.max_seq_len:
+                idx_cond = latent_seq
+            else:
+                idx_cond = latent_seq[:, -transformer_model.max_seq_len :]
+
+            # forward the model to get the logits for the index in the sequence
+            logits = transformer_model(x=idx_cond, context=conditioning)
+            # pluck the logits at the final step and scale by desired temperature
+            logits = logits[:, -1, :] / temperature
+            # optionally crop the logits to only the top k options
+            if top_k is not None:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                logits[logits < v[:, [-1]]] = -float("Inf")
+            # apply softmax to convert logits to (normalized) probabilities
+            probs = F.softmax(logits, dim=-1)
+            # remove the chance to be sampled the BOS token
+            probs[:, vqvae_model.num_embeddings] = 0
+            # sample from the distribution
+            idx_next = torch.multinomial(probs, num_samples=1)
+            # append sampled index to the running sequence and continue
+            latent_seq = torch.cat((latent_seq, idx_next), dim=1)
+
+        latent_seq = latent_seq[:, 1:]
+        latent_seq = latent_seq[:, ordering.get_revert_sequence_ordering()]
+        latent = latent_seq.reshape((starting_tokens.shape[0],) + latent_spatial_dim)
+
+        return vqvae_model.decode_samples(latent)
+
+    @torch.no_grad()
+    def get_likelihood(
+        self,
+        inputs: torch.Tensor,
+        vqvae_model: Callable[..., torch.Tensor],
+        transformer_model: Callable[..., torch.Tensor],
+        ordering: Callable[..., torch.Tensor],
+        condition: torch.Tensor | None = None,
+        resample_latent_likelihoods: bool = False,
+        resample_interpolation_mode: str = "nearest",
+        verbose: bool = False,
+    ) -> torch.Tensor:
+        """
+        Computes the log-likelihoods of the latent representations of the input.
+
+        Args:
+            inputs: input images, NxCxHxW[xD]
+            vqvae_model: first stage model.
+            transformer_model: autoregressive transformer model.
+            ordering: ordering of the quantised latent representation.
+            condition: conditioning for network input.
+            resample_latent_likelihoods: if true, resamples the intermediate likelihood maps to have the same spatial
+                dimension as the input images.
+            resample_interpolation_mode: if use resample_latent_likelihoods, select interpolation 'nearest', 'bilinear',
+                or 'trilinear;
+            verbose: if true, prints the progression bar of the sampling process.
+
+        """
+        if resample_latent_likelihoods and resample_interpolation_mode not in ("nearest", "bilinear", "trilinear"):
+            raise ValueError(
+                f"resample_interpolation mode should be either nearest, bilinear, or trilinear, got {resample_interpolation_mode}"
+            )
+
+        with torch.no_grad():
+            latent = vqvae_model.index_quantize(inputs)
+
+        latent_spatial_dim = tuple(latent.shape[1:])
+        latent = latent.reshape(latent.shape[0], -1)
+        latent = latent[:, ordering.get_sequence_ordering()]
+        seq_len = math.prod(latent_spatial_dim)
+
+        # Use the value from vqvae_model's num_embeddings as the starting token, the "Begin Of Sentence" (BOS) token.
+        # Note the transformer_model must have vqvae_model.num_embeddings + 1 defined as num_tokens.
+        latent = F.pad(latent, (1, 0), "constant", vqvae_model.num_embeddings)
+        latent = latent.long()
+
+        # get the first batch, up to max_seq_length, efficiently
+        logits = transformer_model(x=latent[:, : transformer_model.max_seq_len], context=condition)
+        probs = F.softmax(logits, dim=-1)
+        probs = torch.gather(probs, 2, latent[:, : transformer_model.max_seq_len].unsqueeze(2)).squeeze(2)
+
+        # if we have not covered the full sequence we continue with inefficient looping
+        if probs.shape[1] < latent.shape[1]:
+            if verbose and has_tqdm:
+                progress_bar = tqdm(range(transformer_model.max_seq_len, seq_len + 1))
+            else:
+                progress_bar = iter(range(transformer_model.max_seq_len, seq_len + 1))
+
+            for i in progress_bar:
+                idx_cond = latent[:, i + 1 - transformer_model.max_seq_len : i + 1]
+                # forward the model to get the logits for the index in the sequence
+                logits = transformer_model(x=idx_cond, context=condition)
+                # pluck the logits at the final step
+                logits = logits[:, -1, :]
+                # apply softmax to convert logits to (normalized) probabilities
+                p = F.softmax(logits, dim=-1)
+                # select correct values and append
+                p = torch.gather(p, 1, idx_cond[:, -1].unsqueeze(1))
+                probs = torch.cat((probs, p), dim=1)
+
+        # remove starting token probability
+        probs = probs[:, 1:]
+        probs = torch.log(probs)
+
+        # reshape
+        probs = probs[:, ordering.get_revert_sequence_ordering()]
+        probs_reshaped = probs.reshape((inputs.shape[0],) + latent_spatial_dim)
+        if resample_latent_likelihoods:
+            resizer = nn.Upsample(size=inputs.shape[2:], mode=resample_interpolation_mode)
+            probs_reshaped = resizer(probs_reshaped[:, None, ...])
+
+        return probs_reshaped

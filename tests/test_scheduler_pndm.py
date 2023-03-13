@@ -9,6 +9,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import unittest
 
 import torch
@@ -38,14 +40,6 @@ class TestDDPMScheduler(unittest.TestCase):
         self.assertEqual(noisy.shape, expected_shape)
 
     @parameterized.expand(TEST_CASES)
-    def test_error_if_timesteps_not_set(self, input_param, input_shape, expected_shape):
-        scheduler = PNDMScheduler(**input_param)
-        with self.assertRaises(ValueError):
-            model_output = torch.randn(input_shape)
-            sample = torch.randn(input_shape)
-            output_step = scheduler.step(model_output=model_output, timestep=500, sample=sample)
-
-    @parameterized.expand(TEST_CASES)
     def test_step_shape(self, input_param, input_shape, expected_shape):
         scheduler = PNDMScheduler(**input_param)
         scheduler.set_timesteps(600)
@@ -66,6 +60,11 @@ class TestDDPMScheduler(unittest.TestCase):
         scheduler.set_timesteps(num_inference_steps=100)
         self.assertEqual(scheduler.num_inference_steps, 109)
         self.assertEqual(len(scheduler.timesteps), 109)
+
+    def test_set_timesteps_with_num_inference_steps_bigger_than_num_train_timesteps(self):
+        scheduler = PNDMScheduler(num_train_timesteps=1000)
+        with self.assertRaises(ValueError):
+            scheduler.set_timesteps(num_inference_steps=2000)
 
 
 if __name__ == "__main__":
