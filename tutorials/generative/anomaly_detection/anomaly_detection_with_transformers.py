@@ -313,7 +313,7 @@ ce_loss = CrossEntropyLoss()
 
 # %% [markdown]
 # ### Transformer Training
-# We will train the Transformer for 100 epochs.
+# We will train the Transformer for 5 epochs.
 
 # %%
 n_epochs = 5
@@ -373,7 +373,7 @@ print(f"train completed, total time: {total_time}.")
 # %% [markdown]
 # ## Image-wise anomaly detection
 #
-# To verify the performance of the VQ-VAE + Transformerperforming unsupervised anomaly detection, we will use the images from the test set of the MedNIST dataset. We will consider images from the `HeadCT` class as in-distribution images.
+# To verify the performance of the VQ-VAE + Transformer performing unsupervised anomaly detection, we will use the images from the test set of the MedNIST dataset. We will consider images from the `HeadCT` class as in-distribution images.
 
 # %%
 vqvae_model.eval()
