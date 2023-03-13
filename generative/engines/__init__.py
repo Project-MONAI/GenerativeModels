@@ -12,3 +12,4 @@
 from __future__ import annotations
 
 from .trainer import AdversarialTrainer
+from .prepare_batch import DiffusionPrepareBatch, VPredictionPrepareBatch
