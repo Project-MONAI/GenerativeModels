@@ -341,10 +341,10 @@ ce_loss = CrossEntropyLoss()
 # %% [markdown]
 # First we will define a function to allow us to generate random samples from the transformer. This will allow us to keep track of training progress as well to see how samples look during the training cycle
 
+
 # %%
 @torch.no_grad()
 def generate(net, vqvae_model, starting_tokens, seq_len, **kwargs):
-
     progress_bar = iter(range(seq_len))
 
     latent_seq = starting_tokens.long()
@@ -394,7 +394,6 @@ for epoch in range(n_epochs):
     progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=110)
     progress_bar.set_description(f"Epoch {epoch}")
     for step, batch in progress_bar:
-
         images = batch["image"].to(device)
         # Encode images using vqvae and transformer to 1D sequence
         quantizations = vqvae_model.index_quantize(images)
@@ -428,7 +427,6 @@ for epoch in range(n_epochs):
         val_loss = 0
         with torch.no_grad():
             for val_step, batch in enumerate(val_loader, start=1):
-
                 images = batch["image"].to(device)
                 # Encode images using vqvae and transformer to 1D sequence
                 quantizations = vqvae_model.index_quantize(images)

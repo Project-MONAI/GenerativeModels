@@ -154,7 +154,6 @@ class PatchDiscriminator(nn.Sequential):
         dropout: float | tuple = 0.0,
         last_conv_kernel_size: int | None = None,
     ) -> None:
-
         super().__init__()
         self.num_layers_d = num_layers_d
         self.num_channels = num_channels

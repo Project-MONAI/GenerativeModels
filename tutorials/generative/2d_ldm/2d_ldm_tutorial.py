@@ -406,7 +406,6 @@ image = image.to(device)
 scheduler.set_timesteps(num_inference_steps=1000)
 
 with torch.no_grad():
-
     z_mu, z_sigma = autoencoderkl.encode(image)
     z = autoencoderkl.sampling(z_mu, z_sigma)
 

@@ -53,7 +53,6 @@ TEST_CASES = [
 class TestDiffusionSamplingInferer(unittest.TestCase):
     @parameterized.expand(TEST_CASES)
     def test_call(self, model_params, input_shape):
-
         model = DiffusionModelUNet(**model_params)
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         model.to(device)
