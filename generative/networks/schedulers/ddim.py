@@ -231,8 +231,7 @@ class DDIMScheduler(nn.Module):
         timestep: int,
         sample: torch.Tensor,
         eta: float = 0.0,
-        generator: Optional[torch.Generator] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Predict the sample at the previous timestep by reversing the SDE. Core function to propagate the diffusion
         process from the learned model outputs (most often the predicted noise).
@@ -258,18 +257,16 @@ class DDIMScheduler(nn.Module):
         # - eta -> η
         # - pred_sample_direction -> "direction pointing to x_t"
         # - pred_post_sample -> "x_t+1"
+        
+        assert eta == 0, "eta must be 0 for reversed_step"
 
         # 1. get previous step value (=t-1)
-        prev_timestep = timestep - self.num_train_timesteps // self.num_inference_steps  # t-1
-        post_timestep = timestep + self.num_train_timesteps // self.num_inference_steps  # t+1
+        prev_timestep = timestep + self.num_train_timesteps // self.num_inference_steps  # t+1
 
         # 2. compute alphas, betas
         alpha_prod_t = self.alphas_cumprod[timestep]
         alpha_prod_t_prev = (
             self.alphas_cumprod[prev_timestep] if prev_timestep >= 0 else self.final_alpha_cumprod
-        )  # alpha at timestep t-1
-        alpha_prod_t_post = (
-            self.alphas_cumprod[post_timestep] if prev_timestep >= 0 else self.final_alpha_cumprod
         )  # alpha at timestep t+1
 
         beta_prod_t = 1 - alpha_prod_t
@@ -289,21 +286,12 @@ class DDIMScheduler(nn.Module):
         if self.clip_sample:
             pred_original_sample = torch.clamp(pred_original_sample, -1, 1)
 
-        # 5. compute variance: "sigma_t(η)" -> see formula (16)   #I thought we set sigma to 0 here???
-        # σ_t = sqrt((1 − α_t−1)/(1 − α_t)) * sqrt(1 − α_t/α_t−1)
-        variance = self._get_variance(timestep, prev_timestep)
-        std_dev_t = eta * variance ** (0.5)
 
         # 6. compute "direction pointing to x_t" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
-        pred_sample_direction = (1 - alpha_prod_t_post - std_dev_t**2) ** (0.5) * model_output
+        pred_sample_direction = (1 - alpha_prod_t_prev) ** (0.5) * model_output
 
         # 7. compute x_t+1 without "random noise" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
-        pred_post_sample = alpha_prod_t_post ** (0.5) * pred_original_sample + pred_sample_direction
-
-        if eta > 0:
-            # randn_like does not support generator https://github.com/pytorch/pytorch/issues/27072
-            device = model_output.device if torch.is_tensor(model_output) else "cpu"
-            noise = torch.randn(model_output.shape, dtype=model_output.dtype, generator=generator).to(device)
+        pred_post_sample = alpha_prod_t_prev ** (0.5) * pred_original_sample + pred_sample_direction
 
         return pred_post_sample, pred_original_sample
 
