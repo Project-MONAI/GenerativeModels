@@ -122,13 +122,15 @@ train_transforms = transforms.Compose(
     ]
 )
 
+
 def get_batched_2d_axial_slices(data: Dict):
     images_3D = data["image"]
-    batched_2d_slices = torch.cat(images_3D.split(1, dim=-1)[10:-10], 0).squeeze(-1)  # we cut the lowest and highest 10 slices, because we are interested in the middle part of the brain.
+    batched_2d_slices = torch.cat(images_3D.split(1, dim=-1)[10:-10], 0).squeeze(
+        -1
+    )  # we cut the lowest and highest 10 slices, because we are interested in the middle part of the brain.
     slice_label = data["slice_label"]
     slice_label = torch.cat(slice_label.split(1, dim=-1)[10:-10], 0).squeeze()
     return batched_2d_slices, slice_label
-
 
 
 # %% jupyter={"outputs_hidden": false}
@@ -143,17 +145,16 @@ train_ds = DecathlonDataset(
     seed=0,
     transform=train_transforms,
 )
-print("len train data", len(train_ds))  #this gives the number of patients in the training set
-
+print("len train data", len(train_ds))  # this gives the number of patients in the training set
 
 
 train_loader_3D = DataLoader(train_ds, batch_size=1, shuffle=True, num_workers=4)
 data_2d_slices = []
 data_slice_label = []
 for i, data in enumerate(train_loader_3D):
-        b2d, slice_label2d = get_batched_2d_axial_slices(data)
-        data_2d_slices.append(b2d)
-        data_slice_label.append(slice_label2d)
+    b2d, slice_label2d = get_batched_2d_axial_slices(data)
+    data_2d_slices.append(b2d)
+    data_slice_label.append(slice_label2d)
 
 total_train_slices = torch.cat(data_2d_slices, 0)
 total_train_labels = torch.cat(data_slice_label, 0)
@@ -182,9 +183,9 @@ val_loader_3D = DataLoader(val_ds, batch_size=1, shuffle=True, num_workers=4)
 data_2d_slices_val = []
 data_slice_label_val = []
 for i, data in enumerate(val_loader_3D):
-        b2d, slice_label2d = get_batched_2d_axial_slices(data)
-        data_2d_slices_val.append(b2d)
-        data_slice_label_val.append(slice_label2d)
+    b2d, slice_label2d = get_batched_2d_axial_slices(data)
+    data_2d_slices_val.append(b2d)
+    data_slice_label_val.append(slice_label2d)
 
 total_val_slices = torch.cat(data_2d_slices_val, 0)
 total_val_labels = torch.cat(data_slice_label_val, 0)
@@ -233,58 +234,57 @@ val_epoch_loss_list = []
 scaler = GradScaler()
 total_start = time.time()
 for epoch in range(n_epochs):
-        model.train()
-        epoch_loss = 0
-        indexes = list(torch.randperm(total_train_slices.shape[0]))  # shuffle training data new
-        data_train = total_train_slices[indexes]  # shuffle the training data
-        labels_train = total_train_labels[indexes]
-        subset_2D = zip(data_train.split(batch_size), labels_train.split(batch_size))
-        subset_2D_val = zip(total_val_slices.split(1), total_val_labels.split(1))  #
+    model.train()
+    epoch_loss = 0
+    indexes = list(torch.randperm(total_train_slices.shape[0]))  # shuffle training data new
+    data_train = total_train_slices[indexes]  # shuffle the training data
+    labels_train = total_train_labels[indexes]
+    subset_2D = zip(data_train.split(batch_size), labels_train.split(batch_size))
+    subset_2D_val = zip(total_val_slices.split(1), total_val_labels.split(1))  #
 
-        progress_bar = tqdm(enumerate(subset_2D), total=len(indexes) / batch_size)
+    progress_bar = tqdm(enumerate(subset_2D), total=len(indexes) / batch_size)
+    progress_bar.set_description(f"Epoch {epoch}")
+    for step, (a, b) in progress_bar:
+        images = a.to(device)
+        classes = b.to(device)
+        optimizer.zero_grad(set_to_none=True)
+        timesteps = torch.randint(0, 1000, (len(images),)).to(device)  # pick a random time step t
+
+        with autocast(enabled=True):
+            # Generate random noise
+            noise = torch.randn_like(images).to(device)
+
+            # Get model prediction
+            noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
+
+            loss = F.mse_loss(noise_pred.float(), noise.float())
+
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+        epoch_loss += loss.item()
+        progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
+    epoch_loss_list.append(epoch_loss / (step + 1))
+
+    if (epoch) % val_interval == 0:
+        model.eval()
+        val_epoch_loss = 0
+        progress_bar_val = tqdm(enumerate(subset_2D_val))
         progress_bar.set_description(f"Epoch {epoch}")
-        for step, (a, b) in progress_bar:
+        for step, (a, b) in progress_bar_val:
             images = a.to(device)
             classes = b.to(device)
-            optimizer.zero_grad(set_to_none=True)
-            timesteps = torch.randint(0, 1000, (len(images),)).to(device)  # pick a random time step t
 
-            with autocast(enabled=True):
-                # Generate random noise
-                noise = torch.randn_like(images).to(device)
+            timesteps = torch.randint(0, 1000, (len(images),)).to(device)
+            with torch.no_grad():
+                with autocast(enabled=True):
+                    noise = torch.randn_like(images).to(device)
+                    noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
+                    val_loss = F.mse_loss(noise_pred.float(), noise.float())
 
-                # Get model prediction
-                noise_pred = inferer(
-                    inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
-
-                loss = F.mse_loss(noise_pred.float(), noise.float())
-
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-            epoch_loss += loss.item()
-            progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
-        epoch_loss_list.append(epoch_loss / (step + 1))
-
-        if (epoch) % val_interval == 0:
-            model.eval()
-            val_epoch_loss = 0
-            progress_bar_val = tqdm(enumerate(subset_2D_val))
-            progress_bar.set_description(f"Epoch {epoch}")
-            for step, (a, b) in progress_bar_val:
-                images = a.to(device)
-                classes = b.to(device)
-
-                timesteps = torch.randint(0, 1000, (len(images),)).to(device)
-                with torch.no_grad():
-                    with autocast(enabled=True):
-                        noise = torch.randn_like(images).to(device)
-                        noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
-                        val_loss = F.mse_loss(noise_pred.float(), noise.float())
-
-                val_epoch_loss += val_loss.item()
-                progress_bar.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
-            val_epoch_loss_list.append(val_epoch_loss / (step + 1))
+            val_epoch_loss += val_loss.item()
+            progress_bar.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
+        val_epoch_loss_list.append(val_epoch_loss / (step + 1))
 
 total_time = time.time() - total_start
 print(f"train diffusion completed, total time: {total_time}.")
@@ -293,12 +293,12 @@ plt.style.use("seaborn-bright")
 plt.title("Learning Curves Diffusion Model", fontsize=20)
 plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, color="C0", linewidth=2.0, label="Train")
 plt.plot(
-        np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
-        val_epoch_loss_list,
-        color="C1",
-        linewidth=2.0,
-        label="Validation",
-    )
+    np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
+    val_epoch_loss_list,
+    color="C1",
+    linewidth=2.0,
+    label="Validation",
+)
 plt.yticks(fontsize=12)
 plt.xticks(fontsize=12)
 plt.xlabel("Epochs", fontsize=16)
@@ -345,12 +345,11 @@ classifier = DiffusionModelEncoder(
     out_channels=2,
     num_channels=(32, 64, 64),
     attention_levels=(False, True, True),
-    num_res_blocks=(1,1,1),
+    num_res_blocks=(1, 1, 1),
     num_head_channels=64,
     with_conditioning=False,
 )
 classifier.to(device)
-
 
 
 # %% [markdown]
@@ -373,78 +372,78 @@ weight = torch.tensor((3, 1)).float().to(device)  # account for the class imbala
 scaler = GradScaler()
 total_start = time.time()
 for epoch in range(n_epochs):
-        classifier.train()
-        epoch_loss = 0
-        indexes = list(torch.randperm(total_train_slices.shape[0]))
-        data_train = total_train_slices[indexes]  # shuffle the training data
-        labels_train = total_train_labels[indexes]
-        subset_2D = zip(data_train.split(batch_size), labels_train.split(batch_size))
-        progress_bar = tqdm(enumerate(subset_2D), total=len(indexes) / batch_size)
-        progress_bar.set_description(f"Epoch {epoch}")
+    classifier.train()
+    epoch_loss = 0
+    indexes = list(torch.randperm(total_train_slices.shape[0]))
+    data_train = total_train_slices[indexes]  # shuffle the training data
+    labels_train = total_train_labels[indexes]
+    subset_2D = zip(data_train.split(batch_size), labels_train.split(batch_size))
+    progress_bar = tqdm(enumerate(subset_2D), total=len(indexes) / batch_size)
+    progress_bar.set_description(f"Epoch {epoch}")
 
-        for step, (a, b) in progress_bar:
+    for step, (a, b) in progress_bar:
+        images = a.to(device)
+        classes = b.to(device)
+
+        optimizer_cls.zero_grad(set_to_none=True)
+        timesteps = torch.randint(0, 1000, (len(images),)).to(device)
+
+        with autocast(enabled=False):
+            # Generate random noise
+            noise = torch.randn_like(images).to(device)
+
+            # Get model prediction
+            noisy_img = scheduler.add_noise(images, noise, timesteps)  # add t steps of noise to the input image
+            pred = classifier(noisy_img, timesteps)
+            loss = F.cross_entropy(pred, classes.long(), weight=weight, reduction="mean")
+
+        loss.backward()
+        optimizer_cls.step()
+
+        epoch_loss += loss.item()
+        progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
+    epoch_loss_list.append(epoch_loss / (step + 1))
+    print("final step train", step)
+
+    if (epoch + 1) % val_interval == 0:
+        classifier.eval()
+        val_epoch_loss = 0
+        subset_2D_val = zip(total_val_slices.split(batch_size), total_val_labels.split(batch_size))  #
+        progress_bar_val = tqdm(enumerate(subset_2D_val))
+        progress_bar_val.set_description(f"Epoch {epoch}")
+        for step, (a, b) in progress_bar_val:
             images = a.to(device)
             classes = b.to(device)
+            timesteps = torch.randint(0, 1, (len(images),)).to(
+                device
+            )  # check validation accuracy on the original images, i.e., do not add noise
 
-            optimizer_cls.zero_grad(set_to_none=True)
-            timesteps = torch.randint(0, 1000, (len(images),)).to(device)
+            with torch.no_grad():
+                with autocast(enabled=False):
+                    noise = torch.randn_like(images).to(device)
+                    pred = classifier(images, timesteps)
+                    val_loss = F.cross_entropy(pred, classes.long(), reduction="mean")
 
-            with autocast(enabled=False):
-                # Generate random noise
-                noise = torch.randn_like(images).to(device)
-
-                # Get model prediction
-                noisy_img = scheduler.add_noise(images, noise, timesteps)  # add t steps of noise to the input image
-                pred = classifier(noisy_img, timesteps)
-                loss = F.cross_entropy(pred, classes.long(), weight=weight, reduction="mean")
-
-            loss.backward()
-            optimizer_cls.step()
-
-            epoch_loss += loss.item()
-            progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
-        epoch_loss_list.append(epoch_loss / (step + 1))
-        print("final step train", step)
-
-        if (epoch + 1) % val_interval == 0:
-            classifier.eval()
-            val_epoch_loss = 0
-            subset_2D_val = zip(total_val_slices.split(batch_size), total_val_labels.split(batch_size))  #
-            progress_bar_val = tqdm(enumerate(subset_2D_val))
-            progress_bar_val.set_description(f"Epoch {epoch}")
-            for step, (a, b) in progress_bar_val:
-                images = a.to(device)
-                classes = b.to(device)
-                timesteps = torch.randint(0, 1, (len(images),)).to(
-                    device
-                )  # check validation accuracy on the original images, i.e., do not add noise
-
-                with torch.no_grad():
-                    with autocast(enabled=False):
-                        noise = torch.randn_like(images).to(device)
-                        pred = classifier(images, timesteps)
-                        val_loss = F.cross_entropy(pred, classes.long(), reduction="mean")
-
-                val_epoch_loss += val_loss.item()
-                _, predicted = torch.max(pred, 1)
-                progress_bar_val.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
-            val_epoch_loss_list.append(val_epoch_loss / (step + 1))
+            val_epoch_loss += val_loss.item()
+            _, predicted = torch.max(pred, 1)
+            progress_bar_val.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
+        val_epoch_loss_list.append(val_epoch_loss / (step + 1))
 
 total_time = time.time() - total_start
 print(f"train completed, total time: {total_time}.")
 
-    ## Learning curves for the Classifier
+## Learning curves for the Classifier
 
 plt.style.use("seaborn-bright")
 plt.title("Learning Curves", fontsize=20)
 plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, color="C0", linewidth=2.0, label="Train")
 plt.plot(
-        np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
-        val_epoch_loss_list,
-        color="C1",
-        linewidth=2.0,
-        label="Validation",
-    )
+    np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
+    val_epoch_loss_list,
+    color="C1",
+    linewidth=2.0,
+    label="Validation",
+)
 plt.yticks(fontsize=12)
 plt.xticks(fontsize=12)
 plt.xlabel("Epochs", fontsize=16)

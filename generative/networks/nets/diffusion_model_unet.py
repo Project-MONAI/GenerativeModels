@@ -1930,7 +1930,6 @@ class DiffusionModelEncoder(nn.Module):
         cross_attention_dim: int | None = None,
         num_class_embeds: int | None = None,
         upcast_attention: bool = False,
-
     ) -> None:
         super().__init__()
         if with_conditioning is True and cross_attention_dim is None:
@@ -1993,8 +1992,6 @@ class DiffusionModelEncoder(nn.Module):
             input_channel = output_channel
             output_channel = num_channels[i]
             is_final_block = i == len(num_channels)  # - 1
-
-
 
             down_block = get_down_block(
                 spatial_dims=spatial_dims,

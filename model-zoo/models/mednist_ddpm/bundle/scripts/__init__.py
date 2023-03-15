@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 
-
 def inv_metric_cmp_fn(current_metric: float, prev_best: float) -> bool:
     """
     This inverts comparison for those metrics which reduce like loss values, such that the lower one is better.
