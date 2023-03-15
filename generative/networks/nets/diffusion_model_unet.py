@@ -1868,16 +1868,19 @@ class DiffusionModelEncoder(nn.Module):
         spatial_dims: int,
         in_channels: int,
         out_channels: int,
-        num_res_blocks: int,
+        num_res_blocks: Sequence[int] | int = (2, 2, 2, 2),
         num_channels: Sequence[int] = (32, 64, 64, 64),
         attention_levels: Sequence[bool] = (False, False, True, True),
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
-        num_head_channels: Union[int, Sequence[int]] = 8,
+        resblock_updown: bool = False,
+        num_head_channels: int | Sequence[int] = 8,
         with_conditioning: bool = False,
         transformer_num_layers: int = 1,
-        cross_attention_dim: Optional[int] = None,
-        num_class_embeds: Optional[int] = None,
+        cross_attention_dim: int | None = None,
+        num_class_embeds: int | None = None,
+        upcast_attention: bool = False,
+
     ) -> None:
         super().__init__()
         if with_conditioning is True and cross_attention_dim is None:
@@ -1941,20 +1944,24 @@ class DiffusionModelEncoder(nn.Module):
             output_channel = num_channels[i]
             is_final_block = i == len(num_channels)  # - 1
 
+
+
             down_block = get_down_block(
                 spatial_dims=spatial_dims,
                 in_channels=input_channel,
                 out_channels=output_channel,
                 temb_channels=time_embed_dim,
-                num_res_blocks=num_res_blocks,
+                num_res_blocks=num_res_blocks[i],
                 norm_num_groups=norm_num_groups,
                 norm_eps=norm_eps,
                 add_downsample=not is_final_block,
+                resblock_updown=resblock_updown,
                 with_attn=(attention_levels[i] and not with_conditioning),
                 with_cross_attn=(attention_levels[i] and with_conditioning),
                 num_head_channels=num_head_channels[i],
                 transformer_num_layers=transformer_num_layers,
                 cross_attention_dim=cross_attention_dim,
+                upcast_attention=upcast_attention,
             )
 
             self.down_blocks.append(down_block)
