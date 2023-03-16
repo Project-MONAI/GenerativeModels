@@ -16,10 +16,6 @@
 #
 #
 
-# +
-# TODO: Add buttom with "Open with Colab"
-# -
-
 # ## Set up environment using Colab
 
 # !pip install -q "monai-weekly[tqdm]==1.1.dev2239"

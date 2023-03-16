@@ -16,10 +16,6 @@
 
 # # 2D Latent Diffusion Model
 
-# +
-# TODO: Add buttom with "Open with Colab"
-# -
-
 # ## Set up environment using Colab
 #
 
@@ -76,7 +72,6 @@ train_transforms = transforms.Compose(
         transforms.LoadImaged(keys=["image"]),
         transforms.EnsureChannelFirstd(keys=["image"]),
         transforms.ScaleIntensityRanged(keys=["image"], a_min=0.0, a_max=255.0, b_min=0.0, b_max=1.0, clip=True),
-        # TODO: Change transformations
         transforms.RandAffined(
             keys=["image"],
             rotate_range=[(-np.pi / 36, np.pi / 36), (-np.pi / 36, np.pi / 36)],

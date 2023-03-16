@@ -23,9 +23,6 @@
 #
 # [Brain tumor 3D segmentation with MONAI](https://github.com/Project-MONAI/tutorials/blob/main/3d_segmentation/brats_segmentation_3d.ipynb)
 
-# +
-# TODO: Add Open in Colab
-# -
 
 # !python -c "import monai" || pip install -q "monai-weekly[pillow, tqdm, einops, nibabel]"
 # !python -c "import matplotlib" || pip install -q matplotlib
