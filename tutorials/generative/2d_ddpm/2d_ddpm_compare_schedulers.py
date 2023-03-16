@@ -25,7 +25,6 @@
 # [3] - PNDM - Liu et al. "Pseudo Numerical Methods for Diffusion Models on Manifolds" https://arxiv.org/abs/2202.09778
 #
 #
-# TODO: Add Open in Colab
 #
 # ## Setup environment
 
@@ -64,8 +63,6 @@ from monai.utils import first, set_determinism
 from tqdm import tqdm
 
 from generative.inferers import DiffusionInferer
-
-# TODO: Add right import reference after deployed
 from generative.networks.nets import DiffusionModelUNet
 from generative.networks.schedulers import DDIMScheduler, DDPMScheduler, PNDMScheduler
 

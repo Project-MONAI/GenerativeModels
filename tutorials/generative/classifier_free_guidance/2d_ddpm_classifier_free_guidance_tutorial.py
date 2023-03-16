@@ -23,7 +23,6 @@
 # [2] - Ho and Salimans "Classifier-Free Diffusion Guidance" https://arxiv.org/abs/2207.12598
 #
 #
-# TODO: Add Open in Colab
 #
 # ## Setup environment
 
@@ -64,8 +63,6 @@ from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
 from generative.inferers import DiffusionInferer
-
-# TODO: Add right import reference after deployed
 from generative.networks.nets import DiffusionModelUNet
 from generative.networks.schedulers import DDPMScheduler
 
