@@ -9,9 +9,7 @@
 #
 # [1] - [Oord et al. "Neural Discrete Representation Learning"](https://arxiv.org/abs/1711.00937)
 #
-# TODO: Add Open in Colab
 #
-# ### Setup environment
 
 # %% [markdown]
 # ### Setup imports

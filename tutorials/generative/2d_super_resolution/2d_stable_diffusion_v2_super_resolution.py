@@ -28,9 +28,6 @@
 #
 # [3] - Ho et al. "High Definition Video Generation with Diffusion Models" https://arxiv.org/abs/2210.02303
 
-# %%
-# TODO: Add buttom with "Open with Colab"
-
 # %% [markdown]
 # ## Set up environment using Colab
 #
@@ -62,8 +59,7 @@ from torch import nn
 from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
-from generative.losses.adversarial_loss import PatchAdversarialLoss
-from generative.losses.perceptual import PerceptualLoss
+from generative.losses import PatchAdversarialLoss, PerceptualLoss
 from generative.networks.nets import AutoencoderKL, DiffusionModelUNet, PatchDiscriminator
 from generative.networks.schedulers import DDPMScheduler
 
@@ -140,7 +136,7 @@ for i in range(3):
 
 # %%
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, seed=0)
-val_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "HeadCT"]
+val_datalist = [{"image": item["image"]} for item in val_data.data if item["class_name"] == "HeadCT"]
 val_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),

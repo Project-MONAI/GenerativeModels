@@ -1,0 +1,72 @@
+{
+    "schema": "https://github.com/Project-MONAI/MONAI-extra-test-data/releases/download/0.8.1/meta_schema_20220324.json",
+    "version": "1.0.0",
+    "changelog": {
+        "1.0.8": "Initial release"
+    },
+    "monai_version": "1.1.0",
+    "pytorch_version": "1.13.0",
+    "numpy_version": "1.22.4",
+    "optional_packages_version": {
+        "nibabel": "4.0.1",
+        "generative": "0.1.0"
+    },
+    "task": "Brain image synthesis",
+    "description": "A generative model for creating high-resolution 3D brain MRI based on UK Biobank",
+    "authors": "Walter H. L. Pinaya, Petru-Daniel Tudosiu, Jessica Dafflon, Pedro F Da Costa, Virginia Fernandez, Parashkev Nachev, Sebastien Ourselin, and M. Jorge Cardoso",
+    "copyright": "Copyright (c) MONAI Consortium",
+    "data_source": "https://www.ukbiobank.ac.uk/",
+    "data_type": "nibabel",
+    "image_classes": "T1w head MRI with 1x1x1 mm voxel size",
+    "eval_metrics": {
+        "fid": 0.0076,
+        "msssim": 0.6555,
+        "4gmsssim": 0.3883
+    },
+    "intended_use": "This is a research tool/prototype and not to be used clinically",
+    "references": [
+        "Pinaya, Walter HL, et al. \"Brain imaging generation with latent diffusion models.\" MICCAI Workshop on Deep Generative Models. Springer, Cham, 2022."
+    ],
+    "network_data_format": {
+        "inputs": {
+            "image": {
+                "type": "tabular",
+                "num_channels": 1,
+                "dtype": "float32",
+                "value_range": [
+                    0,
+                    1
+                ],
+                "is_patch_data": false,
+                "channel_def": {
+                    "0": "Gender",
+                    "1": "Age",
+                    "2": "Ventricular volume",
+                    "3": "Brain volume"
+                }
+            }
+        },
+        "outputs": {
+            "pred": {
+                "type": "image",
+                "format": "magnitude",
+                "modality": "MR",
+                "num_channels": 1,
+                "spatial_shape": [
+                    160,
+                    224,
+                    160
+                ],
+                "dtype": "float32",
+                "value_range": [
+                    0,
+                    1
+                ],
+                "is_patch_data": false,
+                "channel_def": {
+                    "0": "T1w"
+                }
+            }
+        }
+    }
+}

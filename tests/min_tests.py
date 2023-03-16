@@ -29,10 +29,11 @@ def run_testsuit():
     :return: a test suite
     """
     exclude_cases = [  # these cases use external dependencies
-        "test_perceptual_loss",
+        "test_autoencoderkl",
+        "test_diffusion_inferer",
         "test_integration_workflows_adversarial",
         "test_latent_diffusion_inferer",
-        "test_diffusion_inferer",
+        "test_perceptual_loss",
         "test_transformer",
     ]
     assert sorted(exclude_cases) == sorted(set(exclude_cases)), f"Duplicated items in {exclude_cases}"
@@ -53,7 +54,6 @@ def run_testsuit():
 
 
 if __name__ == "__main__":
-
     # testing import submodules
     from monai.utils.module import load_submodules
 

@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.14.1
+#       jupytext_version: 1.14.4
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -22,7 +22,6 @@
 #
 # [2] - Lugmayr et al. "RePaint: Inpainting using Denoising Diffusion Probabilistic Models" https://arxiv.org/abs/2201.09865
 #
-# TODO: Add Open in Colab
 #
 # ## Setup environment
 
@@ -63,8 +62,6 @@ from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
 from generative.inferers import DiffusionInferer
-
-# TODO: Add right import reference after deployed
 from generative.networks.nets import DiffusionModelUNet
 from generative.networks.schedulers import DDPMScheduler
 

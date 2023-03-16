@@ -18,7 +18,6 @@
 #
 # This tutorial illustrates how to use MONAI for training a Vector Quantized Generative Adversarial Network (VQGAN) on 2D images.
 #
-# TODO: Add Open in Colab
 #
 # ## Setup environment
 
@@ -58,9 +57,7 @@ from monai.utils import first, set_determinism
 from torch.nn import L1Loss
 from tqdm import tqdm
 
-# TODO: Add right import reference after deployed
-from generative.losses.adversarial_loss import PatchAdversarialLoss
-from generative.losses.perceptual import PerceptualLoss
+from generative.losses import PatchAdversarialLoss, PerceptualLoss
 from generative.networks.nets import VQVAE, PatchDiscriminator
 
 print_config()
@@ -125,7 +122,7 @@ train_loader = DataLoader(train_ds, batch_size=256, shuffle=True, num_workers=4,
 
 # %%
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, progress=False, seed=0)
-val_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "HeadCT"]
+val_datalist = [{"image": item["image"]} for item in val_data.data if item["class_name"] == "HeadCT"]
 val_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),

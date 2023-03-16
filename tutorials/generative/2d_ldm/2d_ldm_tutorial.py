@@ -16,10 +16,6 @@
 
 # # 2D Latent Diffusion Model
 
-# +
-# TODO: Add buttom with "Open with Colab"
-# -
-
 # ## Set up environment using Colab
 #
 
@@ -76,7 +72,6 @@ train_transforms = transforms.Compose(
         transforms.LoadImaged(keys=["image"]),
         transforms.EnsureChannelFirstd(keys=["image"]),
         transforms.ScaleIntensityRanged(keys=["image"], a_min=0.0, a_max=255.0, b_min=0.0, b_max=1.0, clip=True),
-        # TODO: Change transformations
         transforms.RandAffined(
             keys=["image"],
             rotate_range=[(-np.pi / 36, np.pi / 36), (-np.pi / 36, np.pi / 36)],
@@ -104,7 +99,7 @@ for image_n in range(3):
 # ## Download the validation set
 
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, seed=0)
-val_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "Hand"]
+val_datalist = [{"image": item["image"]} for item in val_data.data if item["class_name"] == "Hand"]
 val_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),
@@ -406,7 +401,6 @@ image = image.to(device)
 scheduler.set_timesteps(num_inference_steps=1000)
 
 with torch.no_grad():
-
     z_mu, z_sigma = autoencoderkl.encode(image)
     z = autoencoderkl.sampling(z_mu, z_sigma)
 
