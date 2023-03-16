@@ -149,7 +149,7 @@ model = DiffusionModelUNet(
     out_channels=1,
     num_channels=[256, 256, 512],
     attention_levels=[False, False, True],
-    num_head_channels=[256, 256, 512],
+    num_head_channels=[0, 0, 512],
     num_res_blocks=2,
 )
 model.to(device)
