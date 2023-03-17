@@ -35,7 +35,7 @@ class ComponentStore:
         self.name: str = name
         self.description: str = description
 
-        self.__doc__ = f"Component Store '{name}': {description}\n\n{self.__doc__ or ''}".strip()
+        self.__doc__ = f"Component Store '{name}': {description}\n{self.__doc__ or ''}".strip()
 
     def add(self, name: str, desc: str, value: T) -> T:
         """Store the object `value` under the name `name` with description `desc`."""
@@ -66,6 +66,13 @@ class ComponentStore:
         """Yields name/component pairs."""
         for k, v in self.components.items():
             yield k, v.value
+
+    def __str__(self):
+        result = f"Component Store '{self.name}': {self.description}\nAvailable components:"
+        for k, v in self.components.items():
+            result += f"\n  {k}: {v.description}"
+
+        return result
 
     def __getattr__(self, name: str) -> Any:
         """Returns the stored object under the given name."""

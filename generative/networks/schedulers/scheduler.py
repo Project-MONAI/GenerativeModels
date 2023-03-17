@@ -39,27 +39,29 @@ import torch.nn as nn
 from generative.utils import ComponentStore, unsqueeze_right
 
 
-BetaSchedules = ComponentStore("BetaSchedules", "Functions to generate beta schedules given start/end values and steps")
+NoiseSchedules = ComponentStore("NoiseSchedules", "Functions to generate noise schedules")
 
 
-@BetaSchedules.add_def("linear", "Linear beta schedule")
-def _linear(beta_start, beta_end, num_train_timesteps):
+@NoiseSchedules.add_def("linear_beta", "Linear beta schedule, args: num_train_timesteps, beta_start, beta_end")
+def _linear_beta(num_train_timesteps, beta_start=1e-4, beta_end=2e-2):
     return torch.linspace(beta_start, beta_end, num_train_timesteps, dtype=torch.float32)
 
 
-@BetaSchedules.add_def("scaled_linear", "Scaled linear beta schedule")
-def _scaled_linear(beta_start, beta_end, num_train_timesteps):
+@NoiseSchedules.add_def(
+    "scaled_linear_beta", "Scaled linear beta schedule, args: num_train_timesteps, beta_start, beta_end"
+)
+def _scaled_linear_beta(num_train_timesteps, beta_start=1e-4, beta_end=2e-2):
     return torch.linspace(beta_start**0.5, beta_end**0.5, num_train_timesteps, dtype=torch.float32) ** 2
 
 
-@BetaSchedules.add_def("sigmoid", "Sigmoid beta schedule")
-def _sigmoid(beta_start, beta_end, num_train_timesteps, sig_range=6):
+@NoiseSchedules.add_def("sigmoid_beta", "Sigmoid beta schedule, args: num_train_timesteps, beta_start, beta_end")
+def _sigmoid_beta(num_train_timesteps, beta_start=1e-4, beta_end=2e-2, sig_range=6):
     betas = torch.linspace(-sig_range, sig_range, num_train_timesteps)
     return torch.sigmoid(betas) * (beta_end - beta_start) + beta_start
 
 
-@BetaSchedules.add_def("cosine", "Cosine beta schedule")
-def _cosine(beta_start, beta_end, num_train_timesteps, s=0.008):
+@NoiseSchedules.add_def("cosine_beta", "Cosine beta schedule, args: num_train_timesteps")
+def _cosine_beta(num_train_timesteps, s=0.008):
     x = torch.linspace(0, num_train_timesteps, num_train_timesteps - 1)
     alphas_cumprod = torch.cos(((x / num_train_timesteps) + s) / (1 + s) * torch.pi * 0.5) ** 2
     alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
@@ -73,31 +75,30 @@ class Scheduler(nn.Module):
 
     Args:
         num_train_timesteps: number of diffusion steps used to train the model.
-        beta_start: the starting `beta` value of inference.
-        beta_end: the final `beta` value.
-        beta_schedule: member of BetaSchedules
-            the beta schedule, a mapping from a beta range to a sequence of betas for stepping the model.
+        schedule: member of NoiseSchedules,
+            a named function returning the beta tensor or (betas, alphas, alphas_cumprod) triple
+        schedule_args: arguments to pass to the schedule function
     """
 
-    def __init__(
-        self,
-        num_train_timesteps: int = 1000,
-        beta_start: float = 1e-4,
-        beta_end: float = 2e-2,
-        beta_schedule: str = "linear",
-        prediction_type: str = "epsilon",
-    ) -> None:
+    def __init__(self, num_train_timesteps: int = 1000, schedule: str = "linear", **schedule_args) -> None:
         super().__init__()
-        self.betas = BetaSchedules[beta_schedule](beta_start, beta_end, num_train_timesteps)
+        schedule_args["num_train_timesteps"] = num_train_timesteps
+        noise = NoiseSchedules[schedule](**schedule_args)
+
+        # set betas, alphas, alphas_cumprod based off return value from noise function
+        if isinstance(noise, tuple):
+            self.betas, self.alphas, self.alphas_cumprod = noise
+        else:
+            self.betas = noise
+            self.alphas = 1.0 - self.betas
+            self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
 
         self.num_train_timesteps = num_train_timesteps
-        self.alphas = 1.0 - self.betas
-        self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
         self.one = torch.tensor(1.0)
 
         # settable values
         self.num_inference_steps = None
-        self.timesteps = torch.from_numpy(np.arange(0, num_train_timesteps)[::-1].copy())
+        self.timesteps = torch.arange(num_train_timesteps - 1, -1, -1)
 
     def add_noise(self, original_samples: torch.Tensor, noise: torch.Tensor, timesteps: torch.Tensor) -> torch.Tensor:
         """

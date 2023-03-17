@@ -37,7 +37,7 @@ import torch.nn as nn
 
 from monai.utils import StrEnum
 
-from .scheduler import Scheduler, BetaSchedules
+from .scheduler import Scheduler, NoiseSchedules
 from generative.utils import unsqueeze_right
 
 
@@ -48,8 +48,8 @@ class DDPMVarianceType(StrEnum):
     LEARNED_RANGE = "learned_range"
 
 
-class DDPMPRedictionType(StrEnum):
-    EPSILON = "epsiolon"
+class DDPMPredictionType(StrEnum):
+    EPSILON = "epsilon"
     SAMPLE = "sample"
     V_PREDICTION = "v_prediction"
 
@@ -78,19 +78,18 @@ class DDPMScheduler(Scheduler):
     def __init__(
         self,
         num_train_timesteps: int = 1000,
-        beta_start: float = 1e-4,
-        beta_end: float = 2e-2,
-        beta_schedule: str = "linear",
+        schedule: str = "linear_beta",
         variance_type: str = DDPMVarianceType.FIXED_SMALL,
         clip_sample: bool = True,
-        prediction_type: str = DDPMPRedictionType.EPSILON,
+        prediction_type: str = DDPMPredictionType.EPSILON,
+        **schedule_args
     ) -> None:
-        super().__init__(num_train_timesteps, beta_start, beta_end, beta_schedule, prediction_type)
+        super().__init__(num_train_timesteps, schedule,**schedule_args)
 
         if variance_type not in DDPMVarianceType.__members__.values():
             raise ValueError("Argument `variance_type` must be a member of `DDPMVarianceType`")
 
-        if prediction_type not in DDPMPRedictionType.__members__.values():
+        if prediction_type not in DDPMPredictionType.__members__.values():
             raise ValueError("Argument `prediction_type` must be a member of `DDPMPRedictionType`")
 
         self.clip_sample = clip_sample
@@ -206,11 +205,11 @@ class DDPMScheduler(Scheduler):
 
         # 2. compute predicted original sample from predicted noise also called
         # "predicted x_0" of formula (15) from https://arxiv.org/pdf/2006.11239.pdf
-        if self.prediction_type == DDPMPRedictionType.EPSILON:
+        if self.prediction_type == DDPMPredictionType.EPSILON:
             pred_original_sample = (sample - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
-        elif self.prediction_type == DDPMPRedictionType.SAMPLE:
+        elif self.prediction_type == DDPMPredictionType.SAMPLE:
             pred_original_sample = model_output
-        elif self.prediction_type == DDPMPRedictionType.V_PREDICTION:
+        elif self.prediction_type == DDPMPredictionType.V_PREDICTION:
             pred_original_sample = (alpha_prod_t**0.5) * sample - (beta_prod_t**0.5) * model_output
 
         # 3. Clip "predicted x_0"
