@@ -1944,7 +1944,7 @@ class DiffusionModelEncoder(nn.Module):
 
         # All number of channels should be multiple of num_groups
         if any((out_channel % norm_num_groups) != 0 for out_channel in num_channels):
-            raise ValueError("DiffusionModelUNet expects all num_channels being multiple of norm_num_groups")
+            raise ValueError("DiffusionModelEncoder expects all num_channels being multiple of norm_num_groups")
         if len(num_channels) != len(attention_levels):
             raise ValueError("DiffusionModelEncoder expects num_channels being same size of attention_levels")
 
