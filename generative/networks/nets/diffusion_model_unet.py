@@ -2033,6 +2033,11 @@ class DiffusionModelEncoder(nn.Module):
         """
         # 1. time
         t_emb = get_timestep_embedding(timesteps, self.block_out_channels[0])
+
+        # timesteps does not contain any weights and will always return f32 tensors
+        # but time_embedding might actually be running in fp16. so we need to cast here.
+        # there might be better ways to encapsulate this.
+        t_emb = t_emb.to(dtype=x.dtype)
         emb = self.time_embed(t_emb)
 
         # 2. class
