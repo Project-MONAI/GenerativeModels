@@ -1939,7 +1939,7 @@ class DiffusionModelEncoder(nn.Module):
             )
         if cross_attention_dim is not None and with_conditioning is False:
             raise ValueError(
-                "DiffusionModelUNet expects with_conditioning=True when specifying the cross_attention_dim."
+                "DiffusionModelEncoder expects with_conditioning=True when specifying the cross_attention_dim."
             )
 
         # All number of channels should be multiple of num_groups
