@@ -12,13 +12,10 @@ and go to the folder containing this tutorial:
 python3 -m pip install --user --upgrade pip
 python3 -m pip install --user virtualenv
 ```
-(If needed) make all shell scripts executable using
-```
-find . -name ".sh" -exec chmod +x {} \;
-```
 initialize virtual environment.
 ```
-source ./virtualenv/set_env.sh
+python3 -m venv venv
+source venv/bin/activate
 ```
 install required packages for training
 ```
@@ -26,50 +23,13 @@ pip install --upgrade pip
 pip install -r virtualenv/requirements.txt
 ```
 
-### 1. Download the Spleen Bundle
-
-Download the MONAI bundle as `./${JOB_NAME}/app/config/spleen_ct_segmentation`.
-
-```
-JOB_NAME=job
-python3 -m monai.bundle download --name "spleen_ct_segmentation" --version "0.3.7" --bundle_dir ./${JOB_NAME}/app/config
-```
-
-In this example, `JOB_NAME` can be either `job`, `job_multi_gpu` or `job_stats`, depending on the configuration you would like to run (see below).
-The final folder structure under `JOB_NAME` will be:
-
-```
-.
-├── app
-│   └── config
-│       ├── config_fed_client.json
-│       ├── config_fed_server.json
-│       └── spleen_ct_segmentation
-│           ├── LICENSE
-│           ├── configs
-│           │   ├── evaluate.json
-│           │   ├── inference.json
-│           │   ├── logging.conf
-│           │   ├── metadata.json
-│           │   ├── multi_gpu_evaluate.json
-│           │   ├── multi_gpu_train.json
-│           │   └── train.json
-│           ├── docs
-│           │   ├── README.md
-│           │   └── data_license.txt
-│           └── models
-│               ├── model.pt
-│               └── model.ts
-└── meta.json
-```
-
-### 2. Download the data
+### 1. Download the data
 Download the spleen CT data from the [MSD challenge](http://medicaldecathlon.com/) and update data path.
 
 > **Note:** The dataset will be saved under `./data`.
 ```
 JOB_NAME=job
-python3 download_spleen_dataset.py
+python3 download_dataset.py
 sed -i "s|/workspace/data/Task09_Spleen|${PWD}/data/Task09_Spleen|g" ${JOB_NAME}/app/config/spleen_ct_segmentation/configs/train.json
 ```
 
