@@ -2019,8 +2019,8 @@ class DiffusionModelEncoder(nn.Module):
         self,
         x: torch.Tensor,
         timesteps: torch.Tensor,
-        context: Optional[torch.Tensor] = None,
-        class_labels: Optional[torch.Tensor] = None,
+        context: torch.Tensor | None = None,
+        class_labels: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
