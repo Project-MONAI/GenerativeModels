@@ -601,6 +601,9 @@ class VQVAETransformerInferer(Inferer):
                 p = torch.gather(p, 1, latent[:, i + 1].unsqueeze(1))
                 probs = torch.cat((probs, p), dim=1)
 
+        # convert to log-likelihood
+        probs = torch.log(probs)
+
         # reshape
         probs = probs[:, ordering.get_revert_sequence_ordering()]
         probs_reshaped = probs.reshape((inputs.shape[0],) + latent_spatial_dim)
