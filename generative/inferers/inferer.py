@@ -580,7 +580,9 @@ class VQVAETransformerInferer(Inferer):
         # get the first batch, up to max_seq_length, efficiently
         logits = transformer_model(x=latent[:, : transformer_model.max_seq_len], context=condition)
         probs = F.softmax(logits, dim=-1)
-        probs = torch.gather(probs, 2, latent[:, 1 : transformer_model.max_seq_len + 1].unsqueeze(2)).squeeze(2)
+        # target token for each set of logits is the next token along
+        target = latent[:, 1:]
+        probs = torch.gather(probs, 2, target[:, : transformer_model.max_seq_len].unsqueeze(2)).squeeze(2)
 
         # if we have not covered the full sequence we continue with inefficient looping
         if logits.shape[1] < latent.shape[1]:
@@ -598,7 +600,8 @@ class VQVAETransformerInferer(Inferer):
                 # apply softmax to convert logits to (normalized) probabilities
                 p = F.softmax(logits, dim=-1)
                 # select correct values and append
-                p = torch.gather(p, 1, latent[:, i + 1].unsqueeze(1))
+                p = torch.gather(p, 1, target[:, i].unsqueeze(1))
+
                 probs = torch.cat((probs, p), dim=1)
 
         # convert to log-likelihood
