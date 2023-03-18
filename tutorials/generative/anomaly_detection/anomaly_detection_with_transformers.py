@@ -165,7 +165,7 @@ l1_loss = L1Loss()
 
 # %% [markdown]
 # ### VQ-VAE Model training
-# We will train our VQ-VAE for 50 epochs.
+# We will train our VQ-VAE for 30 epochs.
 
 # %%
 n_epochs = 30
