@@ -33,13 +33,13 @@ class SABlock(nn.Module):
     """
 
     def __init__(
-            self,
-            hidden_size: int,
-            num_heads: int,
-            dropout_rate: float = 0.0,
-            qkv_bias: bool = False,
-            causal: bool = False,
-            sequence_length: int | None = None,
+        self,
+        hidden_size: int,
+        num_heads: int,
+        dropout_rate: float = 0.0,
+        qkv_bias: bool = False,
+        causal: bool = False,
+        sequence_length: int | None = None,
     ) -> None:
         super().__init__()
         self.hidden_size = hidden_size
