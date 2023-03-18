@@ -57,8 +57,7 @@ class TransformerBlock(nn.Module):
         self.norm2 = nn.LayerNorm(hidden_size)
         self.mlp = MLPBlock(hidden_size, mlp_dim, dropout_rate)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # TODO: add cross-attention
-        x = x + self.attn(self.norm1(x))
+    def forward(self, x: torch.Tensor, context: torch.Tensor | None = None) -> torch.Tensor:
+        x = x + self.attn(self.norm1(x), context=context)
         x = x + self.mlp(self.norm2(x))
         return x

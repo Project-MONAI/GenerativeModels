@@ -33,15 +33,21 @@ class SABlock(nn.Module):
     """
 
     def __init__(
-        self,
-        hidden_size: int,
-        num_heads: int,
-        dropout_rate: float = 0.0,
-        qkv_bias: bool = False,
-        causal: bool = False,
-        sequence_length: int | None = None,
+            self,
+            hidden_size: int,
+            num_heads: int,
+            dropout_rate: float = 0.0,
+            qkv_bias: bool = False,
+            causal: bool = False,
+            sequence_length: int | None = None,
     ) -> None:
         super().__init__()
+        self.hidden_size = hidden_size
+        self.num_heads = num_heads
+        self.head_dim = hidden_size // num_heads
+        self.scale = 1.0 / math.sqrt(self.head_dim)
+        self.causal = causal
+        self.sequence_length = sequence_length
 
         if not (0 <= dropout_rate <= 1):
             raise ValueError("dropout_rate should be between 0 and 1.")
@@ -52,20 +58,18 @@ class SABlock(nn.Module):
         if causal and sequence_length is None:
             raise ValueError("sequence_length is necessary for causal attention.")
 
-        # output projection
-        self.out_proj = nn.Linear(hidden_size, hidden_size)
-        # key, query, value projections for all heads, but in a batch
-        self.qkv = nn.Linear(hidden_size, hidden_size * 3, bias=qkv_bias)
+        # TODO: add cross-attention input value different from hidden_size for k and v
+        # key, query, value projections
+        self.to_q = nn.Linear(hidden_size, hidden_size, bias=qkv_bias)
+        self.to_k = nn.Linear(hidden_size, hidden_size, bias=qkv_bias)
+        self.to_v = nn.Linear(hidden_size, hidden_size, bias=qkv_bias)
+
         # regularization
         self.drop_weights = nn.Dropout(dropout_rate)
         self.drop_output = nn.Dropout(dropout_rate)
 
-        self.hidden_size = hidden_size
-        self.num_heads = num_heads
-        self.head_dim = hidden_size // num_heads
-        self.scale = 1.0 / math.sqrt(self.head_dim)
-        self.causal = causal
-        self.sequence_length = sequence_length
+        # output projection
+        self.out_proj = nn.Linear(hidden_size, hidden_size)
 
         if causal and sequence_length is not None:
             # causal mask to ensure that attention is only applied to the left in the input sequence
@@ -75,15 +79,18 @@ class SABlock(nn.Module):
         else:
             self.mask = None
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # TODO: add cross-attention
+    def forward(self, x: torch.Tensor, context: torch.Tensor | None = None) -> torch.Tensor:
         b, t, c = x.size()  # batch size, sequence length, embedding dimensionality (hidden_size)
 
         if self.sequence_length is not None and t != self.sequence_length:
             raise ValueError("sequence length should be equal to the one specified in the SABlock constructor.")
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        query, key, value = self.qkv(x).split(self.hidden_size, dim=2)
+        query = self.to_q(x)
+        context = context if context is not None else x
+        key = self.to_k(context)
+        value = self.to_v(context)
+
         key = key.view(b, t, self.num_heads, c // self.num_heads).transpose(1, 2)  # (b, nh, t, hs)
         query = query.view(b, t, self.num_heads, c // self.num_heads).transpose(1, 2)  # (b, nh, t, hs)
         value = value.view(b, t, self.num_heads, c // self.num_heads).transpose(1, 2)  # (b, nh, t, hs)
