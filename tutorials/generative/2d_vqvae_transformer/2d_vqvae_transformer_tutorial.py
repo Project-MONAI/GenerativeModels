@@ -353,7 +353,7 @@ ce_loss = CrossEntropyLoss()
 
 # %%
 @torch.no_grad()
-def generate(net, vqvae_model, starting_tokens, seq_len, bos_token, **kwargs):
+def generate(net, starting_tokens, seq_len, bos_token):
     progress_bar = iter(range(seq_len))
 
     latent_seq = starting_tokens.long()
@@ -458,7 +458,7 @@ for epoch in range(n_epochs):
                 if val_step == 1:
                     starting_token = vqvae_model.num_embeddings * torch.ones((1, 1), device=device)
                     generated_latent = generate(
-                        transformer_model, vqvae_model, starting_token, spatial_shape[0] * spatial_shape[1], bos_token
+                        transformer_model, starting_token, spatial_shape[0] * spatial_shape[1], bos_token
                     )
                     generated_latent = generated_latent[0]
                     vqvae_latent = generated_latent[revert_sequence_ordering]
@@ -520,7 +520,7 @@ samples = []
 for i in range(5):
     starting_token = vqvae_model.num_embeddings * torch.ones((1, 1), device=device)
     generated_latent = generate(
-        transformer_model, vqvae_model, starting_token, spatial_shape[0] * spatial_shape[1], bos_token
+        transformer_model, starting_token, spatial_shape[0] * spatial_shape[1], bos_token
     )
     generated_latent = generated_latent[0]
     vqvae_latent = generated_latent[revert_sequence_ordering]
