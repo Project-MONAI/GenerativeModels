@@ -12,3 +12,4 @@
 from __future__ import annotations
 
 from .selfattention import SABlock
+from .transformerblock import TransformerBlock

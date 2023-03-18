@@ -12,8 +12,8 @@
 from __future__ import annotations
 
 import torch.nn as nn
-
 from monai.networks.blocks.mlp import MLPBlock
+
 from generative.networks.blocks.selfattention import SABlock
 
 
@@ -21,20 +21,27 @@ class TransformerBlock(nn.Module):
     """
     A transformer block, based on: "Dosovitskiy et al.,
     An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale <https://arxiv.org/abs/2010.11929>"
+
+    Args:
+        hidden_size: dimension of hidden layer.
+        mlp_dim: dimension of feedforward layer.
+        num_heads: number of attention heads.
+        dropout_rate: faction of the input units to drop.
+        qkv_bias: apply bias term for the qkv linear layer
+        causal: whether to use causal attention.
+        sequence_length: if causal is True, it is necessary to specify the sequence length.
     """
 
     def __init__(
-        self, hidden_size: int, mlp_dim: int, num_heads: int, dropout_rate: float = 0.0, qkv_bias: bool = False
+        self,
+        hidden_size: int,
+        mlp_dim: int,
+        num_heads: int,
+        dropout_rate: float = 0.0,
+        qkv_bias: bool = False,
+        causal: bool = False,
+        sequence_length: int | None = None,
     ) -> None:
-        """
-        Args:
-            hidden_size: dimension of hidden layer.
-            mlp_dim: dimension of feedforward layer.
-            num_heads: number of attention heads.
-            dropout_rate: faction of the input units to drop.
-            qkv_bias: apply bias term for the qkv linear layer
-
-        """
 
         super().__init__()
 
@@ -44,10 +51,10 @@ class TransformerBlock(nn.Module):
         if hidden_size % num_heads != 0:
             raise ValueError("hidden_size should be divisible by num_heads.")
 
-        self.mlp = MLPBlock(hidden_size, mlp_dim, dropout_rate)
         self.norm1 = nn.LayerNorm(hidden_size)
-        self.attn = SABlock(hidden_size, num_heads, dropout_rate, qkv_bias)
+        self.attn = SABlock(hidden_size, num_heads, dropout_rate, qkv_bias, causal, sequence_length)
         self.norm2 = nn.LayerNorm(hidden_size)
+        self.mlp = MLPBlock(hidden_size, mlp_dim, dropout_rate)
 
     def forward(self, x):
         x = x + self.attn(self.norm1(x))
