@@ -20,6 +20,7 @@ __all__ = ["DecoderOnlyTransformer"]
 
 
 class AbsolutePositionalEmbedding(nn.Module):
+    # TODO: Check if it working as expected
     """Absolute positional embedding.
 
     Args:

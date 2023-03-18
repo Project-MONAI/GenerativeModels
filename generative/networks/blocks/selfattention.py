@@ -76,6 +76,7 @@ class SABlock(nn.Module):
             self.mask = None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # TODO: add cross-attention
         b, t, c = x.size()  # batch size, sequence length, embedding dimensionality (hidden_size)
 
         if self.sequence_length is not None and t != self.sequence_length:
