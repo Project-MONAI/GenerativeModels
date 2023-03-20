@@ -11,9 +11,18 @@
 
 from __future__ import annotations
 
+import importlib.util
+
 import torch
 import torch.nn as nn
-from x_transformers import Decoder, TransformerWrapper
+
+if importlib.util.find_spec("x_transformers") is not None:
+    from x_transformers import Decoder, TransformerWrapper
+
+    has_x_transformers = True
+else:
+    has_x_transformers = False
+
 
 __all__ = ["DecoderOnlyTransformer"]
 
@@ -46,16 +55,19 @@ class DecoderOnlyTransformer(nn.Module):
         self.attn_layers_depth = attn_layers_depth
         self.attn_layers_heads = attn_layers_heads
 
-        self.model = TransformerWrapper(
-            num_tokens=self.num_tokens,
-            max_seq_len=self.max_seq_len,
-            attn_layers=Decoder(
-                dim=self.attn_layers_dim,
-                depth=self.attn_layers_depth,
-                heads=self.attn_layers_heads,
-                cross_attend=with_cross_attention,
-            ),
-        )
+        if has_x_transformers:
+            self.model = TransformerWrapper(
+                num_tokens=self.num_tokens,
+                max_seq_len=self.max_seq_len,
+                attn_layers=Decoder(
+                    dim=self.attn_layers_dim,
+                    depth=self.attn_layers_depth,
+                    heads=self.attn_layers_heads,
+                    cross_attend=with_cross_attention,
+                ),
+            )
+        else:
+            raise ImportError("x-transformers is not installed.")
 
     def forward(self, x: torch.Tensor, context: torch.Tensor | None = None) -> torch.Tensor:
         return self.model(x, context=context)
