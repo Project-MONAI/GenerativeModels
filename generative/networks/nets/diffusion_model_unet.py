@@ -1949,7 +1949,7 @@ class DiffusionModelEncoder(nn.Module):
             raise ValueError("DiffusionModelEncoder expects num_channels being same size of attention_levels")
 
         if isinstance(num_head_channels, int):
-            num_head_channels = (num_head_channels,) * len(attention_levels)
+            num_head_channels = ensure_tuple_rep(num_head_channels, len(attention_levels))
 
         if len(num_head_channels) != len(attention_levels):
             raise ValueError(
