@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.14.4
+#       jupytext_version: 1.14.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -313,11 +313,11 @@ ce_loss = CrossEntropyLoss()
 
 # %% [markdown]
 # ### Transformer Training
-# We will train the Transformer for 5 epochs.
+# We will train the Transformer for 20 epochs.
 
 # %%
-n_epochs = 5
-val_interval = 2
+n_epochs = 20
+val_interval = 5
 epoch_losses = []
 val_epoch_losses = []
 vqvae_model.eval()
@@ -337,7 +337,8 @@ for epoch in range(n_epochs):
         logits, quantizations_target, _ = inferer(images, vqvae_model, transformer_model, ordering, return_latent=True)
         logits = logits.transpose(1, 2)
 
-        loss = ce_loss(logits, quantizations_target)
+        # train the transformer to predict token n+1 using tokens 0-n
+        loss = ce_loss(logits[:, :, :-1], quantizations_target[:, 1:])
 
         loss.backward()
         optimizer.step()
@@ -360,10 +361,22 @@ for epoch in range(n_epochs):
                 )
                 logits = logits.transpose(1, 2)
 
-                loss = ce_loss(logits, quantizations_target)
+                loss = ce_loss(logits[:, :, :-1], quantizations_target[:, 1:])
 
                 val_loss += loss.item()
-
+        # get sample
+        sample = inferer.sample(
+            vqvae_model=vqvae_model,
+            transformer_model=transformer_model,
+            ordering=ordering,
+            latent_spatial_dim=(spatial_shape[0], spatial_shape[1]),
+            starting_tokens=vqvae_model.num_embeddings * torch.ones((1, 1), device=device),
+        )
+        plt.imshow(sample[0, 0, ...].cpu().detach())
+        plt.title(f"Sample epoch {epoch}")
+        plt.show()
+        val_loss /= val_step
+        val_epoch_losses.append(val_loss)
         val_loss /= val_step
         val_epoch_losses.append(val_loss)
 
@@ -424,13 +437,13 @@ for step, batch in progress_bar:
 ood_likelihoods = np.concatenate(ood_likelihoods)
 
 # %% [markdown]
-# ## Log-likehood plot
+# ## Log-likelihood plot
 #
 # Here, we plot the log-likelihood of the images. In this case, the lower the log-likelihood, the more unlikely the image belongs to the training set.
 
 # %%
-sns.kdeplot(in_likelihoods, color="dodgerblue", bw_adjust=50, label="In-distribution")
-sns.kdeplot(ood_likelihoods, color="deeppink", bw_adjust=1, label="OOD")
+sns.kdeplot(in_likelihoods, color="dodgerblue", bw_adjust=1, label="In-distribution")
+sns.kdeplot(ood_likelihoods, color="deeppink", bw_adjust=10, label="OOD")
 plt.legend()
 plt.xlabel("Log-likelihood")
 
