@@ -63,9 +63,8 @@ from monai.utils import set_determinism
 from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 from generative.inferers import DiffusionInferer
-from generative.networks.nets.diffusion_model_unet import DiffusionModelUNet
+from generative.networks.nets.diffusion_model_unet import  DiffusionModelUNet
 from generative.networks.schedulers.ddpm import DDPMScheduler
-
 torch.multiprocessing.set_sharing_strategy("file_system")
 print_config()
 
@@ -108,7 +107,11 @@ train_transforms = transforms.Compose(
         transforms.AddChanneld(keys=["image"]),
         transforms.EnsureTyped(keys=["image", "label"]),
         transforms.Orientationd(keys=["image", "label"], axcodes="RAS"),
-        transforms.Spacingd(keys=["image", "label"], pixdim=(3.0, 3.0, 2.0), mode=("bilinear", "nearest")),
+        transforms.Spacingd(
+            keys=["image", "label"],
+            pixdim=(3.0, 3.0, 2.0),
+            mode=("bilinear", "nearest"),
+        ),
         transforms.CenterSpatialCropd(keys=["image", "label"], roi_size=(64, 64, 64)),
         transforms.ScaleIntensityRangePercentilesd(keys="image", lower=0, upper=99.5, b_min=0, b_max=1),
         transforms.CopyItemsd(keys=["label"], times=1, names=["slice_label"]),
@@ -118,15 +121,13 @@ train_transforms = transforms.Compose(
     ]
 )
 
-
 def get_batched_2d_axial_slices(data: Dict):
     images_3D = data["image"]
-    label_3D = data["label"]
-    batched_2d_slices = torch.cat(images_3D.split(1, dim=-1)[10:-10], 0).squeeze(
-        -1
-    )  # we cut the lowest and highest 10 slices, because we are interested in the middle part of the brain.
+    label_3D= data["label"]
+    batched_2d_slices = torch.cat(images_3D.split(1, dim=-1)[10:-10], 0).squeeze(-1)  # we cut the lowest and highest 10 slices, because we are interested in the middle part of the brain.
     slice_label = torch.cat(label_3D.split(1, dim=-1)[10:-10], 0).squeeze(-1)
     return batched_2d_slices, slice_label
+
 
 
 # -
@@ -148,9 +149,9 @@ train_loader_3D = DataLoader(train_ds, batch_size=1, shuffle=True, num_workers=4
 data_2d_slices = []
 data_label = []
 for i, data in enumerate(train_loader_3D):
-    b2d, slice_label2d = get_batched_2d_axial_slices(data)
-    data_2d_slices.append(b2d)
-    data_label.append(slice_label2d)
+        b2d, slice_label2d = get_batched_2d_axial_slices(data)
+        data_2d_slices.append(b2d)
+        data_label.append(slice_label2d)
 total_train_slices = torch.cat(data_2d_slices, 0)
 total_train_labels = torch.cat(data_label, 0)
 
@@ -177,9 +178,9 @@ print("len val data", len(val_ds))
 data_2d_slices_val = []
 data_slice_label_val = []
 for i, data in enumerate(val_loader_3D):
-    b2d, slice_label2d = get_batched_2d_axial_slices(data)
-    data_2d_slices_val.append(b2d)
-    data_slice_label_val.append(slice_label2d)
+        b2d, slice_label2d = get_batched_2d_axial_slices(data)
+        data_2d_slices_val.append(b2d)
+        data_slice_label_val.append(slice_label2d)
 total_val_slices = torch.cat(data_2d_slices_val, 0)
 total_val_labels = torch.cat(data_slice_label_val, 0)
 
@@ -205,7 +206,9 @@ model = DiffusionModelUNet(
 )
 model.to(device)
 
-scheduler = DDPMScheduler(num_train_timesteps=1000)
+scheduler = DDPMScheduler(
+    num_train_timesteps=1000,
+)
 
 optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
 
@@ -229,69 +232,73 @@ val_epoch_loss_list = []
 scaler = GradScaler()
 total_start = time.time()
 for epoch in range(n_epochs):
-    model.train()
-    epoch_loss = 0
-    indexes = list(torch.randperm(total_train_slices.shape[0]))  # shuffle training data new
-    data_train = total_train_slices[indexes]  # shuffle the training data
-    labels_train = total_train_labels[indexes]
-    subset_2D = zip(data_train.split(batch_size), labels_train.split(batch_size))
-    subset_2D_val = zip(total_val_slices.split(batch_size), total_val_labels.split(1))  #
-    progress_bar = tqdm(enumerate(subset_2D), total=len(indexes) / batch_size)
-    progress_bar.set_description(f"Epoch {epoch}")
-    for step, (a, b) in progress_bar:
-        images = a.to(device)
-        seg = b.to(device)  # this is the ground truth segmentation
-        optimizer.zero_grad(set_to_none=True)
-        timesteps = torch.randint(0, 1000, (len(images),)).to(device)  # pick a random time step t
-        with autocast(enabled=True):
-            # Generate random noise
-            noise = torch.randn_like(seg).to(device)
-            noisy_seg = scheduler.add_noise(
-                original_samples=seg, noise=noise, timesteps=timesteps
-            )  # we only add noise to the segmentation mask
-            combined = torch.cat(
-                (images, noisy_seg), dim=1
-            )  # we concatenate the brain MR image with the noisy segmenatation mask, to condition the generation process
-            prediction = model(x=combined, timesteps=timesteps)
-            # Get model prediction
-            loss = F.mse_loss(prediction.float(), noise.float())
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
-        epoch_loss += loss.item()
-        progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
-    epoch_loss_list.append(epoch_loss / (step + 1))
-    if (epoch) % val_interval == 0:
-        model.eval()
-        val_epoch_loss = 0
-        progress_bar_val = tqdm(enumerate(subset_2D_val))
+        model.train()
+        epoch_loss = 0
+        indexes = list(torch.randperm(total_train_slices.shape[0]))  # shuffle training data new
+        data_train = total_train_slices[indexes]  # shuffle the training data
+        labels_train = total_train_labels[indexes]
+        subset_2D = zip(data_train.split(batch_size), labels_train.split(batch_size))
+        subset_2D_val = zip(total_val_slices.split(batch_size), total_val_labels.split(1))  #
+        progress_bar = tqdm(enumerate(subset_2D), total=len(indexes) / batch_size)
         progress_bar.set_description(f"Epoch {epoch}")
-        for step, (a, b) in progress_bar_val:
+        for step, (a, b) in progress_bar:
             images = a.to(device)
-            seg = b.to(device)
-            timesteps = torch.randint(0, 1000, (len(images),)).to(device)
-            with torch.no_grad():
-                with autocast(enabled=True):
-                    noise = torch.randn_like(seg).to(device)
-                    noisy_seg = scheduler.add_noise(original_samples=seg, noise=noise, timesteps=timesteps)
-                    combined = torch.cat((images, noisy_seg), dim=1)
-                    prediction = model(x=combined, timesteps=timesteps)
-                    val_loss = F.mse_loss(prediction.float(), noise.float())
-            val_epoch_loss += val_loss.item()
-            progress_bar.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
-        val_epoch_loss_list.append(val_epoch_loss / (step + 1))
+            seg = b.to(device)  #this is the ground truth segmentation
+            optimizer.zero_grad(set_to_none=True)
+            timesteps = torch.randint(0, 1000, (len(images),)).to(device)  # pick a random time step t
+            with autocast(enabled=True):
+                # Generate random noise
+                noise = torch.randn_like(seg).to(device)
+                noisy_seg = scheduler.add_noise(original_samples=seg, noise=noise, timesteps=timesteps)  #we only add noise to the segmentation mask
+                combined=torch.cat((images,noisy_seg), dim=1)                               #we concatenate the brain MR image with the noisy segmenatation mask, to condition the generation process
+                prediction = model(x=combined, timesteps=timesteps)
+                # Get model prediction
+                loss = F.mse_loss(prediction.float(), noise.float())
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+            epoch_loss += loss.item()
+            progress_bar.set_postfix(
+                {
+                    "loss": epoch_loss / (step + 1),
+                }
+            )
+        epoch_loss_list.append(epoch_loss / (step + 1))
+        if (epoch) % val_interval == 0:
+            model.eval()
+            val_epoch_loss = 0
+            progress_bar_val = tqdm(enumerate(subset_2D_val))
+            progress_bar.set_description(f"Epoch {epoch}")
+            for step, (a, b) in progress_bar_val:
+                images = a.to(device)
+                seg = b.to(device)
+                timesteps = torch.randint(0, 1000, (len(images),)).to(device)
+                with torch.no_grad():
+                    with autocast(enabled=True):
+                        noise = torch.randn_like(seg).to(device)
+                        noisy_seg = scheduler.add_noise(original_samples=seg, noise=noise, timesteps=timesteps)
+                        combined=torch.cat((images,noisy_seg), dim=1)
+                        prediction = model(x=combined, timesteps=timesteps)
+                        val_loss = F.mse_loss(prediction.float(), noise.float())
+                val_epoch_loss += val_loss.item()
+                progress_bar.set_postfix(
+                    {
+                        "val_loss": val_epoch_loss / (step + 1),
+                    }
+                )
+            val_epoch_loss_list.append(val_epoch_loss / (step + 1))
 total_time = time.time() - total_start
 print(f"train diffusion completed, total time: {total_time}.")
 plt.style.use("seaborn-bright")
 plt.title("Learning Curves Diffusion Model", fontsize=20)
 plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, color="C0", linewidth=2.0, label="Train")
 plt.plot(
-    np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
-    val_epoch_loss_list,
-    color="C1",
-    linewidth=2.0,
-    label="Validation",
-)
+        np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
+        val_epoch_loss_list,
+        color="C1",
+        linewidth=2.0,
+        label="Validation",
+    )
 plt.yticks(fontsize=12)
 plt.xticks(fontsize=12)
 plt.xlabel("Epochs", fontsize=16)
@@ -308,15 +315,15 @@ plt.show()
 # First, we pick an image of our validation set, and check the ground truth segmentation mask.
 
 # +
-inputimg = total_val_slices[100][0, ...]  # Pick an input slice of the validation set to be segmented
-inputlabel = total_val_labels[100][0, ...]  # Check out the ground truth label mask
-plt.figure("input" + str(inputlabel))
+inputimg = total_val_slices[100][0,...]  # Pick an input slice of the validation set to be segmented
+inputlabel= total_val_labels[100][0,...]     # Check out the ground truth label mask
+plt.figure("input"+str(inputlabel))
 plt.imshow(inputimg, vmin=0, vmax=1, cmap="gray")
 plt.axis("off")
 plt.tight_layout()
 plt.show()
 
-plt.figure("input" + str(inputlabel))
+plt.figure("input"+str(inputlabel))
 plt.imshow(inputlabel, vmin=0, vmax=1, cmap="gray")
 plt.axis("off")
 plt.tight_layout()
@@ -330,46 +337,39 @@ model.eval()
 
 # Then we set the number of samples in the ensemble n.
 
-n = 5
+n=5
 input_img = inputimg[None, None, ...].to(device)
 
 # +
-Ensemble = []
+Ensemble=[]
 for k in range(5):
     noise = torch.randn_like(input_img).to(device)
-    current_img = noise  # for the segmentation mask, we start from random noise.
-    combined = torch.cat(
-        (input_img, noise), dim=1
-    )  # We concatenate the input brain MR image to add anatomical information.
+    current_img=noise                               #for the segmentation mask, we start from random noise.
+    combined=torch.cat((input_img,noise), dim=1)    #We concatenate the input brain MR image to add anatomical information.
 
     scheduler.set_timesteps(num_inference_steps=1000)
     progress_bar = tqdm(scheduler.timesteps)
-    chain = torch.zeros(current_img.shape)
+    chain=torch.zeros(current_img.shape)
     for t in progress_bar:  # go through the noising process
         with autocast(enabled=False):
             with torch.no_grad():
                 model_output = model(combined, timesteps=torch.Tensor((t,)).to(current_img.device))
-                current_img, _ = scheduler.step(
-                    model_output, t, current_img
-                )  # this is the prediction x_t at the time step t
-                if t % 100 == 0:
-                    chain = torch.cat((chain, current_img.cpu()), dim=-1)
-                combined = torch.cat(
-                    (input_img, current_img), dim=1
-                )  # in every step during the denoising process, the brain MR image is concatenated to add anatomical information
+                current_img, _ = scheduler.step(model_output, t, current_img)  #this is the prediction x_t at the time step t
+                if t%100==0:
+                    chain=torch.cat((chain, current_img.cpu()), dim=-1)
+                combined=torch.cat((input_img,current_img), dim=1)   #in every step during the denoising process, the brain MR image is concatenated to add anatomical information
 
-    print("chain", chain.shape)
+    print('chain', chain.shape)
     plt.style.use("default")
-    plt.imshow(chain[0, 0, ..., 64:].cpu(), vmin=0, vmax=1, cmap="gray")
+    plt.imshow(chain[0,0,...,64:].cpu(), vmin=0, vmax=1, cmap="gray")
     plt.tight_layout()
     plt.axis("off")
     plt.show()
     Ensemble.append(current_img)
-    print("len ensd", len(Ensemble))
-    prediction = torch.zeros(
-        current_img.shape
-    )  # this is the output of the diffusion model after T=1000 denoising steps.
-    prediction[current_img > 0.5] = 1  # a binary mask is obtained via thresholding
+    print('len ensd', len(Ensemble))
+    prediction=torch.zeros(current_img.shape)  #this is the output of the diffusion model after T=1000 denoising steps.
+    prediction[current_img>0.5]=1   #a binary mask is obtained via thresholding
+
 
 
 # -
@@ -383,8 +383,8 @@ for k in range(5):
 #
 #
 
-
 def dice_coeff(im1, im2, empty_score=1.0):
+
     im1 = np.asarray(im1).astype(bool)
     im2 = np.asarray(im2).astype(bool)
 
@@ -395,33 +395,34 @@ def dice_coeff(im1, im2, empty_score=1.0):
     # Compute Dice coefficient
     intersection = np.logical_and(im1, im2)
 
-    return 2.0 * intersection.sum() / im_sum
+    return (2. * intersection.sum() / im_sum)
 
 
 # +
 for i in range(len(Ensemble)):
-    prediction = torch.where(Ensemble[i] > 0.5, 1, 0).float()  # a binary mask is obtained via thresholding
-    score = dice_coeff(
-        prediction[0, 0].cpu(), inputlabel.cpu()
-    )  # we compute the dice scores for all samples separately
-    print("Dice score of sample" + str(i), score)
+
+    prediction=torch.where(Ensemble[i] > 0.5, 1, 0).float()   #a binary mask is obtained via thresholding
+    score=dice_coeff(prediction[0, 0].cpu(), inputlabel.cpu()) #we compute the dice scores for all samples separately
+    print('Dice score of sample' + str(i), score)
 
 
-E = torch.where(torch.cat(Ensemble) > 0.5, 1, 0).float()
-var = torch.var(E, dim=0)  # pixel-wise variance map over the ensemble
-mean = torch.mean(E, dim=0)  # pixel-wise mean map over the ensemble
-mean_prediction = torch.where(mean > 0.5, 1, 0).float()
+E=torch.where(torch.cat(Ensemble) > 0.5, 1, 0).float()
+var=torch.var(E, dim=0)   #pixel-wise variance map over the ensemble
+mean=torch.mean(E, dim=0)  #pixel-wise mean map over the ensemble
+mean_prediction=torch.where(mean > 0.5, 1, 0).float()
 
-score = dice_coeff(mean_prediction[0, ...].cpu(), inputlabel.cpu())  # Here we predict the Dice score for the mean map
-print("Dice score on the mean map", score)
+score=dice_coeff(mean_prediction[0, ...].cpu(), inputlabel.cpu()) #Here we predict the Dice score for the mean map
+print('Dice score on the mean map', score)
 
 plt.style.use("default")
-plt.imshow(mean[0, ...].cpu(), vmin=0, vmax=1, cmap="gray")  # We plot the mean map
+plt.imshow(mean[0,...].cpu(), vmin=0, vmax=1, cmap="gray")  #We plot the mean map
 plt.tight_layout()
 plt.axis("off")
 plt.show()
 plt.style.use("default")
-plt.imshow(var[0, ...].cpu(), vmin=0, vmax=1, cmap="jet")  # We plot the variance map
+plt.imshow(var[0,...].cpu(), vmin=0, vmax=1, cmap="jet")  #We plot the variance map
 plt.tight_layout()
 plt.axis("off")
 plt.show()
+
+
