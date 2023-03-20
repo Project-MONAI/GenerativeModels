@@ -61,7 +61,7 @@ from tqdm import tqdm
 
 from generative.inferers import DiffusionInferer
 from generative.networks.nets import DiffusionModelUNet
-from generative.networks.schedulers import DDPMScheduler
+from generative.networks.schedulers import DDPMScheduler, DDIMScheduler
 
 print_config()
 
@@ -83,46 +83,35 @@ print(root_dir)
 # ## Set deterministic training for reproducibility
 
 # %%
-set_determinism(0)
+set_determinism(42)
 
 # %% [markdown]
 # ## Setup Decathlon Dataset and training and validation dataloaders
 
 # %%
-train_transform = Compose(
+data_transform = Compose(
     [
         LoadImaged(keys=["image"]),
         Lambdad(keys="image", func=lambda x: x[:, :, :, 1]),
         AddChanneld(keys=["image"]),
         ScaleIntensityd(keys=["image"]),
-        CenterSpatialCropd(keys=["image"], roi_size=[176, 224, 155]),
-        Resized(keys=["image"], spatial_size=(32, 48, 32)),
-    ]
-)
-
-val_transform = Compose(
-    [
-        LoadImaged(keys=["image"]),
-        Lambdad(keys="image", func=lambda x: x[:, :, :, 1]),
-        AddChanneld(keys=["image"]),
-        ScaleIntensityd(keys=["image"]),
-        CenterSpatialCropd(keys=["image"], roi_size=[176, 224, 155]),
-        Resized(keys=["image"], spatial_size=(32, 48, 32)),
+        CenterSpatialCropd(keys=["image"], roi_size=[160, 200, 155]),
+        Resized(keys=["image"], spatial_size=(32, 40, 32)),
     ]
 )
 
 # %%
 train_ds = DecathlonDataset(
-    root_dir=root_dir, task="Task01_BrainTumour", transform=train_transform, section="training", download=True
+    root_dir=root_dir, task="Task01_BrainTumour", transform=data_transform, section="training", download=True
 )
 
-train_loader = DataLoader(train_ds, batch_size=4, shuffle=True, num_workers=8)
+train_loader = DataLoader(train_ds, batch_size=8, shuffle=True, num_workers=8, persistent_workers=True)
 
 val_ds = DecathlonDataset(
-    root_dir=root_dir, task="Task01_BrainTumour", transform=val_transform, section="validation", download=True
+    root_dir=root_dir, task="Task01_BrainTumour", transform=data_transform, section="validation", download=True
 )
 
-val_loader = DataLoader(val_ds, batch_size=4, shuffle=False, num_workers=8)
+val_loader = DataLoader(val_ds, batch_size=8, shuffle=False, num_workers=8, persistent_workers=True)
 
 
 # %% [markdown]
@@ -154,11 +143,16 @@ model = DiffusionModelUNet(
 )
 model.to(device)
 
-scheduler = DDPMScheduler(num_train_timesteps=1000)
+scheduler = DDPMScheduler(
+    num_train_timesteps=1000,
+    beta_schedule="scaled_linear",
+    beta_start=0.0005,
+    beta_end=0.0195
+)
 
 inferer = DiffusionInferer(scheduler)
 
-optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
+optimizer = torch.optim.Adam(params=model.parameters(), lr=5e-5)
 
 
 # %% [markdown]
@@ -225,7 +219,7 @@ for epoch in range(n_epochs):
         val_epoch_loss_list.append(val_epoch_loss / (step + 1))
 
         # Sampling image during training
-        image = torch.randn((1, 1, 32, 48, 32))
+        image = torch.randn((1, 1, 32, 40, 32))
         image = image.to(device)
         scheduler.set_timesteps(num_inference_steps=1000)
         with autocast(enabled=True):
@@ -266,7 +260,7 @@ plt.show()
 
 # %%
 model.eval()
-noise = torch.randn((1, 1, 32, 48, 32))
+noise = torch.randn((1, 1, 32, 40, 32))
 noise = noise.to(device)
 scheduler.set_timesteps(num_inference_steps=1000)
 image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=scheduler)
@@ -274,11 +268,38 @@ image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=sched
 
 # %%
 plt.style.use("default")
-plotting_image_0 = np.concatenate([image[0, 0, :, :, 15].cpu(), np.flipud(image[0, 0, :, 24, :].cpu().T)], axis=1)
+plotting_image_0 = np.concatenate([image[0, 0, :, :, 15].cpu(), np.flipud(image[0, 0, :, 20, :].cpu().T)], axis=1)
 plotting_image_1 = np.concatenate([np.flipud(image[0, 0, 15, :, :].cpu().T), np.zeros((32, 32))], axis=1)
 plt.imshow(np.concatenate([plotting_image_0, plotting_image_1], axis=0), vmin=0, vmax=1, cmap="gray")
 plt.tight_layout()
 plt.axis("off")
 plt.show()
 
+# %% [markdown]
+# ### Sampling with Denoising Diffusion  Scheduler
+
 # %%
+scheduler_ddim = DDIMScheduler(
+    num_train_timesteps=1000,
+    beta_schedule="scaled_linear",
+    beta_start=0.0005,
+    beta_end=0.0195,
+    clip_sample=False
+)
+
+scheduler_ddim.set_timesteps(num_inference_steps=250)
+
+model.eval()
+noise = torch.randn((1, 1, 32, 40, 32))
+noise = noise.to(device)
+
+image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=scheduler_ddim)
+
+# %%
+plt.style.use("default")
+plotting_image_0 = np.concatenate([image[0, 0, :, :, 15].cpu(), np.flipud(image[0, 0, :, 20, :].cpu().T)], axis=1)
+plotting_image_1 = np.concatenate([np.flipud(image[0, 0, 15, :, :].cpu().T), np.zeros((32, 32))], axis=1)
+plt.imshow(np.concatenate([plotting_image_0, plotting_image_1], axis=0), vmin=0, vmax=1, cmap="gray")
+plt.tight_layout()
+plt.axis("off")
+plt.show()
