@@ -2045,6 +2045,7 @@ class DiffusionModelEncoder(nn.Module):
             if class_labels is None:
                 raise ValueError("class_labels should be provided when num_class_embeds > 0")
             class_emb = self.class_embedding(class_labels)
+            class_emb = class_emb.to(dtype=x.dtype)
             emb = emb + class_emb
 
         # 3. initial convolution
