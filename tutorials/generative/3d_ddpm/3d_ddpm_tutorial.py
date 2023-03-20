@@ -86,7 +86,18 @@ print(root_dir)
 set_determinism(42)
 
 # %% [markdown]
-# ## Setup Decathlon Dataset and training and validation dataloaders
+# ## Setup Decathlon Dataset and training and validation data loaders
+#
+# In this tutorial, we will use the 3D T1 weighted brain images from the [2016 and 2017 Brain Tumor Segmentation (BraTS) challenges](https://www.med.upenn.edu/sbia/brats2017/data.html). This dataset can be easily downloaded using the [DecathlonDataset](https://docs.monai.io/en/stable/apps.html#monai.apps.DecathlonDataset) from MONAI (`task="Task01_BrainTumour"`). To load the training and validation images, we are using the `data_transform` transformations that are responsible for the following:
+#
+# 1. `LoadImaged`:  Loads the brain images from files.
+# 2. `Lambdad`: Choose channel 1 of the image, which is the T1-weighted image.
+# 3. `AddChanneld`: Add the channel dimension of the input data.
+# 4. `ScaleIntensityd`: Apply a min-max scaling in the intensity values of each image to be in the `[0, 1]` range.
+# 5. `CenterSpatialCropd`: Crop the background of the images using a roi of size `[160, 200, 155]`.
+# 6. `Resized`: Resize the images to a volume with size `[32, 40, 32]`.
+#
+# For the data loader, we are using mini-batches of 8 images, which consumes about 21GB of GPU memory during training. Please, reduce this value to run on smaller GPUs.
 
 # %%
 data_transform = Compose(
@@ -128,6 +139,10 @@ plt.show()
 
 # %% [markdown]
 # ### Define network, scheduler, optimizer, and inferer
+#
+# We will use a DDPM in this example; for that, we need to define a `DiffusionModelUNet` network that will have as input the noisy images and the values for the timestep `t`, and it will predict the noise that is present in the image.
+#
+# In this example, we have a network with three levels (with 256, 256, and 512 channels in each). In every level, we will have two residual blocks, and only the last one will have an attention block with a single attention head (with 512 channels).
 
 # %%
 device = torch.device("cuda")
@@ -143,6 +158,13 @@ model = DiffusionModelUNet(
 )
 model.to(device)
 
+
+
+
+# %% [markdown]
+# Together with our U-net, we need to define the Noise Scheduler for the diffusion model. This scheduler is responsible for defining the amount of noise that should be added in each timestep `t` of the diffusion model's Markov chain. Besides that, it has the operations to perform the reverse process, which will remove the noise of the images (a.k.a. denoising process). In this case, we are using a `DDPMScheduler`. Here we are using 1000 timesteps and a `scaled_linear` profile for the beta values (proposed in [Rombach et al. "High-Resolution Image Synthesis with Latent Diffusion Models"](https://arxiv.org/abs/2112.10752)). This profile had better results than the `linear, proposed in the original DDPM's paper. In `beta_start` and `beta_end`, we define the limits for the beta values. These are important to determine how accentuated is the addition of noise in the image.
+
+# %%
 scheduler = DDPMScheduler(
     num_train_timesteps=1000,
     beta_schedule="scaled_linear",
@@ -150,13 +172,23 @@ scheduler = DDPMScheduler(
     beta_end=0.0195
 )
 
+# %%
+plt.plot(scheduler.alphas_cumprod.cpu(), color=(2/255, 163/255, 163/255), linewidth=2)
+plt.xlabel("Timestep [t]")
+plt.ylabel("alpha cumprod")
+
+# %% [markdown]
+# Finally, we define the Inferer, which contains functions that will help during the training and sampling of the model, and the optimizer.
+
+# %%
 inferer = DiffusionInferer(scheduler)
 
 optimizer = torch.optim.Adam(params=model.parameters(), lr=5e-5)
 
-
 # %% [markdown]
-# ### Model training
+# ## Model training
+#
+# In this part, we will train the diffusion model to predict the noise added to the images. For this, we are using an MSE loss between the prediction and the original noise. During the training, we are also sampling brain images to evaluate the evolution of the model. In this training, we use Automatic Mixed Precision to save memory and speed up the training.
 
 # %%
 n_epochs = 150
@@ -256,7 +288,9 @@ plt.show()
 
 
 # %% [markdown]
-# ### Plotting synthetic sample
+# ## Sampling Brain Image
+#
+# In order to sample the brain images, we need to pass the model an image containing just noise and use it to remove the noise of the image iteratively. For that, we will use the `.sample()` function of the `inferer`.
 
 # %%
 model.eval()
@@ -276,7 +310,9 @@ plt.axis("off")
 plt.show()
 
 # %% [markdown]
-# ### Sampling with Denoising Diffusion  Scheduler
+# ### Sampling with Denoising Diffusion Implicit Model Scheduler
+#
+# Recent papers have proposed different ways to improve the sampling speed by using fewer steps in the denoising process. In this example, we are using a `DDIMScheduler` (from [Song et al. "Denoising Diffusion Implicit Models"](https://arxiv.org/abs/2010.02502)) to reduce the original number of steps from 1000 to 250.
 
 # %%
 scheduler_ddim = DDIMScheduler(
@@ -303,3 +339,5 @@ plt.imshow(np.concatenate([plotting_image_0, plotting_image_1], axis=0), vmin=0,
 plt.tight_layout()
 plt.axis("off")
 plt.show()
+
+# %%
