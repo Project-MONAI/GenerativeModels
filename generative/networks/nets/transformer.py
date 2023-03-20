@@ -12,11 +12,13 @@
 from __future__ import annotations
 
 import importlib.util
+
 import torch
 import torch.nn as nn
 
 if importlib.util.find_spec("x_transformers") is not None:
     from x_transformers import Decoder, TransformerWrapper
+
     has_x_transformers = True
 else:
     has_x_transformers = False

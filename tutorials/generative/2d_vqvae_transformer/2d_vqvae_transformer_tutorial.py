@@ -519,9 +519,7 @@ for image_n in range(len(val_samples)):
 samples = []
 for i in range(5):
     starting_token = vqvae_model.num_embeddings * torch.ones((1, 1), device=device)
-    generated_latent = generate(
-        transformer_model, starting_token, spatial_shape[0] * spatial_shape[1], bos_token
-    )
+    generated_latent = generate(transformer_model, starting_token, spatial_shape[0] * spatial_shape[1], bos_token)
     generated_latent = generated_latent[0]
     vqvae_latent = generated_latent[revert_sequence_ordering]
     vqvae_latent = vqvae_latent.reshape((1,) + spatial_shape)
