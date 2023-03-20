@@ -25,21 +25,15 @@ pip install -r requirements-dev.txt
 ## List of notebooks and examples
 
 ### Table of Contents
-1. [Diffusion Models](#1.-Diffusion-Models)
-
-    -[Image synthesis](#Image-synthesis-with-Diffusion-Models)
-    -[Anomaly Detection](#Image-synthesis-with-Diffusion-Models)
-
-2. [Latent Diffusion Models](#2.-Latent-Diffusion-Models)
-
-    -[Image synthesis](#Image-synthesis-with-Latent-Diffusion-Models)
-    -[Super Resolution](#Super-resolution-with-Latent-Diffusion-Models)
-
-3. [VQ-VAE + Transformers](#3.-VQ-VAE-+-Transformers)
-
-    -[Image synthesis](#Image-synthesis-with-VQ-VAE-+-Transformers)
-    -[Anomaly Detection](#Anomaly-Detection-with-VQ-VAE-+-Transformers)
-
+1. Diffusion Models
+   -Image Synthesis
+   -Anomaly Detection
+2. Latent Diffusion Models
+   -Image Synthesis
+   -Super Resolution
+3. VQ-VAE + Transformers
+   -Image synthesis
+   -Anomaly Detection
 
 ### 1. Diffusion Models
 
