@@ -62,8 +62,7 @@ inpaint of 2D images from the MedNIST dataset using the RePaint method.
 This tutorial shows how easily we can train a Diffusion Model and generate conditional samples using classifier-free guidance in
 the MONAI's framework.
 
-* [Training Diffusion models with Distributed Data Parallel](./generative/distributed_training/ddpm_training_ddp.py):
-* This example shows how to execute distributed training and evaluation based on PyTorch native DistributedDataParallel
+* [Training Diffusion models with Distributed Data Parallel](./generative/distributed_training/ddpm_training_ddp.py): This example shows how to execute distributed training and evaluation based on PyTorch native DistributedDataParallel
 module with torch.distributed.launch.
 
 #### Anomaly Detection with Diffusion Models
