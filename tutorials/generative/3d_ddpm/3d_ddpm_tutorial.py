@@ -20,7 +20,6 @@
 #
 # [1] - [Ho et al. "Denoising Diffusion Probabilistic Models"](https://arxiv.org/abs/2006.11239)
 #
-# TODO: Add Open in Colab
 #
 # ## Setup environment
 
@@ -61,8 +60,6 @@ from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
 from generative.inferers import DiffusionInferer
-
-# TODO: Add right import reference after deployed
 from generative.networks.nets import DiffusionModelUNet
 from generative.networks.schedulers import DDPMScheduler
 
@@ -152,7 +149,7 @@ model = DiffusionModelUNet(
     out_channels=1,
     num_channels=[256, 256, 512],
     attention_levels=[False, False, True],
-    num_head_channels=[256, 256, 512],
+    num_head_channels=[0, 0, 512],
     num_res_blocks=2,
 )
 model.to(device)

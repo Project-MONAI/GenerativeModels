@@ -21,7 +21,6 @@
 #
 # [1] - Ho et al. "Denoising Diffusion Probabilistic Models" https://arxiv.org/abs/2006.11239
 #
-# TODO: Add Open in Colab
 #
 # ## Setup environment
 
@@ -49,7 +48,6 @@
 import os
 import shutil
 import tempfile
-from typing import Dict, Mapping, Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -59,14 +57,12 @@ from monai import transforms
 from monai.apps import MedNISTDataset
 from monai.config import print_config
 from monai.data import CacheDataset, DataLoader
-from monai.engines import PrepareBatch, SupervisedEvaluator, SupervisedTrainer, default_prepare_batch
+from monai.engines import SupervisedEvaluator, SupervisedTrainer
 from monai.handlers import MeanAbsoluteError, MeanSquaredError, StatsHandler, ValidationHandler, from_engine
 from monai.utils import first, set_determinism
 
 from generative.inferers import DiffusionInferer
 from generative.engines import DiffusionPrepareBatch
-
-# TODO: Add right import reference after deployed
 from generative.networks.nets import DiffusionModelUNet
 from generative.networks.schedulers import DDPMScheduler
 

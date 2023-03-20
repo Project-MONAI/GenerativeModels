@@ -28,9 +28,6 @@
 #
 # [3] - Ho et al. "High Definition Video Generation with Diffusion Models" https://arxiv.org/abs/2210.02303
 
-# %%
-# TODO: Add buttom with "Open with Colab"
-
 # %% [markdown]
 # ## Set up environment using Colab
 #

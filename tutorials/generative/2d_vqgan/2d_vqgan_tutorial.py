@@ -18,7 +18,6 @@
 #
 # This tutorial illustrates how to use MONAI for training a Vector Quantized Generative Adversarial Network (VQGAN) on 2D images.
 #
-# TODO: Add Open in Colab
 #
 # ## Setup environment
 
@@ -58,7 +57,6 @@ from monai.utils import first, set_determinism
 from torch.nn import L1Loss
 from tqdm import tqdm
 
-# TODO: Add right import reference after deployed
 from generative.losses import PatchAdversarialLoss, PerceptualLoss
 from generative.networks.nets import VQVAE, PatchDiscriminator
 
