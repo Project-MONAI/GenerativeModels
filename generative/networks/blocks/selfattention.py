@@ -38,6 +38,7 @@ class SABlock(nn.Module):
         num_heads: int,
         dropout_rate: float = 0.0,
         qkv_bias: bool = False,
+        cross_attention_dim: int | None = None,
         causal: bool = False,
         sequence_length: int | None = None,
     ) -> None:
@@ -46,6 +47,10 @@ class SABlock(nn.Module):
         self.num_heads = num_heads
         self.head_dim = hidden_size // num_heads
         self.scale = 1.0 / math.sqrt(self.head_dim)
+
+        cross_attention_dim = cross_attention_dim if cross_attention_dim is not None else hidden_size
+        self.cross_attention_dim = cross_attention_dim
+
         self.causal = causal
         self.sequence_length = sequence_length
 
@@ -58,11 +63,10 @@ class SABlock(nn.Module):
         if causal and sequence_length is None:
             raise ValueError("sequence_length is necessary for causal attention.")
 
-        # TODO: add cross-attention input value different from hidden_size for k and v
         # key, query, value projections
         self.to_q = nn.Linear(hidden_size, hidden_size, bias=qkv_bias)
-        self.to_k = nn.Linear(hidden_size, hidden_size, bias=qkv_bias)
-        self.to_v = nn.Linear(hidden_size, hidden_size, bias=qkv_bias)
+        self.to_k = nn.Linear(cross_attention_dim, hidden_size, bias=qkv_bias)
+        self.to_v = nn.Linear(cross_attention_dim, hidden_size, bias=qkv_bias)
 
         # regularization
         self.drop_weights = nn.Dropout(dropout_rate)

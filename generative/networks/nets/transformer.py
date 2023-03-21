@@ -20,7 +20,6 @@ __all__ = ["DecoderOnlyTransformer"]
 
 
 class AbsolutePositionalEmbedding(nn.Module):
-    # TODO: Check if it working as expected
     """Absolute positional embedding.
 
     Args:
@@ -33,7 +32,6 @@ class AbsolutePositionalEmbedding(nn.Module):
         self.max_seq_len = max_seq_len
         self.embedding_dim = embedding_dim
         self.embedding = nn.Embedding(max_seq_len, embedding_dim)
-        self.embedding.weight.data.uniform_(-1.0, 1.0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         batch_size, seq_len = x.size()
@@ -50,7 +48,8 @@ class DecoderOnlyTransformer(nn.Module):
         attn_layers_dim: Dimensionality of the attention layers.
         attn_layers_depth: Number of attention layers.
         attn_layers_heads: Number of attention heads.
-        with_cross_attention: Whether to use cross attention for conditioning.
+        cross_attention_dim: number of channels in the context.
+        embedding_dropout_rate: Dropout rate for the embedding.
     """
 
     def __init__(
@@ -60,7 +59,7 @@ class DecoderOnlyTransformer(nn.Module):
         attn_layers_dim: int,
         attn_layers_depth: int,
         attn_layers_heads: int,
-        with_cross_attention: bool = False,
+        cross_attention_dim: int | None = None,
         embedding_dropout_rate: float = 0.0,
     ) -> None:
         super().__init__()
@@ -69,7 +68,7 @@ class DecoderOnlyTransformer(nn.Module):
         self.attn_layers_dim = attn_layers_dim
         self.attn_layers_depth = attn_layers_depth
         self.attn_layers_heads = attn_layers_heads
-        self.with_cross_attention = with_cross_attention
+        self.cross_attention_dim = cross_attention_dim
 
         self.token_embeddings = nn.Embedding(num_tokens, attn_layers_dim)
         self.position_embeddings = AbsolutePositionalEmbedding(max_seq_len=max_seq_len, embedding_dim=attn_layers_dim)
@@ -83,6 +82,9 @@ class DecoderOnlyTransformer(nn.Module):
                     num_heads=attn_layers_heads,
                     dropout_rate=0.0,
                     qkv_bias=False,
+                    cross_attention_dim=cross_attention_dim,
+                    causal=True,
+                    sequence_length=max_seq_len,
                 )
                 for _ in range(attn_layers_depth)
             ]
@@ -91,9 +93,9 @@ class DecoderOnlyTransformer(nn.Module):
         self.to_logits = nn.Linear(attn_layers_dim, num_tokens)
 
     def forward(self, x: torch.Tensor, context: torch.Tensor | None = None) -> torch.Tensor:
-        x = self.token_embeddings(x)
-        x = x + self.position_embeddings(x)
-        x = self.embedding_dropout(x)
+        tok_emb = self.token_embeddings(x)
+        pos_emb = self.position_embeddings(x)
+        x = self.embedding_dropout(tok_emb + pos_emb)
 
         for block in self.blocks:
             x = block(x, context=context)
