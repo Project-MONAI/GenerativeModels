@@ -34,20 +34,20 @@ pip install -r requirements-dev.txt
 
 #### Image synthesis with Diffusion Models
 
-* [Trainning a 3D Denoising Diffusion Probabilistic Model](./generative/3d_ddpm/3d_ddpm_tutorial.ipynb): This tutorial shows how to easily
+* [Training a 3D Denoising Diffusion Probabilistic Model](./generative/3d_ddpm/3d_ddpm_tutorial.ipynb): This tutorial shows how to easily
 train a DDPM on 3D medical data. In this example, we use a downsampled version of the BraTS dataset. We will show how to
 make use of the UNet model and the Noise Scheduler necessary to train a diffusion model. Besides that, we show how to
 use the DiffusionInferer class to simplify the training and sampling processes. Finally, after training the model, we
 show how to use a Noise Scheduler with fewer timesteps to sample synthetic images.
 
-* [Trainning a 2D Denoising Diffusion Probabilistic Model](./generative/2d_ddpm/2d_ddpm_tutorial.ipynb): This tutorial shows how to easily
+* [Training a 2D Denoising Diffusion Probabilistic Model](./generative/2d_ddpm/2d_ddpm_tutorial.ipynb): This tutorial shows how to easily
 train a DDPM on medical data. In this example, we use the MedNIST dataset, which is very suitable for beginners as a tutorial.
 
 * [Comparing different noise schedulers](./generative/2d_ddpm/2d_ddpm_compare_schedulers.ipynb): In this tutorial, we compare the
 performance of different noise schedulers. We will show how to sample a diffusion model using the DDPM, DDIM, and PNDM
 schedulers and how different numbers of timesteps affect the quality of the samples.
 
-* [Trainning a 2D Denoising Diffusion Probabilistic Model with different parameterisation](./generative/2d_ddpm/2d_ddpm_tutorial_v_prediction.ipynb):
+* [Training a 2D Denoising Diffusion Probabilistic Model with different parameterisation](./generative/2d_ddpm/2d_ddpm_tutorial_v_prediction.ipynb):
 In MONAI Generative Models, we support different parameterizations for the diffusion model (epsilon, sample, and
 v-prediction). In this tutorial, we show how to train a DDPM using the v-prediction parameterization, which improves the
 stability and convergence of the model.
