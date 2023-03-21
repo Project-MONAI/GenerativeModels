@@ -1894,7 +1894,8 @@ class DiffusionModelUNet(nn.Module):
 
 class DiffusionModelEncoder(nn.Module):
     """
-    Classification Network based on the Encoder of the Diffusion Model, followed by fully connected layers for classification
+    Classification Network based on the Encoder of the Diffusion Model, followed by fully connected layers. This network is based on
+    Wolleb et al. "Diffusion Models for Medical Anomaly Detection" (https://arxiv.org/abs/2203.04306).
 
     Args:
         spatial_dims: number of spatial dimensions.
@@ -1905,12 +1906,13 @@ class DiffusionModelEncoder(nn.Module):
         attention_levels: list of levels to add attention.
         norm_num_groups: number of groups for the normalization.
         norm_eps: epsilon for the normalization.
+        resblock_updown: if True use residual blocks for downsampling.
         num_head_channels: number of channels in each attention head.
         with_conditioning: if True add spatial transformers to perform conditioning.
         transformer_num_layers: number of layers of Transformer blocks to use.
         cross_attention_dim: number of context dimensions to use.
-        num_class_embeds: if specified (as an int), then this model will be class-conditional with `num_class_embeds`
-        classes.
+        num_class_embeds: if specified (as an int), then this model will be class-conditional with `num_class_embeds` classes.
+        upcast_attention: if True, upcast attention operations to full precision.
     """
 
     def __init__(

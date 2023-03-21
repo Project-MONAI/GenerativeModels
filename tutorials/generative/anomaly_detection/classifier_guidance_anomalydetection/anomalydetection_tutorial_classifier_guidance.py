@@ -19,7 +19,7 @@
 # This tutorial illustrates how to use MONAI for training a 2D gradient-guided anomaly detection using DDIMs [1].
 #
 # We train a diffusion model on 2D slices of brain MR images. A classification model is trained to predict whether the given slice shows a tumor or not.\
-# We then tranlsate an input slice to its healthy reconstruction using DDIMs.\
+# We then translate an input slice to its healthy reconstruction using DDIMs.\
 # Anomaly detection is performed by taking the difference between input and output, as proposed in [1].
 #
 # [1] - Wolleb et al. "Diffusion Models for Medical Anomaly Detection" https://arxiv.org/abs/2203.04306
@@ -29,7 +29,7 @@
 # %%
 # !python -c "import monai" || pip install -q "monai-weekly[pillow, tqdm, einops]"
 # !python -c "import matplotlib" || pip install -q matplotlib
-# !python -c "import seaborn" || pi resblock_updown: bool = False,p install -q seaborn
+# !python -c "import seaborn" || pip install -q seaborn
 
 # %% [markdown]
 # ## Setup imports
@@ -45,9 +45,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import os
 import time
-from typing import Dict
 import tempfile
 import matplotlib.pyplot as plt
 import numpy as np
@@ -64,9 +64,8 @@ from tqdm import tqdm
 from generative.inferers import DiffusionInferer
 from generative.networks.nets.diffusion_model_unet import DiffusionModelEncoder, DiffusionModelUNet
 from generative.networks.schedulers.ddim import DDIMScheduler
-
-
 torch.multiprocessing.set_sharing_strategy("file_system")
+
 print_config()
 
 
@@ -86,19 +85,13 @@ set_determinism(42)
 # %% [markdown] tags=[]
 # ## Preprocessing of the BRATS Dataset in 2D slices for training
 # We download the BRATS training dataset from the Decathlon dataset. \
-# We slice the volumes in axial 2D slices and stack them into a tensor called _total_train_slices_ (this takes a while).\
-# The corresponding slice-wise labels (0 for healthy, 1 for diseased) are stored in the tensor  _total_train_labels_.
+# We slice the volumes in axial 2D slices, and assign slice-wise labels (0 for healthy, 1 for diseased) to all slices.
+# Here we use transforms to augment the training dataset:
 #
-
-# %% [markdown]
-# Here we use transforms to augment the training dataset, as usual:
-#
-# 1. `LoadImaged` loads the hands images from files.
+# 1. `LoadImaged` loads the brain MR images from files.
 # 1. `EnsureChannelFirstd` ensures the original data to construct "channel first" shape.
-# 1. `ScaleIntensityRanged` extracts intensity range [0, 255] and scales to [0, 1].
-# 1. `RandAffined` efficiently performs rotate, scale, shear, translate, etc. together based on PyTorch affine transform.
+# 1. `ScaleIntensityRangePercentilesd` takes the lower and upper intensity percentiles and scales them to [0, 1].
 #
-# To avoid a bias in the classification labels, cut the lowest and highest 10 slices, as most tumors occur in the middle part of the brain.
 
 # %%
 channel = 0  # 0 = Flair
@@ -113,82 +106,59 @@ train_transforms = transforms.Compose(
         transforms.EnsureTyped(keys=["image", "label"]),
         transforms.Orientationd(keys=["image", "label"], axcodes="RAS"),
         transforms.Spacingd(keys=["image", "label"], pixdim=(3.0, 3.0, 2.0), mode=("bilinear", "nearest")),
-        transforms.CenterSpatialCropd(keys=["image", "label"], roi_size=(64, 64, 64)),
+        transforms.CenterSpatialCropd(keys=["image", "label"], roi_size=(64, 64, 44)),
         transforms.ScaleIntensityRangePercentilesd(keys="image", lower=0, upper=99.5, b_min=0, b_max=1),
+        transforms.RandSpatialCropd(keys=["image", "label"], roi_size=(64, 64, 1), random_size=False),
+        transforms.Lambdad(keys=["image", "label"], func=lambda x: x.squeeze(-1)),
         transforms.CopyItemsd(keys=["label"], times=1, names=["slice_label"]),
-        transforms.Lambdad(
-            keys=["slice_label"], func=lambda x: (x.reshape(x.shape[0], -1, x.shape[-1]).sum(1) > 0).float().squeeze()
-        ),
+        transforms.Lambdad(keys=["slice_label"], func=lambda x: 0.0 if x.sum() > 0 else 1.0),
     ]
 )
 
-
-def get_batched_2d_axial_slices(data: Dict):
-    images_3D = data["image"]
-    batched_2d_slices = torch.cat(images_3D.split(1, dim=-1)[10:-10], 0).squeeze(
-        -1
-    )  # we cut the lowest and highest 10 slices, because we are interested in the middle part of the brain.
-    slice_label = data["slice_label"]
-    slice_label = torch.cat(slice_label.split(1, dim=-1)[10:-10], 0).squeeze()
-    return batched_2d_slices, slice_label
-
-
 # %% jupyter={"outputs_hidden": false}
+batch_size=64
 
 train_ds = DecathlonDataset(
     root_dir=root_dir,
     task="Task01_BrainTumour",
     section="training",  # validation
-    cache_rate=0.0,  # you may need a few Gb of RAM... Set to 0 otherwise
+    cache_rate=1.0,  # you may need a few Gb of RAM... Set to 0 otherwise
     num_workers=4,
-    download=True,  # Set download to True if the dataset hasnt been downloaded yet
+    download=False,  # Set download to True if the dataset hasnt been downloaded yet
     seed=0,
     transform=train_transforms,
 )
-print("len train data", len(train_ds))  # this gives the number of patients in the training set
 
+print(f"Length of training data: {len(train_ds)}")  # this gives the number of patients in the training set
+print(f'Train image shape {train_ds[0]["image"].shape}')
 
-train_loader_3D = DataLoader(train_ds, batch_size=1, shuffle=True, num_workers=4)
-data_2d_slices = []
-data_slice_label = []
-for i, data in enumerate(train_loader_3D):
-    b2d, slice_label2d = get_batched_2d_axial_slices(data)
-    data_2d_slices.append(b2d)
-    data_slice_label.append(slice_label2d)
-
-total_train_slices = torch.cat(data_2d_slices, 0)
-total_train_labels = torch.cat(data_slice_label, 0)
+train_loader = DataLoader(
+    train_ds, batch_size=batch_size, shuffle=True, num_workers=4, drop_last=True, persistent_workers=True
+)
 
 # %% [markdown] tags=[]
 # ## Preprocessing of the BRATS Dataset in 2D slices for validation
-# We download the BRATS validation dataset from the Decathlon dataset.
-# We slice the volumes in axial 2D slices and stack them into a tensor called _total_val_slices_.
-# The corresponding slice-wise labels (0 for healthy, 1 for diseased) are stored in the tensor  _total_val_labels_.
+# We download the BRATS validation dataset from the Decathlon dataset, and define the dataloader to load 2D slices for validation.
+#
 #
 
 # %%
 val_ds = DecathlonDataset(
     root_dir=root_dir,
     task="Task01_BrainTumour",
-    section="validation",  # validation
-    cache_rate=0.0,  # you may need a few Gb of RAM... Set to 0 otherwise
+    section="validation",
+    cache_rate=1.0,  # you may need a few Gb of RAM... Set to 0 otherwise
     num_workers=4,
-    download=True,  # Set download to True if the dataset hasnt been downloaded yet
+    download=False,  # Set download to True if the dataset hasnt been downloaded yet
     seed=0,
     transform=train_transforms,
 )
+print(f"Length of training data: {len(val_ds)}")
+print(f'Validation Image shape {val_ds[0]["image"].shape}')
 
-
-val_loader_3D = DataLoader(val_ds, batch_size=1, shuffle=True, num_workers=4)
-data_2d_slices_val = []
-data_slice_label_val = []
-for i, data in enumerate(val_loader_3D):
-    b2d, slice_label2d = get_batched_2d_axial_slices(data)
-    data_2d_slices_val.append(b2d)
-    data_slice_label_val.append(slice_label2d)
-
-total_val_slices = torch.cat(data_2d_slices_val, 0)
-total_val_labels = torch.cat(data_slice_label_val, 0)
+val_loader = DataLoader(
+    val_ds, batch_size=batch_size, shuffle=False, num_workers=4, drop_last=True, persistent_workers=True
+)
 
 
 # %% [markdown]
@@ -220,33 +190,27 @@ optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
 inferer = DiffusionInferer(scheduler)
 
 
+
 # %% [markdown] tags=[]
 # ## Model training of the diffusion model
-# We train our diffusion model for 100 epochs, with a batch size of 32.
+# We train our diffusion model for 2000 epochs.
 
 # %% jupyter={"outputs_hidden": false}
-n_epochs = 100
-batch_size = 32
-val_interval = 1
+n_epochs = 2000
+val_interval = 20
 epoch_loss_list = []
 val_epoch_loss_list = []
 
 scaler = GradScaler()
 total_start = time.time()
+
 for epoch in range(n_epochs):
     model.train()
     epoch_loss = 0
-    indexes = list(torch.randperm(total_train_slices.shape[0]))  # shuffle training data new
-    data_train = total_train_slices[indexes]  # shuffle the training data
-    labels_train = total_train_labels[indexes]
-    subset_2D = zip(data_train.split(batch_size), labels_train.split(batch_size))
-    subset_2D_val = zip(total_val_slices.split(1), total_val_labels.split(1))  #
 
-    progress_bar = tqdm(enumerate(subset_2D), total=len(indexes) / batch_size)
-    progress_bar.set_description(f"Epoch {epoch}")
-    for step, (a, b) in progress_bar:
-        images = a.to(device)
-        classes = b.to(device)
+    for step, data in enumerate(train_loader):
+        images = data['image'].to(device)
+        classes = data['slice_label'].to(device)
         optimizer.zero_grad(set_to_none=True)
         timesteps = torch.randint(0, 1000, (len(images),)).to(device)  # pick a random time step t
 
@@ -256,35 +220,31 @@ for epoch in range(n_epochs):
 
             # Get model prediction
             noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
-
             loss = F.mse_loss(noise_pred.float(), noise.float())
 
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
         epoch_loss += loss.item()
-        progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
     epoch_loss_list.append(epoch_loss / (step + 1))
 
     if (epoch) % val_interval == 0:
         model.eval()
         val_epoch_loss = 0
-        progress_bar_val = tqdm(enumerate(subset_2D_val))
-        progress_bar.set_description(f"Epoch {epoch}")
-        for step, (a, b) in progress_bar_val:
-            images = a.to(device)
-            classes = b.to(device)
 
-            timesteps = torch.randint(0, 1000, (len(images),)).to(device)
-            with torch.no_grad():
+        for step, data in enumerate(val_loader):
+             images = data['image'].to(device)
+             classes = data['slice_label'].to(device)
+             timesteps = torch.randint(0, 1000, (len(images),)).to(device)
+             with torch.no_grad():
                 with autocast(enabled=True):
                     noise = torch.randn_like(images).to(device)
                     noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
                     val_loss = F.mse_loss(noise_pred.float(), noise.float())
 
-            val_epoch_loss += val_loss.item()
-            progress_bar.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
+             val_epoch_loss += val_loss.item()
         val_epoch_loss_list.append(val_epoch_loss / (step + 1))
+        print('Epoch', epoch, 'Validation loss', val_epoch_loss / (step + 1))
 
 total_time = time.time() - total_start
 print(f"train diffusion completed, total time: {total_time}.")
@@ -339,6 +299,7 @@ plt.show()
 #
 
 # %%
+device = torch.device("cuda")
 classifier = DiffusionModelEncoder(
     spatial_dims=2,
     in_channels=1,
@@ -349,24 +310,22 @@ classifier = DiffusionModelEncoder(
     num_head_channels=64,
     with_conditioning=False,
 )
+
 classifier.to(device)
 
 
 # %% [markdown]
 # ## Model training of the classification model
-# We train our classification model for 100 epochs.
+# We train our classification model for 1000 epochs.
 #
 
 # %%
-batch_size = 32
-n_epochs = 100
-val_interval = 1
+
+n_epochs = 1000
+val_interval = 10
 epoch_loss_list = []
 val_epoch_loss_list = []
 optimizer_cls = torch.optim.Adam(params=classifier.parameters(), lr=2.5e-5)
-
-classifier.to(device)
-weight = torch.tensor((3, 1)).float().to(device)  # account for the class imbalance in the dataset
 
 
 scaler = GradScaler()
@@ -374,16 +333,11 @@ total_start = time.time()
 for epoch in range(n_epochs):
     classifier.train()
     epoch_loss = 0
-    indexes = list(torch.randperm(total_train_slices.shape[0]))
-    data_train = total_train_slices[indexes]  # shuffle the training data
-    labels_train = total_train_labels[indexes]
-    subset_2D = zip(data_train.split(batch_size), labels_train.split(batch_size))
-    progress_bar = tqdm(enumerate(subset_2D), total=len(indexes) / batch_size)
-    progress_bar.set_description(f"Epoch {epoch}")
 
-    for step, (a, b) in progress_bar:
-        images = a.to(device)
-        classes = b.to(device)
+    for step, data in enumerate(train_loader):
+        images = data['image'].to(device)
+        classes = data['slice_label'].to(device)
+        #classes[classes==2]=0
 
         optimizer_cls.zero_grad(set_to_none=True)
         timesteps = torch.randint(0, 1000, (len(images),)).to(device)
@@ -395,25 +349,22 @@ for epoch in range(n_epochs):
             # Get model prediction
             noisy_img = scheduler.add_noise(images, noise, timesteps)  # add t steps of noise to the input image
             pred = classifier(noisy_img, timesteps)
-            loss = F.cross_entropy(pred, classes.long(), weight=weight, reduction="mean")
 
-        loss.backward()
-        optimizer_cls.step()
+            loss = F.cross_entropy(pred, classes.long())
+
+            loss.backward()
+            optimizer_cls.step()
 
         epoch_loss += loss.item()
-        progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
     epoch_loss_list.append(epoch_loss / (step + 1))
-    print("final step train", step)
 
     if (epoch + 1) % val_interval == 0:
         classifier.eval()
         val_epoch_loss = 0
-        subset_2D_val = zip(total_val_slices.split(batch_size), total_val_labels.split(batch_size))  #
-        progress_bar_val = tqdm(enumerate(subset_2D_val))
-        progress_bar_val.set_description(f"Epoch {epoch}")
-        for step, (a, b) in progress_bar_val:
-            images = a.to(device)
-            classes = b.to(device)
+
+        for step, data_val in enumerate(val_loader):
+            images = data_val['image'].to(device)
+            classes = data_val['slice_label'].to(device)
             timesteps = torch.randint(0, 1, (len(images),)).to(
                 device
             )  # check validation accuracy on the original images, i.e., do not add noise
@@ -426,8 +377,8 @@ for epoch in range(n_epochs):
 
             val_epoch_loss += val_loss.item()
             _, predicted = torch.max(pred, 1)
-            progress_bar_val.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
-        val_epoch_loss_list.append(val_epoch_loss / (step + 1))
+            val_epoch_loss_list.append(val_epoch_loss / (step + 1))
+        print('Epoch', epoch, 'Validation loss', val_epoch_loss / (step + 1))
 
 total_time = time.time() - total_start
 print(f"train completed, total time: {total_time}.")
@@ -455,12 +406,14 @@ plt.show()
 # We pick a diseased subject of the validation set as input image. We want to translate it to its healthy reconstruction.
 
 # %%
-
-inputimg = total_val_slices[120][0, ...]  # Pick an input slice of the validation set to be transformed
-inputlabel = total_val_labels[120]  # Check whether it is healthy or diseased
+idx_unhealthy = np.argwhere(data_val["slice_label"].numpy() == 0).squeeze()
+idx = idx_unhealthy[4]  # Pick a random slice of the validation set to be transformed
+inputimg = data_val["image"][idx]  # Pick an input slice of the validation set to be transformed
+inputlabel = data_val["slice_label"][idx]  # Check whether it is healthy or diseased
+print('minmax', inputimg.min(), inputimg.max())
 
 plt.figure("input" + str(inputlabel))
-plt.imshow(inputimg, vmin=0, vmax=1, cmap="gray")
+plt.imshow(inputimg[0,...], vmin=0, vmax=1, cmap="gray")
 plt.axis("off")
 plt.tight_layout()
 plt.show()
@@ -477,9 +430,8 @@ classifier.eval()
 
 # %% jupyter={"outputs_hidden": false}
 L = 200
-current_img = inputimg[None, None, ...].to(device)
+current_img = inputimg[None, ...].to(device)
 scheduler.set_timesteps(num_inference_steps=1000)
-
 
 progress_bar = tqdm(range(L))  # go back and forth L timesteps
 for t in progress_bar:  # go through the noising process
@@ -502,10 +454,8 @@ plt.show()
 # The scale s is used to amplify the gradient.
 
 # %%
-
-
 y = torch.tensor(0)  # define the desired class label
-scale = 5  # define the desired gradient scale s
+scale = 6 # define the desired gradient scale s
 progress_bar = tqdm(range(L))  # go back and forth L timesteps
 
 for i in progress_bar:  # go through the denoising process
@@ -546,7 +496,9 @@ plt.show()
 
 diff = abs(inputimg.cpu() - current_img[0, 0].cpu()).detach().numpy()
 plt.style.use("default")
-plt.imshow(diff, cmap="jet")
+plt.imshow(diff[0,...], cmap="jet")
 plt.tight_layout()
 plt.axis("off")
 plt.show()
+
+# %%

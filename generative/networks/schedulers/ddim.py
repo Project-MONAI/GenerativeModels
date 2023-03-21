@@ -8,12 +8,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
+
 # =========================================================================
 # Adapted from https://github.com/huggingface/diffusers
 # which has the following license:
 # https://github.com/huggingface/diffusers/blob/main/LICENSE
-#
+
 # Copyright 2022 UC Berkeley Team and The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,7 +29,7 @@
 # limitations under the License.
 # =========================================================================
 
-from __future__ import annotations
+from typing import Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -41,7 +41,6 @@ class DDIMScheduler(nn.Module):
     Denoising diffusion implicit models is a scheduler that extends the denoising procedure introduced in denoising
     diffusion probabilistic models (DDPMs) with non-Markovian guidance. Based on: Song et al. "Denoising Diffusion
     Implicit Models" https://arxiv.org/abs/2010.02502
-
     Args:
         num_train_timesteps: number of diffusion steps used to train the model.
         beta_start: the starting `beta` value of inference.
@@ -103,18 +102,16 @@ class DDIMScheduler(nn.Module):
         # standard deviation of the initial noise distribution
         self.init_noise_sigma = 1.0
 
+        # setable values
+        self.num_inference_steps = None
         self.timesteps = torch.from_numpy(np.arange(0, num_train_timesteps)[::-1].astype(np.int64))
 
         self.clip_sample = clip_sample
         self.steps_offset = steps_offset
 
-        # default the number of inference timesteps to the number of train steps
-        self.set_timesteps(num_train_timesteps)
-
-    def set_timesteps(self, num_inference_steps: int, device: str | torch.device | None = None) -> None:
+    def set_timesteps(self, num_inference_steps: int, device: Optional[Union[str, torch.device]] = None) -> None:
         """
         Sets the discrete timesteps used for the diffusion chain. Supporting function to be run before inference.
-
         Args:
             num_inference_steps: number of diffusion steps used when generating samples with a pre-trained model.
             device: target device to put the data.
@@ -150,12 +147,11 @@ class DDIMScheduler(nn.Module):
         timestep: int,
         sample: torch.Tensor,
         eta: float = 0.0,
-        generator: torch.Generator | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+        generator: Optional[torch.Generator] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Predict the sample at the previous timestep by reversing the SDE. Core function to propagate the diffusion
         process from the learned model outputs (most often the predicted noise).
-
         Args:
             model_output: direct output from learned diffusion model.
             timestep: current discrete timestep in the diffusion chain.
@@ -163,7 +159,6 @@ class DDIMScheduler(nn.Module):
             eta: weight of noise for added noise in diffusion step.
             predict_epsilon: flag to use when model predicts the samples directly instead of the noise, epsilon.
             generator: random number generator.
-
         Returns:
             pred_prev_sample: Predicted previous sample
             pred_original_sample: Predicted original sample
@@ -192,13 +187,12 @@ class DDIMScheduler(nn.Module):
         # "predicted x_0" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
         if self.prediction_type == "epsilon":
             pred_original_sample = (sample - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
-            pred_epsilon = model_output
         elif self.prediction_type == "sample":
             pred_original_sample = model_output
-            pred_epsilon = (sample - alpha_prod_t ** (0.5) * pred_original_sample) / beta_prod_t ** (0.5)
         elif self.prediction_type == "v_prediction":
             pred_original_sample = (alpha_prod_t**0.5) * sample - (beta_prod_t**0.5) * model_output
-            pred_epsilon = (alpha_prod_t**0.5) * model_output + (beta_prod_t**0.5) * sample
+            # predict V
+            model_output = (alpha_prod_t**0.5) * model_output + (beta_prod_t**0.5) * sample
 
         # 4. Clip "predicted x_0"
         if self.clip_sample:
@@ -210,7 +204,7 @@ class DDIMScheduler(nn.Module):
         std_dev_t = eta * variance ** (0.5)
 
         # 6. compute "direction pointing to x_t" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
-        pred_sample_direction = (1 - alpha_prod_t_prev - std_dev_t**2) ** (0.5) * pred_epsilon
+        pred_sample_direction = (1 - alpha_prod_t_prev - std_dev_t**2) ** (0.5) * model_output
 
         # 7. compute x_t-1 without "random noise" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
         pred_prev_sample = alpha_prod_t_prev ** (0.5) * pred_original_sample + pred_sample_direction
@@ -236,7 +230,6 @@ class DDIMScheduler(nn.Module):
         """
         Predict the sample at the previous timestep by reversing the SDE. Core function to propagate the diffusion
         process from the learned model outputs (most often the predicted noise).
-
         Args:
             model_output: direct output from learned diffusion model.
             timestep: current discrete timestep in the diffusion chain.
@@ -244,7 +237,6 @@ class DDIMScheduler(nn.Module):
             eta: weight of noise for added noise in diffusion step.
             predict_epsilon: flag to use when model predicts the samples directly instead of the noise, epsilon.
             generator: random number generator.
-
         Returns:
             pred_prev_sample: Predicted previous sample
             pred_original_sample: Predicted original sample
@@ -307,15 +299,18 @@ class DDIMScheduler(nn.Module):
 
         return pred_post_sample, pred_original_sample
 
-    def add_noise(self, original_samples: torch.Tensor, noise: torch.Tensor, timesteps: torch.Tensor) -> torch.Tensor:
+    def add_noise(
+        self,
+        original_samples: torch.Tensor,
+        noise: torch.Tensor,
+        timesteps: torch.Tensor,
+    ) -> torch.Tensor:
         """
         Add noise to the original samples.
-
         Args:
             original_samples: original samples
             noise: noise to add to samples
             timesteps: timesteps tensor indicating the timestep to be computed for each sample.
-
         Returns:
             noisy_samples: sample with added noise
         """
