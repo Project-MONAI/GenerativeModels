@@ -179,7 +179,7 @@ class TestVQVAETransformerInferer(unittest.TestCase):
         )
         stage_2 = DecoderOnlyTransformer(
             num_tokens=16 + 1,
-            max_seq_len=2,
+            max_seq_len=4,
             attn_layers_dim=4,
             attn_layers_depth=2,
             attn_layers_heads=1,
@@ -203,8 +203,20 @@ class TestVQVAETransformerInferer(unittest.TestCase):
             vqvae_model=stage_1,
             transformer_model=stage_2,
             ordering=ordering,
+            top_k=1
         )
-        self.assertEqual(sample.shape, (2, 1, 8, 8))
+
+        # now shorten the sequence and sample
+        stage_2.max_seq_len = 2
+        sample_shorter = inferer.sample(
+            latent_spatial_dim=(2, 2),
+            starting_tokens=starting_token * torch.ones((2, 1), device=device),
+            vqvae_model=stage_1,
+            transformer_model=stage_2,
+            ordering=ordering,
+            top_k=1
+        )
+        np.testing.assert_allclose(sample.cpu().detach().numpy(), sample_shorter.cpu().detach().numpy())
 
     @parameterized.expand(TEST_CASES)
     def test_get_likelihood(
