@@ -30,8 +30,8 @@ class TransformerBlock(nn.Module):
         dropout_rate: faction of the input units to drop.
         qkv_bias: apply bias term for the qkv linear layer
         causal: whether to use causal attention.
-        cross_attention_dim: number of channels in the context.
         sequence_length: if causal is True, it is necessary to specify the sequence length.
+        with_cross_attention: Whether to use cross attention for conditioning.
     """
 
     def __init__(
@@ -41,11 +41,11 @@ class TransformerBlock(nn.Module):
         num_heads: int,
         dropout_rate: float = 0.0,
         qkv_bias: bool = False,
-        cross_attention_dim: int | None = None,
         causal: bool = False,
         sequence_length: int | None = None,
+        with_cross_attention: bool = False,
     ) -> None:
-
+        self.with_cross_attention = with_cross_attention
         super().__init__()
 
         if not (0 <= dropout_rate <= 1):
@@ -55,7 +55,7 @@ class TransformerBlock(nn.Module):
             raise ValueError("hidden_size should be divisible by num_heads.")
 
         self.norm1 = nn.LayerNorm(hidden_size)
-        self.attn = SABlock(hidden_size=hidden_size, num_heads=num_heads, dropout_rate=dropout_rate, qkv_bias=qkv_bias, cross_attention_dim=cross_attention_dim, causal=causal, sequence_length=sequence_length)
+        self.attn = SABlock(hidden_size=hidden_size, num_heads=num_heads, dropout_rate=dropout_rate, qkv_bias=qkv_bias, with_cross_attention=with_cross_attention, causal=causal, sequence_length=sequence_length)
         self.norm2 = nn.LayerNorm(hidden_size)
         self.mlp = MLPBlock(hidden_size, mlp_dim, dropout_rate)
 

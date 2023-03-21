@@ -30,6 +30,7 @@ class SABlock(nn.Module):
         qkv_bias: bias term for the qkv linear layer.
         causal: whether to use causal attention.
         sequence_length: if causal is True, it is necessary to specify the sequence length.
+        with_cross_attention: Whether to use cross attention for conditioning.
     """
 
     def __init__(
@@ -38,21 +39,18 @@ class SABlock(nn.Module):
         num_heads: int,
         dropout_rate: float = 0.0,
         qkv_bias: bool = False,
-        cross_attention_dim: int | None = None,
         causal: bool = False,
         sequence_length: int | None = None,
+        with_cross_attention: bool = False,
     ) -> None:
         super().__init__()
         self.hidden_size = hidden_size
         self.num_heads = num_heads
         self.head_dim = hidden_size // num_heads
         self.scale = 1.0 / math.sqrt(self.head_dim)
-
-        cross_attention_dim = cross_attention_dim if cross_attention_dim is not None else hidden_size
-        self.cross_attention_dim = cross_attention_dim
-
         self.causal = causal
         self.sequence_length = sequence_length
+        self.with_cross_attention = with_cross_attention
 
         if not (0 <= dropout_rate <= 1):
             raise ValueError("dropout_rate should be between 0 and 1.")
@@ -65,8 +63,8 @@ class SABlock(nn.Module):
 
         # key, query, value projections
         self.to_q = nn.Linear(hidden_size, hidden_size, bias=qkv_bias)
-        self.to_k = nn.Linear(cross_attention_dim, hidden_size, bias=qkv_bias)
-        self.to_v = nn.Linear(cross_attention_dim, hidden_size, bias=qkv_bias)
+        self.to_k = nn.Linear(hidden_size, hidden_size, bias=qkv_bias)
+        self.to_v = nn.Linear(hidden_size, hidden_size, bias=qkv_bias)
 
         # regularization
         self.drop_weights = nn.Dropout(dropout_rate)
@@ -91,23 +89,25 @@ class SABlock(nn.Module):
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
         query = self.to_q(x)
-        context = context if context is not None else x
+
+        kv = context if context is not None else x
+        _, kv_t, _ = kv.size()
         key = self.to_k(context)
         value = self.to_v(context)
 
-        key = key.view(b, t, self.num_heads, c // self.num_heads).transpose(1, 2)  # (b, nh, t, hs)
         query = query.view(b, t, self.num_heads, c // self.num_heads).transpose(1, 2)  # (b, nh, t, hs)
-        value = value.view(b, t, self.num_heads, c // self.num_heads).transpose(1, 2)  # (b, nh, t, hs)
+        key = key.view(b, kv_t, self.num_heads, c // self.num_heads).transpose(1, 2)  # (b, nh, kv_t, hs)
+        value = value.view(b, kv_t, self.num_heads, c // self.num_heads).transpose(1, 2)  # (b, nh, kv_t, hs)
 
         # manual implementation of attention
         attention_scores = (query @ key.transpose(-2, -1)) * self.scale
 
         if self.causal:
-            attention_scores = attention_scores.masked_fill(self.mask[:, :, :t, :t] == 0, float("-inf"))
+            attention_scores = attention_scores.masked_fill(self.mask[:, :, :t, :kv_t] == 0, float("-inf"))
 
         attention_probs = F.softmax(attention_scores, dim=-1)
         attention_probs = self.drop_weights(attention_probs)
-        y = attention_probs @ value  # (b, nh, t, t) x (b, nh, t, hs) -> (b, nh, t, hs)
+        y = attention_probs @ value  # (b, nh, t, kv_t) x (b, nh, kv_t, hs) -> (b, nh, t, hs)
         y = y.transpose(1, 2).contiguous().view(b, t, c)  # re-assemble all head outputs side by side
 
         y = self.out_proj(y)

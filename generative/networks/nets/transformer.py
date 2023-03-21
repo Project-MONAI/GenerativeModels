@@ -48,7 +48,7 @@ class DecoderOnlyTransformer(nn.Module):
         attn_layers_dim: Dimensionality of the attention layers.
         attn_layers_depth: Number of attention layers.
         attn_layers_heads: Number of attention heads.
-        cross_attention_dim: number of channels in the context.
+        with_cross_attention: Whether to use cross attention for conditioning.
         embedding_dropout_rate: Dropout rate for the embedding.
     """
 
@@ -59,7 +59,7 @@ class DecoderOnlyTransformer(nn.Module):
         attn_layers_dim: int,
         attn_layers_depth: int,
         attn_layers_heads: int,
-        cross_attention_dim: int | None = None,
+        with_cross_attention: bool = False,
         embedding_dropout_rate: float = 0.0,
     ) -> None:
         super().__init__()
@@ -68,7 +68,7 @@ class DecoderOnlyTransformer(nn.Module):
         self.attn_layers_dim = attn_layers_dim
         self.attn_layers_depth = attn_layers_depth
         self.attn_layers_heads = attn_layers_heads
-        self.cross_attention_dim = cross_attention_dim
+        self.with_cross_attention = with_cross_attention
 
         self.token_embeddings = nn.Embedding(num_tokens, attn_layers_dim)
         self.position_embeddings = AbsolutePositionalEmbedding(max_seq_len=max_seq_len, embedding_dim=attn_layers_dim)
@@ -82,9 +82,9 @@ class DecoderOnlyTransformer(nn.Module):
                     num_heads=attn_layers_heads,
                     dropout_rate=0.0,
                     qkv_bias=False,
-                    cross_attention_dim=cross_attention_dim,
                     causal=True,
                     sequence_length=max_seq_len,
+                    with_cross_attention=with_cross_attention,
                 )
                 for _ in range(attn_layers_depth)
             ]
