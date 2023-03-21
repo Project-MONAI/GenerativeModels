@@ -13,8 +13,29 @@
 #     name: python3
 # ---
 
+# %% [markdown]
+# # Anomaly Detection with Transformers
+#
+# This tutorial illustrates how to use MONAI to perform image-wise and localised anomaly detection with transformers based on the method proposed in Pinaya et al.[1].
+#
+# Here, we will work with the [MedNIST dataset](https://docs.monai.io/en/stable/apps.html#monai.apps.MedNISTDataset) available on MONAI, and similar to "Experiment 2 – image-wise anomaly detection on 2D synthetic data" from [1], we will train a general-purpose VQ-VAE (using all MEDNIST classes), and then a generative models (i.e., Transformer) on `HeadCT` images.
+#
+# We will compute the log-likelihood of images from the same class (in-distribution class) and images from other classes (out-of-distribution). We will also provide an example of performing localised anomaly detection with these trained models.
+#
+# [1] - [Pinaya et al. "Unsupervised brain imaging 3D anomaly detection and segmentation with transformers"](https://doi.org/10.1016/j.media.2022.102475)
+
+# %% [markdown]
+# ### Setup environment
+
 # %%
-# Copyright (c) MONAI Consortium
+# !python -c "import seaborn" || pip install -q seaborn
+# %matplotlib inline
+
+# %% [markdown]
+# ### Setup imports
+
+# %%
+# Copyright 2020 MONAI Consortium
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -24,31 +45,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-# %% [markdown]
-# # Anomaly Detection with Transformers
-#
-# This tutorial illustrates how to use MONAI to perform image-wise anomaly detection with transformers based on the method proposed in Pinaya et al.[1].
-#
-# Here, we will work with the [MedNIST dataset](https://docs.monai.io/en/stable/apps.html#monai.apps.MedNISTDataset) available on MONAI, and similar to "Experiment 2 – image-wise anomaly detection on 2D synthetic data" from [1], we will train a general-purpose VQ-VAE (using all MEDNIST classes), and then a generative models (i.e., Transformer) on `HeadCT` images.
-#
-# Finally, we will compute the log-likelihood of images from the same class (in-distribution class) and images from other classes (out-of-distribution).
-#
-# [1] - Pinaya et al. "Unsupervised brain imaging 3D anomaly detection and segmentation with transformers" https://doi.org/10.1016/j.media.2022.102475
-
-# %% [markdown]
-# ### Setup environment
-
-# %%
-# !python -c "import monai" || pip install -q "monai-weekly[tqdm]"
-# !python -c "import matplotlib" || pip install -q matplotlib
-# !python -c "import seaborn" || pip install -q seaborn
-# %matplotlib inline
-
-# %% [markdown]
-# ### Setup imports
-
-# %%
 import os
 import tempfile
 import time
@@ -57,6 +53,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 import torch
+import torch.nn.functional as F
 from monai import transforms
 from monai.apps import MedNISTDataset
 from monai.config import print_config
@@ -64,7 +61,6 @@ from monai.data import DataLoader, Dataset
 from monai.utils import first, set_determinism
 from torch.nn import CrossEntropyLoss, L1Loss
 from tqdm import tqdm
-
 from generative.inferers import VQVAETransformerInferer
 from generative.networks.nets import VQVAE, DecoderOnlyTransformer
 from generative.utils.enums import OrderingType
@@ -222,13 +218,17 @@ print(f"train completed, total time: {total_time}.")
 # ### Plot reconstructions of final trained vqvae model
 
 # %%
-fig, ax = plt.subplots(nrows=1, ncols=2)
-ax[0].imshow(images[0, 0].detach().cpu(), vmin=0, vmax=1, cmap="gray")
-ax[0].axis("off")
-ax[0].title.set_text("Inputted Image")
-ax[1].imshow(reconstruction[0, 0].detach().cpu(), vmin=0, vmax=1, cmap="gray")
-ax[1].axis("off")
-ax[1].title.set_text("Reconstruction")
+images = first(val_loader)["image"].to(device)
+reconstruction, quantization_loss = vqvae_model(images=images)
+nrows = 4
+fig, ax = plt.subplots(nrows=4, ncols=2, figsize=(3, 4))
+for i in range(nrows):
+    ax.flat[i * 2].imshow(images[i + 20, 0].detach().cpu(), vmin=0, vmax=1, cmap="gray")
+    ax.flat[i * 2].axis("off")
+    ax.flat[i * 2 + 1].imshow(reconstruction[i + 20, 0].detach().cpu(), vmin=0, vmax=1, cmap="gray")
+    ax.flat[i * 2 + 1].axis("off")
+ax.flat[0].title.set_text("Image")
+ax.flat[1].title.set_text("Reconstruction")
 plt.show()
 
 # %% [markdown]
@@ -245,8 +245,10 @@ plt.show()
 # To train the transformer, we only use the `HeadCT` class.
 
 # %%
+in_distribution_class = "HeadCT"
+
 train_data = MedNISTDataset(root_dir=root_dir, section="training", seed=0)
-train_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "HeadCT"]
+train_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == in_distribution_class]
 train_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),
@@ -267,7 +269,7 @@ train_ds = Dataset(data=train_datalist, transform=train_transforms)
 train_loader = DataLoader(train_ds, batch_size=32, shuffle=True, num_workers=4, persistent_workers=True)
 
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", seed=0)
-val_datalist = [{"image": item["image"]} for item in val_data.data if item["class_name"] == "HeadCT"]
+val_datalist = [{"image": item["image"]} for item in val_data.data if item["class_name"] == in_distribution_class]
 val_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),
@@ -283,13 +285,9 @@ val_loader = DataLoader(val_ds, batch_size=32, shuffle=False, num_workers=4, per
 # We need to define an ordering of which we convert our 2D latent space into a 1D sequence. For this we will use a simple raster scan.
 
 # %%
-spatial_shape = next(iter(train_loader))["image"].shape[2:]
-
-# %%
 # Get spatial dimensions of data
-# We divide the spatial shape by 4 as the vqvae downsamples the image by a factor of 4 along each dimension
-spatial_shape = next(iter(train_loader))["image"].shape[2:]
-spatial_shape = (int(spatial_shape[0] / 4), int(spatial_shape[1] / 4))
+test_data = next(iter(train_loader))["image"].to(device)
+spatial_shape = vqvae_model.encode_stage_2_inputs(test_data).shape[2:]
 
 ordering = Ordering(ordering_type=OrderingType.RASTER_SCAN.value, spatial_dims=2, dimensions=(1,) + spatial_shape)
 
@@ -333,6 +331,7 @@ for epoch in range(n_epochs):
     progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=110)
     progress_bar.set_description(f"Epoch {epoch}")
     for step, batch in progress_bar:
+
         images = batch["image"].to(device)
 
         optimizer.zero_grad(set_to_none=True)
@@ -356,6 +355,7 @@ for epoch in range(n_epochs):
         val_loss = 0
         with torch.no_grad():
             for val_step, batch in enumerate(val_loader, start=1):
+
                 images = batch["image"].to(device)
 
                 logits, quantizations_target, _ = inferer(
@@ -396,7 +396,9 @@ transformer_model.eval()
 
 test_data = MedNISTDataset(root_dir=root_dir, section="test", download=True, seed=0)
 
-in_distribution_datalist = [{"image": item["image"]} for item in test_data.data if item["class_name"] == "HeadCT"]
+in_distribution_datalist = [
+    {"image": item["image"]} for item in test_data.data if item["class_name"] == in_distribution_class
+]
 in_distribution_ds = Dataset(data=in_distribution_datalist, transform=val_transforms)
 in_distribution_loader = DataLoader(
     in_distribution_ds, batch_size=64, shuffle=False, num_workers=4, persistent_workers=True
@@ -420,23 +422,29 @@ in_likelihoods = np.concatenate(in_likelihoods)
 # We will use the "ChestCT" class of the dataset for the out-of-distribution examples.
 
 # %%
-ood_datalist = [{"image": item["image"]} for item in test_data.data if item["class_name"] == "ChestCT"]
-ood_ds = Dataset(data=ood_datalist, transform=val_transforms)
-ood_loader = DataLoader(ood_ds, batch_size=64, shuffle=False, num_workers=4, persistent_workers=True)
+all_classes = {item["class_name"] for item in test_data.data}
+all_classes.remove(in_distribution_class)
 
-ood_likelihoods = []
+all_likelihoods = {}
+for c in all_classes:
+    ood_datalist = [{"image": item["image"]} for item in test_data.data if item["class_name"] == c]
+    ood_ds = Dataset(data=ood_datalist, transform=val_transforms)
+    ood_loader = DataLoader(ood_ds, batch_size=64, shuffle=False, num_workers=4, persistent_workers=True)
 
-progress_bar = tqdm(enumerate(ood_loader), total=len(ood_loader), ncols=110)
-progress_bar.set_description(f"out-of-distribution data")
-for step, batch in progress_bar:
-    images = batch["image"].to(device)
+    ood_likelihoods = []
 
-    log_likelihood = inferer.get_likelihood(
-        inputs=images, vqvae_model=vqvae_model, transformer_model=transformer_model, ordering=ordering
-    )
-    ood_likelihoods.append(log_likelihood.sum(dim=(1, 2)).cpu().numpy())
+    progress_bar = tqdm(enumerate(ood_loader), total=len(ood_loader), ncols=110)
+    progress_bar.set_description(f"out-of-distribution data {c}")
+    for step, batch in progress_bar:
+        images = batch["image"].to(device)
 
-ood_likelihoods = np.concatenate(ood_likelihoods)
+        log_likelihood = inferer.get_likelihood(
+            inputs=images, vqvae_model=vqvae_model, transformer_model=transformer_model, ordering=ordering
+        )
+        ood_likelihoods.append(log_likelihood.sum(dim=(1, 2)).cpu().numpy())
+
+    ood_likelihoods = np.concatenate(ood_likelihoods)
+    all_likelihoods[c] = ood_likelihoods
 
 # %% [markdown]
 # ## Log-likelihood plot
@@ -444,9 +452,123 @@ ood_likelihoods = np.concatenate(ood_likelihoods)
 # Here, we plot the log-likelihood of the images. In this case, the lower the log-likelihood, the more unlikely the image belongs to the training set.
 
 # %%
-sns.kdeplot(in_likelihoods, color="dodgerblue", bw_adjust=1, label="In-distribution")
-sns.kdeplot(ood_likelihoods, color="deeppink", bw_adjust=10, label="OOD")
-plt.legend()
+sns.set_style("whitegrid", {"axes.grid": False})
+sns.kdeplot(in_likelihoods, bw_adjust=1, label="In-distribution", fill=True, cut=True)
+for c, l in all_likelihoods.items():
+    sns.kdeplot(l, bw_adjust=20, label=f"OOD {c}", cut=True, fill=True)
+plt.legend(loc="upper right")
 plt.xlabel("Log-likelihood")
+# plt.xlim([-200,10])
+# plt.ylim([0,10])
+
+# %% [markdown]
+# # Localised anomaly detection
+# First we create a synthetic corruption of an in-distribution image
 
 # %%
+input_image = first(in_distribution_loader)
+image_clean = input_image["image"][0, ...]
+plt.subplot(1, 2, 1)
+plt.imshow(image_clean[0, ...], cmap="gray")
+plt.axis("off")
+plt.title("Clean image")
+image_corrupted = image_clean.clone()
+image_corrupted[0, 25:40, 40:50] = 1
+plt.subplot(1, 2, 2)
+plt.imshow(image_corrupted[0, ...], cmap="gray")
+plt.axis("off")
+plt.title("Corrupted image")
+plt.show()
+
+# %% [markdown]
+# Get the log-likelihood and convert into a mask of the 5% lowest-likelihood tokens
+
+# %%
+log_likelihood = inferer.get_likelihood(
+    inputs=image_corrupted[None, ...].to(device),
+    vqvae_model=vqvae_model,
+    transformer_model=transformer_model,
+    ordering=ordering,
+)
+plt.subplot(1, 2, 1)
+plt.imshow(log_likelihood.cpu()[0, ...], vmin=0.6, vmax=1)
+plt.axis("off")
+plt.title("Log-likelihood")
+plt.subplot(1, 2, 2)
+mask = log_likelihood.cpu()[0, ...] < torch.quantile(log_likelihood, 0.05).item()
+plt.imshow(mask)
+plt.axis("off")
+plt.title("Healing mask")
+plt.show()
+
+# %% [markdown]
+# Use this mask and the trained transformer to 'heal' the sequence
+
+# %%
+# flatten the mask
+mask_flattened = mask.reshape(-1)
+mask_flattened = mask_flattened[ordering.get_sequence_ordering()]
+
+latent = vqvae_model.index_quantize(image_corrupted[None, ...].to(device))
+latent = latent.reshape(latent.shape[0], -1)
+latent = latent[:, ordering.get_sequence_ordering()]
+latent = F.pad(latent, (1, 0), "constant", vqvae_model.num_embeddings)
+latent = latent.long()
+latent_healed = latent.clone()
+
+# heal the sequence
+# loop over tokens
+for i in range(1, latent.shape[1]):
+    if mask_flattened[i - 1]:
+        # if token is low probability, replace with tranformer's most likely token
+        logits = transformer_model(latent_healed[:, :i])
+        probs = F.softmax(logits, dim=-1)
+        # don't sample beginning of sequence token
+        probs[:, :, vqvae_model.num_embeddings] = 0
+        index = torch.argmax(probs[0, -1, :])
+        latent_healed[:, i] = index
+
+
+# reconstruct
+latent_healed = latent_healed[:, 1:]
+latent_healed = latent_healed[:, ordering.get_revert_sequence_ordering()]
+latent_healed = latent_healed.reshape((16, 16))
+
+image_healed = vqvae_model.decode_samples(latent_healed[None, ...]).cpu().detach()
+plt.imshow(image_healed[0, 0, ...], cmap="gray")
+plt.axis("off")
+plt.title("Healed image")
+plt.show()
+
+# %% [markdown]
+# ## Create anomaly maps
+
+# %%
+# Get a naive anomaly map using the difference
+difference_map = torch.abs(image_healed[0, 0, ...] - image_corrupted[0, ...])
+
+# Further mask with the healing mask
+resizer = torch.nn.Upsample(size=(64, 64), mode="nearest")
+mask_upsampled = resizer(mask[None, None, ...].float()).int()
+
+fig, ax = plt.subplots(1, 4, figsize=(14, 8))
+plt.subplot(1, 4, 1)
+plt.imshow(image_clean[0, ...], cmap="gray")
+plt.axis("off")
+plt.title("Clean image")
+image_corrupted = image_clean.clone()
+image_corrupted[0, 25:40, 40:50] = 1
+plt.subplot(1, 4, 2)
+plt.imshow(image_corrupted[0, ...], cmap="gray")
+plt.axis("off")
+plt.title("Corrupted image")
+plt.subplot(1, 4, 3)
+plt.imshow(image_corrupted[0, ...] - image_clean[0, ...], cmap="gray")
+plt.axis("off")
+plt.title("Ground-Truth anomaly mask")
+plt.subplot(1, 4, 4)
+plt.imshow(mask_upsampled[0, 0, ...] * difference_map, cmap="gray")
+plt.axis("off")
+plt.title("Predicted anomaly mask")
+plt.show()
+

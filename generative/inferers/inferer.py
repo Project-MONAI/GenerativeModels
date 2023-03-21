@@ -584,7 +584,6 @@ class VQVAETransformerInferer(Inferer):
         target = latent[:, 1:]
         probs = torch.gather(probs, 2, target[:, : transformer_model.max_seq_len].unsqueeze(2)).squeeze(2)
 
-
         # if we have not covered the full sequence we continue with inefficient looping
         if logits.shape[1] < latent.shape[1]:
             if verbose and has_tqdm:
@@ -607,7 +606,6 @@ class VQVAETransformerInferer(Inferer):
 
         # convert to log-likelihood
         probs = torch.log(probs)
-
 
         # reshape
         probs = probs[:, ordering.get_revert_sequence_ordering()]
