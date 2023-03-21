@@ -14,6 +14,19 @@
 #     name: python3
 # ---
 
+# +
+# Copyright (c) MONAI Consortium
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# -
+
 # # 2D Latent Diffusion Model
 #
 # In this tutorial, we will walk through the process of using the MONAI Generative Models package to generate synthetic data using Latent Diffusion Models (LDM)  [1, 2]. Specifically, we will focus on training an LDM to create synthetic X-ray images of hands from the MEDNIST dataset.
@@ -32,16 +45,6 @@
 # ### Setup imports
 
 # +
-# Copyright 2020 MONAI Consortium
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#     http://www.apache.org/licenses/LICENSE-2.0
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 import os
 import shutil
 import tempfile
@@ -141,7 +144,7 @@ autoencoderkl = AutoencoderKL(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
-    num_channels=[128, 128, 256],
+    num_channels=(128, 128, 256),
     latent_channels=3,
     num_res_blocks=2,
     attention_levels=(False, False, False),

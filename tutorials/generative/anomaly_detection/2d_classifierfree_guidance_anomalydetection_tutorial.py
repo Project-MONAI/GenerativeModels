@@ -6,12 +6,24 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.14.5
+#       jupytext_version: 1.14.4
 #   kernelspec:
-#     display_name: pytorch_monai
+#     display_name: Python 3 (ipykernel)
 #     language: python
 #     name: python3
 # ---
+
+# %%
+# Copyright (c) MONAI Consortium
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 # %% [markdown]
 # # Weakly Supervised Anomaly Detection with Classifier Guidance
@@ -33,20 +45,9 @@
 # ## Setup imports
 
 # %% jupyter={"outputs_hidden": false}
-# Copyright 2020 MONAI Consortium
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#     http://www.apache.org/licenses/LICENSE-2.0
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUtotal_timestepsWARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 import os
 import tempfile
 import time
-from typing import Dict
 import os
 import matplotlib.pyplot as plt
 import numpy as np
@@ -57,15 +58,18 @@ from monai import transforms
 from monai.apps import DecathlonDataset
 from monai.config import print_config
 from monai.data import DataLoader
-from monai.utils import first, set_determinism
+from monai.utils import set_determinism
 from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
-torch.multiprocessing.set_sharing_strategy('file_system')
-os.environ["CUDA_VISIBLE_DEVICES"]="0"
-from generative.inferers import DiffusionInferer
 
+
+from generative.inferers import DiffusionInferer
 from generative.networks.nets.diffusion_model_unet import DiffusionModelUNet
 from generative.networks.schedulers.ddim import DDIMScheduler
+
+torch.multiprocessing.set_sharing_strategy("file_system")
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
 print_config()
 
 
@@ -124,31 +128,30 @@ train_transforms = transforms.Compose(
 # ### Load Training and Validation Datasets
 
 # %% jupyter={"outputs_hidden": false}
-
 train_ds = DecathlonDataset(
     root_dir=root_dir,
     task="Task01_BrainTumour",
-    section="training",  # validation
+    section="training",
     cache_rate=1.0,  # you may need a few Gb of RAM... Set to 0 otherwise
     num_workers=4,
     download=False,  # Set download to True if the dataset hasnt been downloaded yet
     seed=0,
     transform=train_transforms,
 )
-print(f"Lenght of training data: {len(train_ds)}")
+print(f"Length of training data: {len(train_ds)}")
 print(f'Train image shape {train_ds[0]["image"].shape}')
 
 val_ds = DecathlonDataset(
     root_dir=root_dir,
     task="Task01_BrainTumour",
-    section="validation",  # validation
+    section="validation",
     cache_rate=1.0,  # you may need a few Gb of RAM... Set to 0 otherwise
     num_workers=4,
     download=False,  # Set download to True if the dataset hasnt been downloaded yet
     seed=0,
     transform=train_transforms,
 )
-print(f"Lenght of training data: {len(val_ds)}")
+print(f"Length of training data: {len(val_ds)}")
 print(f'Validation Image shape {val_ds[0]["image"].shape}')
 
 # %% [markdown]
@@ -157,7 +160,7 @@ print(f'Validation Image shape {val_ds[0]["image"].shape}')
 # At this step, we instantiate the MONAI components to create a DDIM, the UNET with conditioning, the noise scheduler, and the inferer used for training and sampling. We are using
 # the deterministic DDIM scheduler containing 1000 timesteps, and a 2D UNET with attention mechanisms.
 #
-# The `attention` mechanism is essential for ensuring good conditioning and images manipulation here. 
+# The `attention` mechanism is essential for ensuring good conditioning and images manipulation here.
 #
 # An `embedding layer`, which is also optimised during training, is used in the original work because it was empirically shown to improve conditioning compared to a single scalar information.
 #
@@ -175,12 +178,10 @@ model = DiffusionModelUNet(
     num_head_channels=16,
     with_conditioning=True,
     cross_attention_dim=embedding_dimension,
-    ).to(device)
+).to(device)
 embed = torch.nn.Embedding(num_embeddings=3, embedding_dim=embedding_dimension, padding_idx=0).to(device)
 
-scheduler = DDIMScheduler(
-    num_train_timesteps=1000,
-)
+scheduler = DDIMScheduler(num_train_timesteps=1000)
 optimizer = torch.optim.Adam(params=list(model.parameters()) + list(embed.parameters()), lr=1e-5)
 
 inferer = DiffusionInferer(scheduler)
@@ -200,8 +201,12 @@ iterations = []
 iteration = 0
 iter_loss = 0
 
-train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=4, drop_last=True)
-val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=4, drop_last=True)
+train_loader = DataLoader(
+    train_ds, batch_size=batch_size, shuffle=True, num_workers=4, drop_last=True, persistent_workers=True
+)
+val_loader = DataLoader(
+    val_ds, batch_size=batch_size, shuffle=False, num_workers=4, drop_last=True, persistent_workers=True
+)
 
 scaler = GradScaler()
 total_start = time.time()
@@ -210,49 +215,59 @@ while iteration < n_iterations:
     for batch in train_loader:
         iteration += 1
         model.train()
-        images, classes = batch['image'].to(device), batch['slice_label'].to(device)
+        images, classes = batch["image"].to(device), batch["slice_label"].to(device)
         # 15% of the time, class conditioning dropout
         classes = classes * (torch.rand_like(classes) > condition_dropout)
         # cross attention expects shape [batch size, sequence length, channels]
-        class_embedding = embed(classes.long().to(device)).unsqueeze(1) 
+        class_embedding = embed(classes.long().to(device)).unsqueeze(1)
         optimizer.zero_grad(set_to_none=True)
         # pick a random time step t
-        timesteps = torch.randint(0, 1000, (len(images),)).to(device)  
+        timesteps = torch.randint(0, 1000, (len(images),)).to(device)
 
         with autocast(enabled=True):
             # Generate random noise
             noise = torch.randn_like(images).to(device)
             # Get model prediction
-            noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps, condition=class_embedding)
+            noise_pred = inferer(
+                inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps, condition=class_embedding
+            )
             loss = F.mse_loss(noise_pred.float(), noise.float())
 
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
         iter_loss += loss.item()
-        sys.stdout.write(f"Iteration {iteration}/{n_iterations} - train Loss {loss.item():.4f}" + '\r')
+        sys.stdout.write(f"Iteration {iteration}/{n_iterations} - train Loss {loss.item():.4f}" + "\r")
         sys.stdout.flush()
-        
+
         if (iteration) % val_interval == 0:
-            model.eval()            
+            model.eval()
             val_iter_loss = 0
             for val_step, val_batch in enumerate(val_loader):
-                images, classes = val_batch['image'].to(device), val_batch['slice_label'].to(device)
+                images, classes = val_batch["image"].to(device), val_batch["slice_label"].to(device)
                 # cross attention expects shape [batch size, sequence length, channels]
-                class_embedding = embed(classes.long().to(device)).unsqueeze(1) 
+                class_embedding = embed(classes.long().to(device)).unsqueeze(1)
                 timesteps = torch.randint(0, 1000, (len(images),)).to(device)
                 with torch.no_grad():
                     with autocast(enabled=True):
                         noise = torch.randn_like(images).to(device)
-                        noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps, condition=class_embedding)
+                        noise_pred = inferer(
+                            inputs=images,
+                            diffusion_model=model,
+                            noise=noise,
+                            timesteps=timesteps,
+                            condition=class_embedding,
+                        )
                         val_loss = F.mse_loss(noise_pred.float(), noise.float())
                 val_iter_loss += val_loss.item()
             iter_loss_list.append(iter_loss / val_interval)
-            val_iter_loss_list.append(val_iter_loss / (val_step+1))
+            val_iter_loss_list.append(val_iter_loss / (val_step + 1))
             iterations.append(iteration)
             iter_loss = 0
-            print(f"Train Loss {loss.item():.4f}, Interval Loss {iter_loss_list[-1]:.4f}, Interval Loss Val {val_iter_loss_list[-1]:.4f}")
-                    
+            print(
+                f"Train Loss {loss.item():.4f}, Interval Loss {iter_loss_list[-1]:.4f}, Interval Loss Val {val_iter_loss_list[-1]:.4f}"
+            )
+
 
 total_time = time.time() - total_start
 
@@ -261,7 +276,9 @@ print(f"train diffusion completed, total time: {total_time}.")
 plt.style.use("seaborn-bright")
 plt.title("Learning Curves Diffusion Model", fontsize=20)
 plt.plot(iterations, iter_loss_list, color="C0", linewidth=2.0, label="Train")
-plt.plot(iterations, val_iter_loss_list, color="C1", linewidth=2.0, label="Validation") # np.linspace(1, n_iterations, len(val_iter_loss_list))
+plt.plot(
+    iterations, val_iter_loss_list, color="C1", linewidth=2.0, label="Validation"
+)  # np.linspace(1, n_iterations, len(val_iter_loss_list))
 plt.yticks(fontsize=12), plt.xticks(fontsize=12)
 plt.xlabel("Iterations", fontsize=16), plt.ylabel("Loss", fontsize=16)
 plt.legend(prop={"size": 14})
@@ -275,8 +292,12 @@ plt.show()
 model.eval()
 scheduler.clip_sample = True
 guidance_scale = 3
-conditioning = torch.cat([torch.zeros(1).long(), 2*torch.ones(1).long()], dim=0).to(device) # 2*torch.ones(1).long() is the class label for the UNHEALTHY (tumor) class
-class_embedding = embed(conditioning).unsqueeze(1) # cross attention expects shape [batch size, sequence length, channels]
+conditioning = torch.cat([torch.zeros(1).long(), 2 * torch.ones(1).long()], dim=0).to(
+    device
+)  # 2*torch.ones(1).long() is the class label for the UNHEALTHY (tumor) class
+class_embedding = embed(conditioning).unsqueeze(
+    1
+)  # cross attention expects shape [batch size, sequence length, channels]
 noise = torch.randn((1, 1, 64, 64))
 noise = noise.to(device)
 scheduler.set_timesteps(num_inference_steps=100)
@@ -303,19 +324,19 @@ plt.show()
 
 # %%
 
-idx_unhealthy = np.argwhere(val_batch['slice_label'].numpy() == 2).squeeze()
+idx_unhealthy = np.argwhere(val_batch["slice_label"].numpy() == 2).squeeze()
 
-idx = idx_unhealthy[4] # Pick a random slice of the validation set to be transformed
-inputting = val_batch['image'][idx]  # Pick an input slice of the validation set to be transformed   
-inputlabel= val_batch['slice_label'][idx]        # Check whether it is healthy or diseased
+idx = idx_unhealthy[4]  # Pick a random slice of the validation set to be transformed
+inputting = val_batch["image"][idx]  # Pick an input slice of the validation set to be transformed
+inputlabel = val_batch["slice_label"][idx]  # Check whether it is healthy or diseased
 
-plt.figure("input"+str(inputlabel))
+plt.figure("input" + str(inputlabel))
 plt.imshow(inputting[0], vmin=0, vmax=1, cmap="gray")
 plt.axis("off")
 plt.tight_layout()
 plt.show()
 
-model.eval();
+model.eval()
 print("input label: ", inputlabel)
 
 # %% [markdown]
@@ -332,10 +353,10 @@ print("input label: ", inputlabel)
 model.eval()
 
 guidance_scale = 3.0
-total_timesteps= 500 
+total_timesteps = 500
 latent_space_depth = int(total_timesteps * 0.25)
 
-current_img = inputting[None,...].to(device)
+current_img = inputting[None, ...].to(device)
 scheduler.set_timesteps(num_inference_steps=total_timesteps)
 
 ## Encoding
@@ -343,7 +364,7 @@ scheduler.set_timesteps(num_inference_steps=total_timesteps)
 scheduler.clip_sample = False
 class_embedding = embed(torch.zeros(1).long().to(device)).unsqueeze(1)
 progress_bar = tqdm(range(latent_space_depth))
-for i in progress_bar:  #go through the noising process
+for i in progress_bar:  # go through the noising process
     t = i
     with torch.no_grad():
         model_output = model(current_img, timesteps=torch.Tensor((t,)).to(current_img.device), context=class_embedding)
@@ -356,12 +377,14 @@ latent_img = current_img
 conditioning = torch.cat([torch.zeros(1).long(), torch.ones(1).long()], dim=0).to(device)
 class_embedding = embed(conditioning).unsqueeze(1)
 
-progress_bar = tqdm(range(latent_space_depth)) 
-for i in progress_bar:  #go through the denoising process
+progress_bar = tqdm(range(latent_space_depth))
+for i in progress_bar:  # go through the denoising process
     t = latent_space_depth - i
     current_img_double = torch.cat([current_img] * 2)
     with torch.no_grad():
-        model_output = model(current_img_double, timesteps=torch.Tensor([t,t]).to(current_img.device), context=class_embedding)
+        model_output = model(
+            current_img_double, timesteps=torch.Tensor([t, t]).to(current_img.device), context=class_embedding
+        )
     noise_pred_uncond, noise_pred_text = model_output.chunk(2)
     noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
     current_img, _ = scheduler.step(noise_pred, t, current_img)
@@ -376,29 +399,30 @@ for i in progress_bar:  #go through the denoising process
 def visualize(img):
     _min = img.min()
     _max = img.max()
-    normalized_img = (img - _min)/ (_max - _min)
+    normalized_img = (img - _min) / (_max - _min)
     return normalized_img
 
-diff = abs(inputting.cpu()-current_img[0].cpu()).detach().numpy()
+
+diff = abs(inputting.cpu() - current_img[0].cpu()).detach().numpy()
 row = 4
 plt.style.use("default")
 
 fig = plt.figure(figsize=(10, 30))
 
-ax = plt.subplot(1,row,2)
+ax = plt.subplot(1, row, 2)
 ax.imshow(latent_img[0, 0].cpu().detach().numpy(), vmin=0, vmax=1, cmap="gray")
 ax.set_title("Latent Image"), plt.tight_layout(), plt.axis("off")
 
-ax = plt.subplot(1,row,3)
+ax = plt.subplot(1, row, 3)
 ax.imshow(current_img[0, 0].cpu().detach().numpy(), vmin=0, vmax=1, cmap="gray")
 ax.set_title("Reconstructed \n Image"), plt.tight_layout(), plt.axis("off")
 
 
-ax = plt.subplot(1,row,4)
+ax = plt.subplot(1, row, 4)
 ax.imshow(diff[0], cmap="inferno")
 ax.set_title("Anomaly Map"), plt.tight_layout(), plt.axis("off")
 
-ax = plt.subplot(1,row,1)
+ax = plt.subplot(1, row, 1)
 ax.imshow(inputting[0], vmin=0, vmax=1, cmap="gray")
 ax.set_title("Original Image"), plt.tight_layout(), plt.axis("off")
 plt.show()
