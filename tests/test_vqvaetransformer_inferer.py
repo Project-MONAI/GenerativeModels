@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import unittest
 
+import numpy as np
 import torch
 from parameterized import parameterized
 
@@ -36,7 +37,7 @@ TEST_CASES = [
         },
         {
             "num_tokens": 16 + 1,
-            "max_seq_len": 4 + 1,
+            "max_seq_len": 4,
             "attn_layers_dim": 4,
             "attn_layers_depth": 2,
             "attn_layers_heads": 1,
@@ -44,7 +45,7 @@ TEST_CASES = [
         },
         {"ordering_type": OrderingType.RASTER_SCAN.value, "spatial_dims": 2, "dimensions": (2, 2, 2)},
         (2, 1, 8, 8),
-        (2, 5, 17),
+        (2, 4, 17),
         (2, 2, 2),
     ],
     [
@@ -62,7 +63,7 @@ TEST_CASES = [
         },
         {
             "num_tokens": 16 + 1,
-            "max_seq_len": 9 + 1,
+            "max_seq_len": 8,
             "attn_layers_dim": 4,
             "attn_layers_depth": 2,
             "attn_layers_heads": 1,
@@ -70,7 +71,7 @@ TEST_CASES = [
         },
         {"ordering_type": OrderingType.RASTER_SCAN.value, "spatial_dims": 3, "dimensions": (2, 2, 2, 2)},
         (2, 1, 8, 8, 8),
-        (2, 9, 17),
+        (2, 8, 17),
         (2, 2, 2, 2),
     ],
 ]
@@ -136,7 +137,7 @@ class TestVQVAETransformerInferer(unittest.TestCase):
         )
         stage_2 = DecoderOnlyTransformer(
             num_tokens=16 + 1,
-            max_seq_len=4 + 1,
+            max_seq_len=4,
             attn_layers_dim=4,
             attn_layers_depth=2,
             attn_layers_heads=1,
@@ -178,7 +179,7 @@ class TestVQVAETransformerInferer(unittest.TestCase):
         )
         stage_2 = DecoderOnlyTransformer(
             num_tokens=16 + 1,
-            max_seq_len=3,
+            max_seq_len=2,
             attn_layers_dim=4,
             attn_layers_depth=2,
             attn_layers_heads=1,
@@ -226,6 +227,11 @@ class TestVQVAETransformerInferer(unittest.TestCase):
             inputs=input, vqvae_model=stage_1, transformer_model=stage_2, ordering=ordering
         )
         self.assertEqual(likelihood.shape, latent_shape)
+        stage_2.max_seq_len = 3
+        likelihood_shorter = inferer.get_likelihood(
+            inputs=input, vqvae_model=stage_1, transformer_model=stage_2, ordering=ordering
+        )
+        np.testing.assert_allclose(likelihood.cpu().detach().numpy(), likelihood_shorter.cpu().detach().numpy())
 
     @parameterized.expand(TEST_CASES)
     def test_get_likelihood_shorter_sequence(
