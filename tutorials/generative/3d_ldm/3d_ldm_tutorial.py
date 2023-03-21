@@ -14,6 +14,19 @@
 #     name: python3
 # ---
 
+# +
+# Copyright (c) MONAI Consortium
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# -
+
 # # 3D Latent Diffusion Model
 # In this tutorial, we will walk through the process of using the MONAI Generative Models package to generate synthetic data using Latent Diffusion Models (LDM)  [1, 2]. Specifically, we will focus on training an LDM to create synthetic brain images from the Brats dataset.
 #
@@ -89,7 +102,7 @@ train_ds = DecathlonDataset(
     seed=0,
     transform=train_transforms,
 )
-train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=8)
+train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=8, persistent_workers=True)
 print(f'Image shape {train_ds[0]["image"].shape}')
 # -
 
@@ -137,13 +150,7 @@ autoencoder = AutoencoderKL(
 autoencoder.to(device)
 
 
-discriminator = PatchDiscriminator(
-    spatial_dims=3,
-    num_layers_d=3,
-    num_channels=32,
-    in_channels=1,
-    out_channels=1,
-)
+discriminator = PatchDiscriminator(spatial_dims=3, num_layers_d=3, num_channels=32, in_channels=1, out_channels=1)
 discriminator.to(device)
 # -
 
@@ -294,9 +301,9 @@ unet = DiffusionModelUNet(
     in_channels=3,
     out_channels=3,
     num_res_blocks=1,
-    num_channels=[32, 64, 64],
+    num_channels=(32, 64, 64),
     attention_levels=(False, True, True),
-    num_head_channels=1,
+    num_head_channels=(0, 64, 64),
 )
 unet.to(device)
 

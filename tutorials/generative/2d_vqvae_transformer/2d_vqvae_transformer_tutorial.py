@@ -13,6 +13,18 @@
 #     name: python3
 # ---
 
+# %%
+# Copyright (c) MONAI Consortium
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # %% [markdown]
 # # Vector Quantized Variational Autoencoders and Transformers with MedNIST Dataset
 #
@@ -24,24 +36,22 @@
 #
 # We will work with the [MedNIST dataset](https://docs.monai.io/en/stable/apps.html#monai.apps.MedNISTDataset) available on MONAI. In order to train faster, we will select just one of the available classes ("HeadCT"), resulting in a training set with 7999 2D images.
 #
-# [1] - [Oord et al. "Neural Discrete Representation Learning"](https://arxiv.org/abs/1711.00937)
+# [1] - Oord et al. "Neural Discrete Representation Learning" https://arxiv.org/abs/1711.00937
 #
-# [2] - [Tudosiu et al. "Morphology-Preserving Autoregressive 3D Generative Modelling of the Brain"](https://arxiv.org/abs/2209.03177)
+# [2] - Tudosiu et al. "Morphology-Preserving Autoregressive 3D Generative Modelling of the Brain" https://arxiv.org/abs/2209.03177
 #
 #
+# ### Setup environment
+
+# %%
+# !python -c "import monai" || pip install -q "monai-weekly[tqdm]"
+# !python -c "import matplotlib" || pip install -q matplotlib
+# %matplotlib inline
+
+# %% [markdown]
 # ### Setup imports
 
 # %%
-# Copyright 2020 MONAI Consortium
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#     http://www.apache.org/licenses/LICENSE-2.0
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 import os
 import tempfile
 import shutil

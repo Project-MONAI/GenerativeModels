@@ -6,12 +6,24 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.14.1
+#       jupytext_version: 1.14.4
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
 #     name: python3
 # ---
+
+# %%
+# Copyright (c) MONAI Consortium
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 # %% [markdown]
 # # Anomaly Detection with Transformers
@@ -22,12 +34,14 @@
 #
 # Finally, we will compute the log-likelihood of images from the same class (in-distribution class) and images from other classes (out-of-distribution).
 #
-# [1] - [Pinaya et al. "Unsupervised brain imaging 3D anomaly detection and segmentation with transformers"](https://doi.org/10.1016/j.media.2022.102475)
+# [1] - Pinaya et al. "Unsupervised brain imaging 3D anomaly detection and segmentation with transformers" https://doi.org/10.1016/j.media.2022.102475
 
 # %% [markdown]
 # ### Setup environment
 
 # %%
+# !python -c "import monai" || pip install -q "monai-weekly[tqdm]"
+# !python -c "import matplotlib" || pip install -q matplotlib
 # !python -c "import seaborn" || pip install -q seaborn
 # %matplotlib inline
 
@@ -35,16 +49,6 @@
 # ### Setup imports
 
 # %%
-# Copyright 2020 MONAI Consortium
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#     http://www.apache.org/licenses/LICENSE-2.0
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 import os
 import tempfile
 import time
