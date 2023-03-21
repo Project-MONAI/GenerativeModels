@@ -13,21 +13,31 @@
 #     name: python3
 # ---
 
-# # 3D AutoencoderKL
+# +
+# Copyright (c) MONAI Consortium
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# -
 
+# # 3D AutoencoderKL
+#
 # This demo is a toy example of how to use MONAI's AutoencoderKL. In particular, it uses the Autoencoder with a Kullback-Leibler regularisation as implemented by Rombach et. al [1].
 #
-# [1] Rombach et. al - ["High-Resolution Image Synthesis with Latent Diffusion Models"](https://arxiv.org/pdf/2112.10752.pdf)
+# [1] Rombach et. al "High-Resolution Image Synthesis with Latent Diffusion Models" https://arxiv.org/pdf/2112.10752.pdf
 #
 # This tutorial was based on:
 #
 # [Brain tumor 3D segmentation with MONAI](https://github.com/Project-MONAI/tutorials/blob/main/3d_segmentation/brats_segmentation_3d.ipynb)
 
-# +
-# TODO: Add Open in Colab
-# -
 
-# !python -c "import monai" || pip install -q "monai-weekly[pillow, tqdm, einops, nibabel]"
+# !python -c "import monai" || pip install -q "monai-weekly[tqdm, nibabel]"
 # !python -c "import matplotlib" || pip install -q matplotlib
 # %matplotlib inline
 

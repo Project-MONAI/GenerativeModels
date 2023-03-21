@@ -103,7 +103,7 @@ class TestVQVAETransformerInferer(unittest.TestCase):
     ):
         stage_1 = VQVAE(**stage_1_params)
         max_seq_len = 3
-        stage_2_params_shorter = {k: v for k, v in stage_2_params.items()}
+        stage_2_params_shorter = dict(stage_2_params)
         stage_2_params_shorter["max_seq_len"] = max_seq_len
         stage_2 = DecoderOnlyTransformer(**stage_2_params_shorter)
         ordering = Ordering(**ordering_params)
@@ -233,7 +233,7 @@ class TestVQVAETransformerInferer(unittest.TestCase):
     ):
         stage_1 = VQVAE(**stage_1_params)
         max_seq_len = 3
-        stage_2_params_shorter = {k: v for k, v in stage_2_params.items()}
+        stage_2_params_shorter = dict(stage_2_params)
         stage_2_params_shorter["max_seq_len"] = max_seq_len
         stage_2 = DecoderOnlyTransformer(**stage_2_params_shorter)
         ordering = Ordering(**ordering_params)

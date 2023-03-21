@@ -13,29 +13,8 @@
 #     name: python3
 # ---
 
-# %% [markdown]
-# # Anomaly Detection with Transformers
-#
-# This tutorial illustrates how to use MONAI to perform image-wise anomaly detection with transformers based on the method proposed in Pinaya et al.[1].
-#
-# Here, we will work with the [MedNIST dataset](https://docs.monai.io/en/stable/apps.html#monai.apps.MedNISTDataset) available on MONAI, and similar to "Experiment 2 – image-wise anomaly detection on 2D synthetic data" from [1], we will train a general-purpose VQ-VAE (using all MEDNIST classes), and then a generative models (i.e., Transformer) on `HeadCT` images.
-#
-# Finally, we will compute the log-likelihood of images from the same class (in-distribution class) and images from other classes (out-of-distribution).
-#
-# [1] - [Pinaya et al. "Unsupervised brain imaging 3D anomaly detection and segmentation with transformers"](https://doi.org/10.1016/j.media.2022.102475)
-
-# %% [markdown]
-# ### Setup environment
-
 # %%
-# !python -c "import seaborn" || pip install -q seaborn
-# %matplotlib inline
-
-# %% [markdown]
-# ### Setup imports
-
-# %%
-# Copyright 2020 MONAI Consortium
+# Copyright (c) MONAI Consortium
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -45,6 +24,31 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+# %% [markdown]
+# # Anomaly Detection with Transformers
+#
+# This tutorial illustrates how to use MONAI to perform image-wise anomaly detection with transformers based on the method proposed in Pinaya et al.[1].
+#
+# Here, we will work with the [MedNIST dataset](https://docs.monai.io/en/stable/apps.html#monai.apps.MedNISTDataset) available on MONAI, and similar to "Experiment 2 – image-wise anomaly detection on 2D synthetic data" from [1], we will train a general-purpose VQ-VAE (using all MEDNIST classes), and then a generative models (i.e., Transformer) on `HeadCT` images.
+#
+# Finally, we will compute the log-likelihood of images from the same class (in-distribution class) and images from other classes (out-of-distribution).
+#
+# [1] - Pinaya et al. "Unsupervised brain imaging 3D anomaly detection and segmentation with transformers" https://doi.org/10.1016/j.media.2022.102475
+
+# %% [markdown]
+# ### Setup environment
+
+# %%
+# !python -c "import monai" || pip install -q "monai-weekly[tqdm]"
+# !python -c "import matplotlib" || pip install -q matplotlib
+# !python -c "import seaborn" || pip install -q seaborn
+# %matplotlib inline
+
+# %% [markdown]
+# ### Setup imports
+
+# %%
 import os
 import tempfile
 import time
@@ -165,7 +169,7 @@ l1_loss = L1Loss()
 
 # %% [markdown]
 # ### VQ-VAE Model training
-# We will train our VQ-VAE for 50 epochs.
+# We will train our VQ-VAE for 30 epochs.
 
 # %%
 n_epochs = 30
@@ -313,11 +317,11 @@ ce_loss = CrossEntropyLoss()
 
 # %% [markdown]
 # ### Transformer Training
-# We will train the Transformer for 5 epochs.
+# We will train the Transformer for 20 epochs.
 
 # %%
-n_epochs = 5
-val_interval = 2
+n_epochs = 20
+val_interval = 5
 epoch_losses = []
 val_epoch_losses = []
 vqvae_model.eval()
@@ -336,7 +340,8 @@ for epoch in range(n_epochs):
         logits, quantizations_target, _ = inferer(images, vqvae_model, transformer_model, ordering, return_latent=True)
         logits = logits.transpose(1, 2)
 
-        loss = ce_loss(logits, quantizations_target)
+        # train the transformer to predict token n+1 using tokens 0-n
+        loss = ce_loss(logits[:, :, :-1], quantizations_target[:, 1:])
 
         loss.backward()
         optimizer.step()
@@ -358,10 +363,22 @@ for epoch in range(n_epochs):
                 )
                 logits = logits.transpose(1, 2)
 
-                loss = ce_loss(logits, quantizations_target)
+                loss = ce_loss(logits[:, :, :-1], quantizations_target[:, 1:])
 
                 val_loss += loss.item()
-
+        # get sample
+        sample = inferer.sample(
+            vqvae_model=vqvae_model,
+            transformer_model=transformer_model,
+            ordering=ordering,
+            latent_spatial_dim=(spatial_shape[0], spatial_shape[1]),
+            starting_tokens=vqvae_model.num_embeddings * torch.ones((1, 1), device=device),
+        )
+        plt.imshow(sample[0, 0, ...].cpu().detach())
+        plt.title(f"Sample epoch {epoch}")
+        plt.show()
+        val_loss /= val_step
+        val_epoch_losses.append(val_loss)
         val_loss /= val_step
         val_epoch_losses.append(val_loss)
 
@@ -422,13 +439,13 @@ for step, batch in progress_bar:
 ood_likelihoods = np.concatenate(ood_likelihoods)
 
 # %% [markdown]
-# ## Log-likehood plot
+# ## Log-likelihood plot
 #
 # Here, we plot the log-likelihood of the images. In this case, the lower the log-likelihood, the more unlikely the image belongs to the training set.
 
 # %%
-sns.kdeplot(in_likelihoods, color="dodgerblue", bw_adjust=50, label="In-distribution")
-sns.kdeplot(ood_likelihoods, color="deeppink", bw_adjust=1, label="OOD")
+sns.kdeplot(in_likelihoods, color="dodgerblue", bw_adjust=1, label="In-distribution")
+sns.kdeplot(ood_likelihoods, color="deeppink", bw_adjust=10, label="OOD")
 plt.legend()
 plt.xlabel("Log-likelihood")
 

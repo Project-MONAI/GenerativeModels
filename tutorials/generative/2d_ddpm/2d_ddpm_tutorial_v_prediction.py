@@ -1,11 +1,11 @@
 # ---
 # jupyter:
 #   jupytext:
-#     formats: py:percent,ipynb
+#     formats: ipynb,py:light
 #     text_representation:
 #       extension: .py
-#       format_name: percent
-#       format_version: '1.3'
+#       format_name: light
+#       format_version: '1.5'
 #       jupytext_version: 1.14.4
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
@@ -13,28 +13,8 @@
 #     name: python3
 # ---
 
-# %% [markdown]
-# # Denoising Diffusion Probabilistic Models using v-prediction parameterization
-#
-# This tutorial illustrates how to use MONAI for training a denoising diffusion probabilistic model (DDPM)[1] to create synthetic 2D images using v-prediction parameterization (Section 2.4 from [2]).
-#
-# [1] - Ho et al. "Denoising Diffusion Probabilistic Models" https://arxiv.org/abs/2006.11239
-# [2] - Ho et al. "Imagen Video: High Definition Video Generation with Diffusion Models" https://arxiv.org/abs/2210.02303
-#
-# TODO: Add Open in Colab
-#
-# ## Setup environment
-
-# %%
-# !python -c "import monai" || pip install -q "monai-weekly[pillow, tqdm, einops]"
-# !python -c "import matplotlib" || pip install -q matplotlib
-# %matplotlib inline
-
-# %% [markdown]
-# ## Setup imports
-
-# %% jupyter={"outputs_hidden": false}
-# Copyright 2020 MONAI Consortium
+# +
+# Copyright (c) MONAI Consortium
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -44,6 +24,26 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+# -
+
+# # Denoising Diffusion Probabilistic Models using v-prediction parameterization
+#
+# This tutorial illustrates how to use MONAI for training a denoising diffusion probabilistic model (DDPM)[1] to create synthetic 2D images using v-prediction parameterization (Section 2.4 from [2]).
+#
+# [1] - Ho et al. "Denoising Diffusion Probabilistic Models" https://arxiv.org/abs/2006.11239
+#
+# [2] - Ho et al. "Imagen Video: High Definition Video Generation with Diffusion Models" https://arxiv.org/abs/2210.02303
+#
+#
+# ## Setup environment
+
+# !python -c "import monai" || pip install -q "monai-weekly[tqdm]"
+# !python -c "import matplotlib" || pip install -q matplotlib
+# %matplotlib inline
+
+# ## Setup imports
+
+# + jupyter={"outputs_hidden": false}
 import os
 import shutil
 import tempfile
@@ -62,14 +62,12 @@ from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
 from generative.inferers import DiffusionInferer
-
-# TODO: Add right import reference after deployed
 from generative.networks.nets import DiffusionModelUNet
 from generative.networks.schedulers import DDPMScheduler
 
 print_config()
+# -
 
-# %% [markdown]
 # ## Setup data directory
 #
 # You can specify a directory with the MONAI_DATA_DIRECTORY environment variable.
@@ -78,28 +76,28 @@ print_config()
 #
 # If not specified a temporary directory will be used.
 
-# %% jupyter={"outputs_hidden": false}
+# + jupyter={"outputs_hidden": false}
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
 root_dir = tempfile.mkdtemp() if directory is None else directory
 print(root_dir)
+# -
 
-# %% [markdown]
 # ## Set deterministic training for reproducibility
 
-# %% jupyter={"outputs_hidden": false}
+# + jupyter={"outputs_hidden": false}
 set_determinism(42)
+# -
 
-# %% [markdown]
 # ## Setup MedNIST Dataset and training and validation dataloaders
 # In this tutorial, we will train our models on the MedNIST dataset available on MONAI
 # (https://docs.monai.io/en/stable/apps.html#monai.apps.MedNISTDataset). In order to train faster, we will select just
 # one of the available classes ("Hand"), resulting in a training set with 7999 2D images.
 
-# %% jupyter={"outputs_hidden": false}
+# + jupyter={"outputs_hidden": false}
 train_data = MedNISTDataset(root_dir=root_dir, section="training", download=True, progress=False, seed=0)
 train_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "Hand"]
+# -
 
-# %% [markdown]
 # Here we use transforms to augment the training dataset:
 #
 # 1. `LoadImaged` loads the hands images from files.
@@ -107,7 +105,7 @@ train_datalist = [{"image": item["image"]} for item in train_data.data if item["
 # 1. `ScaleIntensityRanged` extracts intensity range [0, 255] and scales to [0, 1].
 # 1. `RandAffined` efficiently performs rotate, scale, shear, translate, etc. together based on PyTorch affine transform.
 
-# %% jupyter={"outputs_hidden": false}
+# + jupyter={"outputs_hidden": false}
 train_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),
@@ -127,7 +125,7 @@ train_transforms = transforms.Compose(
 train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
 train_loader = DataLoader(train_ds, batch_size=96, shuffle=True, num_workers=4, persistent_workers=True)
 
-# %% jupyter={"outputs_hidden": false}
+# + jupyter={"outputs_hidden": false}
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, progress=False, seed=0)
 val_datalist = [{"image": item["image"]} for item in val_data.data if item["class_name"] == "Hand"]
 val_transforms = transforms.Compose(
@@ -139,11 +137,11 @@ val_transforms = transforms.Compose(
 )
 val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
 val_loader = DataLoader(val_ds, batch_size=96, shuffle=False, num_workers=4, persistent_workers=True)
+# -
 
-# %% [markdown]
 # ### Visualisation of the training images
 
-# %% jupyter={"outputs_hidden": false}
+# + jupyter={"outputs_hidden": false}
 check_data = first(train_loader)
 print(f"batch shape: {check_data['image'].shape}")
 image_visualisation = torch.cat(
@@ -154,14 +152,14 @@ plt.imshow(image_visualisation, vmin=0, vmax=1, cmap="gray")
 plt.axis("off")
 plt.tight_layout()
 plt.show()
+# -
 
-# %% [markdown]
 # ### Define network, scheduler, optimizer, and inferer
 # At this step, we instantiate the MONAI components to create a DDPM, the UNET, the noise scheduler, and the inferer used for training and sampling. We are using
 # the original DDPM scheduler containing 1000 timesteps in its Markov chain, and a 2D UNET with attention mechanisms
 # in the 2nd and 3rd levels, each with 1 attention head.
 
-# %% jupyter={"outputs_hidden": false}
+# + jupyter={"outputs_hidden": false}
 device = torch.device("cuda")
 
 model = DiffusionModelUNet(
@@ -180,11 +178,11 @@ scheduler = DDPMScheduler(prediction_type="v_prediction", num_train_timesteps=10
 optimizer = torch.optim.Adam(params=model.parameters(), lr=1.0e-4)
 
 inferer = DiffusionInferer(scheduler)
-# %% [markdown]
+# -
 # ### Model training
 # Here, we are training our model for 75 epochs (training time: ~50 minutes).
 
-# %% jupyter={"outputs_hidden": false}
+# + jupyter={"outputs_hidden": false}
 n_epochs = 75
 val_interval = 5
 epoch_loss_list = []
@@ -259,10 +257,10 @@ for epoch in range(n_epochs):
 
 total_time = time.time() - total_start
 print(f"train completed, total time: {total_time}.")
-# %% [markdown]
+# -
 # ### Learning curves
 
-# %% jupyter={"outputs_hidden": false}
+# + jupyter={"outputs_hidden": false}
 plt.style.use("seaborn-v0_8")
 plt.title("Learning Curves", fontsize=20)
 plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, color="C0", linewidth=2.0, label="Train")
@@ -279,11 +277,11 @@ plt.xlabel("Epochs", fontsize=16)
 plt.ylabel("Loss", fontsize=16)
 plt.legend(prop={"size": 14})
 plt.show()
+# -
 
-# %% [markdown]
 # ### Plotting sampling process along DDPM's Markov chain
 
-# %% jupyter={"outputs_hidden": false}
+# + jupyter={"outputs_hidden": false}
 model.eval()
 noise = torch.randn((1, 1, 64, 64))
 noise = noise.to(device)
@@ -300,12 +298,11 @@ plt.imshow(chain[0, 0].cpu(), vmin=0, vmax=1, cmap="gray")
 plt.tight_layout()
 plt.axis("off")
 plt.show()
+# -
 
-# %% [markdown]
 # ### Cleanup data directory
 #
 # Remove directory if a temporary was used.
 
-# %%
 if directory is None:
     shutil.rmtree(root_dir)

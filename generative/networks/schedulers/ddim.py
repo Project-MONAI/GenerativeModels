@@ -220,23 +220,17 @@ class DDIMScheduler(nn.Module):
         return pred_prev_sample, pred_original_sample
 
     def reversed_step(
-        self,
-        model_output: torch.Tensor,
-        timestep: int,
-        sample: torch.Tensor,
-        eta: float = 0.0,
-        generator: Optional[torch.Generator] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        self, model_output: torch.Tensor, timestep: int, sample: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
-        Predict the sample at the previous timestep by reversing the SDE. Core function to propagate the diffusion
+        Predict the sample at the next timestep by reversing the SDE. Core function to propagate the diffusion
         process from the learned model outputs (most often the predicted noise).
+
         Args:
             model_output: direct output from learned diffusion model.
             timestep: current discrete timestep in the diffusion chain.
             sample: current instance of sample being created by diffusion process.
-            eta: weight of noise for added noise in diffusion step.
-            predict_epsilon: flag to use when model predicts the samples directly instead of the noise, epsilon.
-            generator: random number generator.
+
         Returns:
             pred_prev_sample: Predicted previous sample
             pred_original_sample: Predicted original sample
@@ -251,51 +245,37 @@ class DDIMScheduler(nn.Module):
         # - pred_sample_direction -> "direction pointing to x_t"
         # - pred_post_sample -> "x_t+1"
 
-        # 1. get previous step value (=t-1)
-        prev_timestep = timestep - self.num_train_timesteps // self.num_inference_steps  # t-1
-        post_timestep = timestep + self.num_train_timesteps // self.num_inference_steps  # t+1
+        # 1. get previous step value (=t+1)
+        prev_timestep = timestep + self.num_train_timesteps // self.num_inference_steps
 
-        # 2. compute alphas, betas
+        # 2. compute alphas, betas at timestep t+1
         alpha_prod_t = self.alphas_cumprod[timestep]
-        alpha_prod_t_prev = (
-            self.alphas_cumprod[prev_timestep] if prev_timestep >= 0 else self.final_alpha_cumprod
-        )  # alpha at timestep t-1
-        alpha_prod_t_post = (
-            self.alphas_cumprod[post_timestep] if prev_timestep >= 0 else self.final_alpha_cumprod
-        )  # alpha at timestep t+1
+        alpha_prod_t_prev = self.alphas_cumprod[prev_timestep] if prev_timestep >= 0 else self.final_alpha_cumprod
 
         beta_prod_t = 1 - alpha_prod_t
 
         # 3. compute predicted original sample from predicted noise also called
         # "predicted x_0" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
+
         if self.prediction_type == "epsilon":
             pred_original_sample = (sample - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
+            pred_epsilon = model_output
         elif self.prediction_type == "sample":
             pred_original_sample = model_output
+            pred_epsilon = (sample - alpha_prod_t ** (0.5) * pred_original_sample) / beta_prod_t ** (0.5)
         elif self.prediction_type == "v_prediction":
             pred_original_sample = (alpha_prod_t**0.5) * sample - (beta_prod_t**0.5) * model_output
-            # predict V
-            model_output = (alpha_prod_t**0.5) * model_output + (beta_prod_t**0.5) * sample
+            pred_epsilon = (alpha_prod_t**0.5) * model_output + (beta_prod_t**0.5) * sample
 
         # 4. Clip "predicted x_0"
         if self.clip_sample:
             pred_original_sample = torch.clamp(pred_original_sample, -1, 1)
 
-        # 5. compute variance: "sigma_t(η)" -> see formula (16)   #I thought we set sigma to 0 here???
-        # σ_t = sqrt((1 − α_t−1)/(1 − α_t)) * sqrt(1 − α_t/α_t−1)
-        variance = self._get_variance(timestep, prev_timestep)
-        std_dev_t = eta * variance ** (0.5)
+        # 5. compute "direction pointing to x_t" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
+        pred_sample_direction = (1 - alpha_prod_t_prev) ** (0.5) * pred_epsilon
 
-        # 6. compute "direction pointing to x_t" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
-        pred_sample_direction = (1 - alpha_prod_t_post - std_dev_t**2) ** (0.5) * model_output
-
-        # 7. compute x_t+1 without "random noise" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
-        pred_post_sample = alpha_prod_t_post ** (0.5) * pred_original_sample + pred_sample_direction
-
-        if eta > 0:
-            # randn_like does not support generator https://github.com/pytorch/pytorch/issues/27072
-            device = model_output.device if torch.is_tensor(model_output) else "cpu"
-            noise = torch.randn(model_output.shape, dtype=model_output.dtype, generator=generator).to(device)
+        # 6. compute x_t+1 without "random noise" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
+        pred_post_sample = alpha_prod_t_prev ** (0.5) * pred_original_sample + pred_sample_direction
 
         return pred_post_sample, pred_original_sample
 
