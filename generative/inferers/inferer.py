@@ -452,6 +452,8 @@ class VQVAETransformerInferer(Inferer):
         # Use the value from vqvae_model's num_embeddings as the starting token, the "Begin Of Sentence" (BOS) token.
         # Note the transformer_model must have vqvae_model.num_embeddings + 1 defined as num_tokens.
         latent = F.pad(latent, (1, 0), "constant", vqvae_model.num_embeddings)
+        # crop the last token as we do not need the probability of the token that follows it
+        latent = latent[:, :-1]
         latent = latent.long()
 
         # train on a part of the sequence if it is longer than max_seq_length
