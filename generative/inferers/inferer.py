@@ -587,7 +587,7 @@ class VQVAETransformerInferer(Inferer):
         probs = torch.gather(probs, 2, target[:, : transformer_model.max_seq_len].unsqueeze(2)).squeeze(2)
 
         # if we have not covered the full sequence we continue with inefficient looping
-        if logits.shape[1] < latent.shape[1]:
+        if probs.shape[1] < target.shape[1]:
             if verbose and has_tqdm:
                 progress_bar = tqdm(range(transformer_model.max_seq_len, seq_len))
             else:
