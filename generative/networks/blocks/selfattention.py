@@ -92,8 +92,8 @@ class SABlock(nn.Module):
 
         kv = context if context is not None else x
         _, kv_t, _ = kv.size()
-        key = self.to_k(context)
-        value = self.to_v(context)
+        key = self.to_k(kv)
+        value = self.to_v(kv)
 
         query = query.view(b, t, self.num_heads, c // self.num_heads).transpose(1, 2)  # (b, nh, t, hs)
         key = key.view(b, kv_t, self.num_heads, c // self.num_heads).transpose(1, 2)  # (b, nh, kv_t, hs)

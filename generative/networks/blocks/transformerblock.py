@@ -55,13 +55,27 @@ class TransformerBlock(nn.Module):
             raise ValueError("hidden_size should be divisible by num_heads.")
 
         self.norm1 = nn.LayerNorm(hidden_size)
-        self.attn = SABlock(hidden_size=hidden_size, num_heads=num_heads, dropout_rate=dropout_rate, qkv_bias=qkv_bias, causal=causal, sequence_length=sequence_length)
+        self.attn = SABlock(
+            hidden_size=hidden_size,
+            num_heads=num_heads,
+            dropout_rate=dropout_rate,
+            qkv_bias=qkv_bias,
+            causal=causal,
+            sequence_length=sequence_length,
+        )
 
         self.norm2 = None
         self.cross_attn = None
         if self.with_cross_attention:
             self.norm2 = nn.LayerNorm(hidden_size)
-            self.cross_attn = SABlock(hidden_size=hidden_size, num_heads=num_heads, dropout_rate=dropout_rate, qkv_bias=qkv_bias, with_cross_attention=with_cross_attention, causal=False)
+            self.cross_attn = SABlock(
+                hidden_size=hidden_size,
+                num_heads=num_heads,
+                dropout_rate=dropout_rate,
+                qkv_bias=qkv_bias,
+                with_cross_attention=with_cross_attention,
+                causal=False,
+            )
 
         self.norm3 = nn.LayerNorm(hidden_size)
         self.mlp = MLPBlock(hidden_size, mlp_dim, dropout_rate)
