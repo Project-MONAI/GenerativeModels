@@ -94,7 +94,7 @@ set_determinism(42)
 # %% [markdown]
 # Here we use transforms to augment the training dataset, as usual:
 #
-# 1. `LoadImaged` loads the hands images from files.
+# 1. `LoadImaged` loads the brain images from files.
 # 2. `EnsureChannelFirstd` ensures the original data to construct "channel first" shape.
 # 3.  The first `Lambdad` transform chooses the first channel of the image, which is the T1-weighted image.
 # 4. `Spacingd` resamples the image to the specified voxel spacing, we use 3,3,2 mm to match the original paper.
