@@ -13,6 +13,18 @@
 #     name: python3
 # ---
 
+# %%
+# Copyright (c) MONAI Consortium
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # %% [markdown]
 # # Anomaly Detection with Transformers
 #
@@ -29,22 +41,14 @@
 
 # %%
 # !python -c "import seaborn" || pip install -q seaborn
+# !python -c "import monai" || pip install -q "monai-weekly[tqdm]"
+# !python -c "import matplotlib" || pip install -q matplotlib
 # %matplotlib inline
 
 # %% [markdown]
 # ### Setup imports
 
 # %%
-# Copyright 2020 MONAI Consortium
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#     http://www.apache.org/licenses/LICENSE-2.0
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 import os
 import tempfile
 import time
@@ -419,7 +423,7 @@ for step, batch in progress_bar:
 in_likelihoods = np.concatenate(in_likelihoods)
 
 # %% [markdown]
-# We will use the "ChestCT" class of the dataset for the out-of-distribution examples.
+# We will use all other classes for the out-of-distribution examples.
 
 # %%
 all_classes = {item["class_name"] for item in test_data.data}
@@ -455,7 +459,7 @@ for c in all_classes:
 sns.set_style("whitegrid", {"axes.grid": False})
 sns.kdeplot(in_likelihoods, bw_adjust=1, label="In-distribution", fill=True, cut=True)
 for c, l in all_likelihoods.items():
-    sns.kdeplot(l, bw_adjust=20, label=f"OOD {c}", cut=True, fill=True)
+    sns.kdeplot(l, bw_adjust=1, label=f"OOD {c}", cut=True, fill=True)
 plt.legend(loc="upper right")
 plt.xlabel("Log-likelihood")
 # plt.xlim([-200,10])
@@ -490,8 +494,9 @@ log_likelihood = inferer.get_likelihood(
     transformer_model=transformer_model,
     ordering=ordering,
 )
+likelihood = torch.exp(log_likelihood)
 plt.subplot(1, 2, 1)
-plt.imshow(log_likelihood.cpu()[0, ...], vmin=0.6, vmax=1)
+plt.imshow(likelihood.cpu()[0, ...])
 plt.axis("off")
 plt.title("Log-likelihood")
 plt.subplot(1, 2, 2)
@@ -571,4 +576,3 @@ plt.imshow(mask_upsampled[0, 0, ...] * difference_map, cmap="gray")
 plt.axis("off")
 plt.title("Predicted anomaly mask")
 plt.show()
-
