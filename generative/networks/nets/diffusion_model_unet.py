@@ -1936,20 +1936,22 @@ class DiffusionModelEncoder(nn.Module):
         super().__init__()
         if with_conditioning is True and cross_attention_dim is None:
             raise ValueError(
-                "DiffusionModelUNet expects dimension of the cross-attention conditioning (cross_attention_dim) "
+                "DiffusionModelEncoder expects dimension of the cross-attention conditioning (cross_attention_dim) "
                 "when using with_conditioning."
             )
         if cross_attention_dim is not None and with_conditioning is False:
             raise ValueError(
-                "DiffusionModelUNet expects with_conditioning=True when specifying the cross_attention_dim."
+                "DiffusionModelEncoder expects with_conditioning=True when specifying the cross_attention_dim."
             )
 
         # All number of channels should be multiple of num_groups
         if any((out_channel % norm_num_groups) != 0 for out_channel in num_channels):
-            raise ValueError("DiffusionModelUNet expects all num_channels being multiple of norm_num_groups")
+            raise ValueError("DiffusionModelEncoder expects all num_channels being multiple of norm_num_groups")
+        if len(num_channels) != len(attention_levels):
+            raise ValueError("DiffusionModelEncoder expects num_channels being same size of attention_levels")
 
         if isinstance(num_head_channels, int):
-            num_head_channels = (num_head_channels,) * len(attention_levels)
+            num_head_channels = ensure_tuple_rep(num_head_channels, len(attention_levels))
 
         if len(num_head_channels) != len(attention_levels):
             raise ValueError(
@@ -2021,8 +2023,8 @@ class DiffusionModelEncoder(nn.Module):
         self,
         x: torch.Tensor,
         timesteps: torch.Tensor,
-        context: Optional[torch.Tensor] = None,
-        class_labels: Optional[torch.Tensor] = None,
+        context: torch.Tensor | None = None,
+        class_labels: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -2033,6 +2035,11 @@ class DiffusionModelEncoder(nn.Module):
         """
         # 1. time
         t_emb = get_timestep_embedding(timesteps, self.block_out_channels[0])
+
+        # timesteps does not contain any weights and will always return f32 tensors
+        # but time_embedding might actually be running in fp16. so we need to cast here.
+        # there might be better ways to encapsulate this.
+        t_emb = t_emb.to(dtype=x.dtype)
         emb = self.time_embed(t_emb)
 
         # 2. class
@@ -2040,6 +2047,7 @@ class DiffusionModelEncoder(nn.Module):
             if class_labels is None:
                 raise ValueError("class_labels should be provided when num_class_embeds > 0")
             class_emb = self.class_embedding(class_labels)
+            class_emb = class_emb.to(dtype=x.dtype)
             emb = emb + class_emb
 
         # 3. initial convolution
