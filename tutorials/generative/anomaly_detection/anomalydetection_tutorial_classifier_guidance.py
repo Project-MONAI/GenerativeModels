@@ -13,6 +13,18 @@
 #     name: python3
 # ---
 
+# %%
+# Copyright (c) MONAI Consortium
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # %% [markdown]
 # # Diffusion Models for Medical Anomaly Detection with Classifier Guidance
 #
@@ -27,7 +39,7 @@
 # ## Setup environment
 
 # %%
-# !python -c "import monai" || pip install -q "monai-weekly[pillow, tqdm, einops]"
+# !python -c "import monai" || pip install -q "monai-weekly[pillow, tqdm]"
 # !python -c "import matplotlib" || pip install -q matplotlib
 # !python -c "import seaborn" || pip install -q seaborn
 
@@ -35,17 +47,6 @@
 # ## Setup imports
 
 # %% jupyter={"outputs_hidden": false}
-# Copyright 2020 MONAI Consortium
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#     http://www.apache.org/licenses/LICENSE-2.0
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import os
 import time
 import tempfile
@@ -64,6 +65,7 @@ from tqdm import tqdm
 from generative.inferers import DiffusionInferer
 from generative.networks.nets.diffusion_model_unet import DiffusionModelEncoder, DiffusionModelUNet
 from generative.networks.schedulers.ddim import DDIMScheduler
+
 torch.multiprocessing.set_sharing_strategy("file_system")
 
 print_config()
@@ -116,7 +118,7 @@ train_transforms = transforms.Compose(
 )
 
 # %% jupyter={"outputs_hidden": false}
-batch_size=64
+batch_size = 64
 
 train_ds = DecathlonDataset(
     root_dir=root_dir,
@@ -190,7 +192,6 @@ optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
 inferer = DiffusionInferer(scheduler)
 
 
-
 # %% [markdown] tags=[]
 # ## Model training of the diffusion model
 # We train our diffusion model for 2000 epochs.
@@ -209,8 +210,8 @@ for epoch in range(n_epochs):
     epoch_loss = 0
 
     for step, data in enumerate(train_loader):
-        images = data['image'].to(device)
-        classes = data['slice_label'].to(device)
+        images = data["image"].to(device)
+        classes = data["slice_label"].to(device)
         optimizer.zero_grad(set_to_none=True)
         timesteps = torch.randint(0, 1000, (len(images),)).to(device)  # pick a random time step t
 
@@ -233,18 +234,18 @@ for epoch in range(n_epochs):
         val_epoch_loss = 0
 
         for step, data in enumerate(val_loader):
-             images = data['image'].to(device)
-             classes = data['slice_label'].to(device)
-             timesteps = torch.randint(0, 1000, (len(images),)).to(device)
-             with torch.no_grad():
+            images = data["image"].to(device)
+            classes = data["slice_label"].to(device)
+            timesteps = torch.randint(0, 1000, (len(images),)).to(device)
+            with torch.no_grad():
                 with autocast(enabled=True):
                     noise = torch.randn_like(images).to(device)
                     noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
                     val_loss = F.mse_loss(noise_pred.float(), noise.float())
 
-             val_epoch_loss += val_loss.item()
+            val_epoch_loss += val_loss.item()
         val_epoch_loss_list.append(val_epoch_loss / (step + 1))
-        print('Epoch', epoch, 'Validation loss', val_epoch_loss / (step + 1))
+        print("Epoch", epoch, "Validation loss", val_epoch_loss / (step + 1))
 
 total_time = time.time() - total_start
 print(f"train diffusion completed, total time: {total_time}.")
@@ -335,9 +336,9 @@ for epoch in range(n_epochs):
     epoch_loss = 0
 
     for step, data in enumerate(train_loader):
-        images = data['image'].to(device)
-        classes = data['slice_label'].to(device)
-        #classes[classes==2]=0
+        images = data["image"].to(device)
+        classes = data["slice_label"].to(device)
+        # classes[classes==2]=0
 
         optimizer_cls.zero_grad(set_to_none=True)
         timesteps = torch.randint(0, 1000, (len(images),)).to(device)
@@ -363,8 +364,8 @@ for epoch in range(n_epochs):
         val_epoch_loss = 0
 
         for step, data_val in enumerate(val_loader):
-            images = data_val['image'].to(device)
-            classes = data_val['slice_label'].to(device)
+            images = data_val["image"].to(device)
+            classes = data_val["slice_label"].to(device)
             timesteps = torch.randint(0, 1, (len(images),)).to(
                 device
             )  # check validation accuracy on the original images, i.e., do not add noise
@@ -378,7 +379,7 @@ for epoch in range(n_epochs):
             val_epoch_loss += val_loss.item()
             _, predicted = torch.max(pred, 1)
             val_epoch_loss_list.append(val_epoch_loss / (step + 1))
-        print('Epoch', epoch, 'Validation loss', val_epoch_loss / (step + 1))
+        print("Epoch", epoch, "Validation loss", val_epoch_loss / (step + 1))
 
 total_time = time.time() - total_start
 print(f"train completed, total time: {total_time}.")
@@ -410,10 +411,10 @@ idx_unhealthy = np.argwhere(data_val["slice_label"].numpy() == 0).squeeze()
 idx = idx_unhealthy[4]  # Pick a random slice of the validation set to be transformed
 inputimg = data_val["image"][idx]  # Pick an input slice of the validation set to be transformed
 inputlabel = data_val["slice_label"][idx]  # Check whether it is healthy or diseased
-print('minmax', inputimg.min(), inputimg.max())
+print("minmax", inputimg.min(), inputimg.max())
 
 plt.figure("input" + str(inputlabel))
-plt.imshow(inputimg[0,...], vmin=0, vmax=1, cmap="gray")
+plt.imshow(inputimg[0, ...], vmin=0, vmax=1, cmap="gray")
 plt.axis("off")
 plt.tight_layout()
 plt.show()
@@ -455,7 +456,7 @@ plt.show()
 
 # %%
 y = torch.tensor(0)  # define the desired class label
-scale = 6 # define the desired gradient scale s
+scale = 6  # define the desired gradient scale s
 progress_bar = tqdm(range(L))  # go back and forth L timesteps
 
 for i in progress_bar:  # go through the denoising process
@@ -496,7 +497,7 @@ plt.show()
 
 diff = abs(inputimg.cpu() - current_img[0, 0].cpu()).detach().numpy()
 plt.style.use("default")
-plt.imshow(diff[0,...], cmap="jet")
+plt.imshow(diff[0, ...], cmap="jet")
 plt.tight_layout()
 plt.axis("off")
 plt.show()
