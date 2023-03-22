@@ -75,17 +75,13 @@ class SABlock(nn.Module):
 
         if causal and sequence_length is not None:
             # causal mask to ensure that attention is only applied to the left in the input sequence
-            self.mask = torch.tril(torch.ones(sequence_length, sequence_length)).view(
-                1, 1, sequence_length, sequence_length
+            self.register_buffer(
+                "causal_mask",
+                torch.tril(torch.ones(sequence_length, sequence_length)).view(1, 1, sequence_length, sequence_length),
             )
-        else:
-            self.mask = None
 
     def forward(self, x: torch.Tensor, context: torch.Tensor | None = None) -> torch.Tensor:
         b, t, c = x.size()  # batch size, sequence length, embedding dimensionality (hidden_size)
-
-        if self.sequence_length is not None and t != self.sequence_length:
-            raise ValueError("sequence length should be equal to the one specified in the SABlock constructor.")
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
         query = self.to_q(x)
@@ -103,7 +99,7 @@ class SABlock(nn.Module):
         attention_scores = (query @ key.transpose(-2, -1)) * self.scale
 
         if self.causal:
-            attention_scores = attention_scores.masked_fill(self.mask[:, :, :t, :kv_t] == 0, float("-inf"))
+            attention_scores = attention_scores.masked_fill(self.causal_mask[:, :, :t, :kv_t] == 0, float("-inf"))
 
         attention_probs = F.softmax(attention_scores, dim=-1)
         attention_probs = self.drop_weights(attention_probs)
