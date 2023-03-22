@@ -4,7 +4,7 @@
 output_dir: $datetime.datetime.now().strftime('./results/output_%y%m%d_%H%M%S')
 dataset_dir: ./data
 
-train_data:
+train_data: 
   _target_ : MedNISTDataset
   root_dir: '@dataset_dir'
   section: training
@@ -12,7 +12,7 @@ train_data:
   progress: false
   seed: 0
 
-val_data:
+val_data: 
   _target_ : MedNISTDataset
   root_dir: '@dataset_dir'
   section: validation
@@ -37,7 +37,7 @@ save_interval: 5
 train_transforms:
 - _target_: RandAffined
   keys: '@image'
-  rotate_range:
+  rotate_range: 
   - ['$-np.pi / 36', '$np.pi / 36']
   - ['$-np.pi / 36', '$np.pi / 36']
   translate_range:
@@ -49,14 +49,14 @@ train_transforms:
   spatial_size: [64, 64]
   padding_mode: "zeros"
   prob: '@rand_prob'
-
+  
 train_ds:
   _target_: Dataset
   data: $@train_datalist
   transform:
     _target_: Compose
     transforms: '$@base_transforms + @train_transforms'
-
+    
 train_loader:
   _target_: ThreadDataLoader
   dataset: '@train_ds'
@@ -65,7 +65,7 @@ train_loader:
   num_workers: '@num_workers'
   use_thread_workers: '@use_thread_workers'
   persistent_workers: '$@num_workers > 0'
-  shuffle: true
+  shuffle: true    
 
 val_ds:
   _target_: Dataset
@@ -73,7 +73,7 @@ val_ds:
   transform:
     _target_: Compose
     transforms: '@base_transforms'
-
+    
 val_loader:
   _target_: DataLoader
   dataset: '@val_ds'
@@ -81,19 +81,19 @@ val_loader:
   num_workers: '@num_workers'
   persistent_workers: '$@num_workers > 0'
   shuffle: false
-
+    
 lossfn:
   _target_: torch.nn.MSELoss
-
+  
 optimizer:
   _target_: torch.optim.Adam
   params: $@network.parameters()
   lr: '@lr'
-
+  
 prepare_batch:
   _target_: generative.engines.DiffusionPrepareBatch
   num_train_timesteps: '@num_train_timesteps'
-
+  
 val_handlers:
 - _target_: StatsHandler
   name: train_log
@@ -114,7 +114,7 @@ evaluator:
       output_transform: $monai.handlers.from_engine([@pred, @label])
   metric_cmp_fn: '$scripts.inv_metric_cmp_fn'
   val_handlers: '$list(filter(bool, @val_handlers))'
-
+  
 handlers:
 - _target_: CheckpointLoader
   _disabled_: $not os.path.exists(@ckpt_path)
@@ -144,14 +144,14 @@ trainer:
   optimizer: '@optimizer'
   inferer: '@inferer'
   prepare_batch: '@prepare_batch'
-  key_train_metric:
+  key_train_metric: 
     train_acc:
       _target_: MeanSquaredError
       output_transform: $monai.handlers.from_engine([@pred, @label])
   metric_cmp_fn: '$scripts.inv_metric_cmp_fn'
   train_handlers: '$list(filter(bool, @handlers))'
   amp: '@use_amp'
-
-training:
+  
+training: 
 - '$monai.utils.set_determinism(0)'
 - '$@trainer.run()'

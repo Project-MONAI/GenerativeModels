@@ -21,7 +21,7 @@ vsampler:
   shuffle: false
 val_loader#sampler: '@vsampler'
 
-training:
+training: 
 - $import torch.distributed as dist
 - $dist.init_process_group(backend='nccl')
 - $torch.cuda.set_device(@device)

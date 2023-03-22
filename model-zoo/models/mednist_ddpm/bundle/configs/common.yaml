@@ -1,6 +1,6 @@
 # This file defines common definitions used in training and inference, most importantly the network definition
 
-imports:
+imports: 
 - $import os
 - $import datetime
 - $import torch
@@ -27,8 +27,8 @@ network_def:
   attention_levels: [false, true, true]
   num_res_blocks: 1
   num_head_channels: 128
-
-network: $@network_def.to(@device)
+  
+network: $@network_def.to(@device)  
 
 bundle_root: .
 ckpt_path: $@bundle_root + '/models/model.pt'
@@ -54,7 +54,8 @@ base_transforms:
 scheduler:
   _target_: generative.networks.schedulers.DDPMScheduler
   num_train_timesteps: '@num_train_timesteps'
-
+  
 inferer:
   _target_: generative.inferers.DiffusionInferer
   scheduler: '@scheduler'
+  
