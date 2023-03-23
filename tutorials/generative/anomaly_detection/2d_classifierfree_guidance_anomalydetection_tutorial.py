@@ -26,16 +26,16 @@
 # limitations under the License.
 
 # %% [markdown]
-# # Weakly Supervised Anomaly Detection with Classifier Guidance
+# # Weakly Supervised Anomaly Detection with Implicit Guidance
 #
-# This tutorial illustrates how to use MONAI Generative Models for training a 2D gradient-guided anomaly detection using DDIMs [1].
+# This tutorial illustrates how to use MONAI Generative Models for training a 2D anomaly detection using DDIMs [1]. By leveraging recent advances in generative diffusion probabilistic models, we synthesize counterfactuals of "How would a patient appear if X pathology was not present?". The difference image between the observed patient state and the healthy counterfactual can be used for inferring the location of pathology. We generate counterfactuals that correspond to the minimal change of the input such that it is transformed to healthy domain. We create these counterfactual diffusion models by manipulating the generation process with implicit guidance.
 #
 # In summary, the tutorial will cover the following:
 # 1. Loading and preprocessing a dataset (we extract the brain MRI dataset 2D slices from 3D volumes from the BraTS dataset)
 # 2. Training a 2D diffusion model
 # 3. Anomaly detection with the trained model
 #
-# This method results in  anomaly heatmaps. It is weakly supervised. The information about labels is not fed to the model as segmentation masks but as a scalar signal (is there an anomaly or not), which is used to guide the diffusion process.
+# This method results in anomaly heatmaps. It is weakly supervised. The information about labels is not fed to the model as segmentation masks but as a scalar signal (is there an anomaly or not), which is used to guide the diffusion process.
 #
 # During inference, the model generates a counterfactual image, which is then compared to the original image. The difference between the two images is used to generate an anomaly heatmap.
 #
