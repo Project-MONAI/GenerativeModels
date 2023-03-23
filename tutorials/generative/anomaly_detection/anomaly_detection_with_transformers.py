@@ -575,5 +575,3 @@ plt.imshow(mask_upsampled[0, 0, ...] * difference_map, cmap="gray")
 plt.axis("off")
 plt.title("Predicted anomaly mask")
 plt.show()
-
-# %%
