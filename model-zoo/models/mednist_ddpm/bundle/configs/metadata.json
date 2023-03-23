@@ -7,7 +7,9 @@
     "monai_version": "1.0.0",
     "pytorch_version": "1.10.2",
     "numpy_version": "1.21.2",
-    "optional_packages_version": {"generative":"0.1.0"},
+    "optional_packages_version": {
+        "generative": "0.1.0"
+    },
     "task": "MedNIST Hand Generation",
     "description": "",
     "authors": "Walter Hugo Lopez Pinaya, Mark Graham, and Eric Kerfoot",
