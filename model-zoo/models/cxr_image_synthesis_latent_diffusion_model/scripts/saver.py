@@ -11,7 +11,7 @@ class JPGSaver:
         self.output_dir = output_dir
 
     def save(self, image_data: torch.Tensor, file_name: str) -> None:
-        image_data = image_data.cpu().numpy()
+        image_data = np.clip(image_data.cpu().numpy(), 0, 1)
         image_data = (image_data * 255).astype(np.uint8)
         im = Image.fromarray(image_data[0, 0])
         im.save(self.output_dir + "/" + file_name + ".jpg")
