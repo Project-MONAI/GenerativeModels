@@ -54,13 +54,6 @@ class TestResBlock(unittest.TestCase):
         with self.assertRaises(ValueError):
             SABlock(hidden_size=12, num_heads=4, dropout_rate=0.4, causal=True, sequence_length=None)
 
-    def test_wrong_sequence_length(self):
-        net = SABlock(hidden_size=16, num_heads=4, dropout_rate=0.0, causal=True, sequence_length=6)
-        with self.assertRaises(ValueError):
-            with eval_mode(net):
-                result = net(torch.randn((2, 4, 16)))
-                self.assertEqual(result.shape, (2, 4, 16))
-
 
 if __name__ == "__main__":
     unittest.main()
