@@ -449,9 +449,13 @@ class VQVAETransformerInferer(Inferer):
         latent = latent.reshape(latent.shape[0], -1)
         latent = latent[:, ordering.get_sequence_ordering()]
 
+        # get the targets for the loss
+        target = latent.clone()
         # Use the value from vqvae_model's num_embeddings as the starting token, the "Begin Of Sentence" (BOS) token.
         # Note the transformer_model must have vqvae_model.num_embeddings + 1 defined as num_tokens.
         latent = F.pad(latent, (1, 0), "constant", vqvae_model.num_embeddings)
+        # crop the last token as we do not need the probability of the token that follows it
+        latent = latent[:, :-1]
         latent = latent.long()
 
         # train on a part of the sequence if it is longer than max_seq_length
@@ -463,7 +467,7 @@ class VQVAETransformerInferer(Inferer):
             start = 0
         prediction = transformer_model(x=latent[:, start : start + max_seq_len], context=condition)
         if return_latent:
-            return prediction, latent[:, start : start + max_seq_len], latent_spatial_dim
+            return prediction, target[:, start : start + max_seq_len], latent_spatial_dim
         else:
             return prediction
 
@@ -585,7 +589,7 @@ class VQVAETransformerInferer(Inferer):
         probs = torch.gather(probs, 2, target[:, : transformer_model.max_seq_len].unsqueeze(2)).squeeze(2)
 
         # if we have not covered the full sequence we continue with inefficient looping
-        if logits.shape[1] < latent.shape[1]:
+        if probs.shape[1] < target.shape[1]:
             if verbose and has_tqdm:
                 progress_bar = tqdm(range(transformer_model.max_seq_len, seq_len))
             else:

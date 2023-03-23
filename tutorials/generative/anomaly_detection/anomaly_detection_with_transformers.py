@@ -169,11 +169,11 @@ l1_loss = L1Loss()
 
 # %% [markdown]
 # ### VQ-VAE Model training
-# We will train our VQ-VAE for 30 epochs.
+# We will train our VQ-VAE for 20 epochs.
 
 # %%
-n_epochs = 30
-val_interval = 10
+n_epochs = 20
+val_interval = 5
 epoch_losses = []
 val_epoch_losses = []
 
@@ -340,11 +340,10 @@ for epoch in range(n_epochs):
 
         optimizer.zero_grad(set_to_none=True)
 
-        logits, quantizations_target, _ = inferer(images, vqvae_model, transformer_model, ordering, return_latent=True)
+        logits, target, _ = inferer(images, vqvae_model, transformer_model, ordering, return_latent=True)
         logits = logits.transpose(1, 2)
 
-        # train the transformer to predict token n+1 using tokens 0-n
-        loss = ce_loss(logits[:, :, :-1], quantizations_target[:, 1:])
+        loss = ce_loss(logits, target)
 
         loss.backward()
         optimizer.step()
@@ -500,7 +499,7 @@ plt.imshow(likelihood.cpu()[0, ...])
 plt.axis("off")
 plt.title("Log-likelihood")
 plt.subplot(1, 2, 2)
-mask = log_likelihood.cpu()[0, ...] < torch.quantile(log_likelihood, 0.05).item()
+mask = log_likelihood.cpu()[0, ...] < torch.quantile(log_likelihood, 0.03).item()
 plt.imshow(mask)
 plt.axis("off")
 plt.title("Healing mask")
