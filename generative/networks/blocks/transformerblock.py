@@ -32,6 +32,7 @@ class TransformerBlock(nn.Module):
         causal: whether to use causal attention.
         sequence_length: if causal is True, it is necessary to specify the sequence length.
         with_cross_attention: Whether to use cross attention for conditioning.
+        use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
     """
 
     def __init__(
@@ -44,6 +45,7 @@ class TransformerBlock(nn.Module):
         causal: bool = False,
         sequence_length: int | None = None,
         with_cross_attention: bool = False,
+        use_flash_attention: bool = False,
     ) -> None:
         self.with_cross_attention = with_cross_attention
         super().__init__()
@@ -62,6 +64,7 @@ class TransformerBlock(nn.Module):
             qkv_bias=qkv_bias,
             causal=causal,
             sequence_length=sequence_length,
+            use_flash_attention=use_flash_attention,
         )
 
         self.norm2 = None
@@ -75,6 +78,7 @@ class TransformerBlock(nn.Module):
                 qkv_bias=qkv_bias,
                 with_cross_attention=with_cross_attention,
                 causal=False,
+                use_flash_attention=use_flash_attention,
             )
 
         self.norm3 = nn.LayerNorm(hidden_size)

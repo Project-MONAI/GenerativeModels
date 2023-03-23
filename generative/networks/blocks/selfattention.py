@@ -11,11 +11,21 @@
 
 from __future__ import annotations
 
+import importlib.util
 import math
 
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+
+if importlib.util.find_spec("xformers") is not None:
+    import xformers
+    import xformers.ops as xops
+
+    has_xformers = True
+else:
+    xformers = None
+    has_xformers = False
 
 
 class SABlock(nn.Module):
@@ -31,6 +41,7 @@ class SABlock(nn.Module):
         causal: whether to use causal attention.
         sequence_length: if causal is True, it is necessary to specify the sequence length.
         with_cross_attention: Whether to use cross attention for conditioning.
+        use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
     """
 
     def __init__(
@@ -42,6 +53,7 @@ class SABlock(nn.Module):
         causal: bool = False,
         sequence_length: int | None = None,
         with_cross_attention: bool = False,
+        use_flash_attention: bool = False,
     ) -> None:
         super().__init__()
         self.hidden_size = hidden_size
@@ -51,6 +63,7 @@ class SABlock(nn.Module):
         self.causal = causal
         self.sequence_length = sequence_length
         self.with_cross_attention = with_cross_attention
+        self.use_flash_attention = use_flash_attention
 
         if not (0 <= dropout_rate <= 1):
             raise ValueError("dropout_rate should be between 0 and 1.")
@@ -95,15 +108,25 @@ class SABlock(nn.Module):
         key = key.view(b, kv_t, self.num_heads, c // self.num_heads).transpose(1, 2)  # (b, nh, kv_t, hs)
         value = value.view(b, kv_t, self.num_heads, c // self.num_heads).transpose(1, 2)  # (b, nh, kv_t, hs)
 
-        # manual implementation of attention
-        attention_scores = (query @ key.transpose(-2, -1)) * self.scale
+        if self.use_flash_attention:
+            query = query.contiguous()
+            key = key.contiguous()
+            value = value.contiguous()
+            y = xops.memory_efficient_attention(
+                query, key, value, attn_bias=xops.LowerTriangularMask() if self.causal else None
+            )
 
-        if self.causal:
-            attention_scores = attention_scores.masked_fill(self.causal_mask[:, :, :t, :kv_t] == 0, float("-inf"))
+        else:
+            # manual implementation of attention
+            attention_scores = (query @ key.transpose(-2, -1)) * self.scale
 
-        attention_probs = F.softmax(attention_scores, dim=-1)
-        attention_probs = self.drop_weights(attention_probs)
-        y = attention_probs @ value  # (b, nh, t, kv_t) x (b, nh, kv_t, hs) -> (b, nh, t, hs)
+            if self.causal:
+                attention_scores = attention_scores.masked_fill(self.causal_mask[:, :, :t, :kv_t] == 0, float("-inf"))
+
+            attention_probs = F.softmax(attention_scores, dim=-1)
+            attention_probs = self.drop_weights(attention_probs)
+            y = attention_probs @ value  # (b, nh, t, kv_t) x (b, nh, kv_t, hs) -> (b, nh, t, hs)
+
         y = y.transpose(1, 2).contiguous().view(b, t, c)  # re-assemble all head outputs side by side
 
         y = self.out_proj(y)
