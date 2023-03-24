@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Mapping, Optional, Union
+from typing import Mapping
 
 import torch
 import torch.nn as nn
@@ -31,7 +31,7 @@ class DiffusionPrepareBatch(PrepareBatch):
 
     """
 
-    def __init__(self, num_train_timesteps: int, condition_name: Optional[str] = None) -> None:
+    def __init__(self, num_train_timesteps: int, condition_name: str | None = None) -> None:
         self.condition_name = condition_name
         self.num_train_timesteps = num_train_timesteps
 
@@ -49,8 +49,8 @@ class DiffusionPrepareBatch(PrepareBatch):
 
     def __call__(
         self,
-        batchdata: Dict[str, torch.Tensor],
-        device: Optional[Union[str, torch.device]] = None,
+        batchdata: dict[str, torch.Tensor],
+        device: str | torch.device | None = None,
         non_blocking: bool = False,
         **kwargs,
     ):
@@ -84,7 +84,7 @@ class VPredictionPrepareBatch(DiffusionPrepareBatch):
 
     """
 
-    def __init__(self, scheduler: nn.Module, num_train_timesteps: int, condition_name: Optional[str] = None) -> None:
+    def __init__(self, scheduler: nn.Module, num_train_timesteps: int, condition_name: str | None = None) -> None:
         super().__init__(num_train_timesteps=num_train_timesteps, condition_name=condition_name)
         self.scheduler = scheduler
 
