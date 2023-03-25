@@ -20,6 +20,7 @@ from parameterized import parameterized
 from generative.metrics import MSSSIM
 
 TEST_CASES = [
+    [{"data_range": 1.0}, {"x": torch.ones([3, 3, 144, 144]) / 2, "y": torch.ones([3, 3, 144, 144]) / 2}, 1.0],
     [
         {"data_range": torch.tensor(1.0)},
         {"x": torch.ones([3, 3, 144, 144]) / 2, "y": torch.ones([3, 3, 144, 144]) / 2},

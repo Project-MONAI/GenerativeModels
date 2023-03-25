@@ -59,6 +59,9 @@ class MSSSIM(RegressionMetric):
         if not (win_size % 2 == 1):
             raise ValueError("Window size should be odd.")
 
+        if isinstance(data_range, float):
+            data_range = torch.tensor(data_range)
+
         self.data_range = data_range
         self.win_size = win_size
         self.k1, self.k2 = k1, k2
