@@ -73,8 +73,8 @@ class SABlock(nn.Module):
         if causal and sequence_length is None:
             raise ValueError("sequence_length is necessary for causal attention.")
 
-        if causal and sequence_length is None:
-            raise ValueError("sequence_length is necessary for causal attention.")
+        if use_flash_attention and not has_xformers:
+            raise ValueError("use_flash_attention is True but xformers is not installed.")
 
         # key, query, value projections
         self.to_q = nn.Linear(hidden_size, hidden_size, bias=qkv_bias)
