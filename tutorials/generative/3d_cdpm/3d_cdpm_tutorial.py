@@ -2,7 +2,7 @@
 # # Conditional Diffusion Probabilistic Model (CDPM) for 3D Images generation
 #
 # This tutorial illustrates how to use MONAI for training a 2D CDPM[1] for 3D images generation.
-
+#
 # [1] - [Peng et al. "Generating Realistic 3D Brain MRIs Using a Conditional Diffusion Probabilistic Model"](https://arxiv.org/abs/2212.08034)
 
 
@@ -41,6 +41,9 @@ from generative.networks.schedulers import DDPMScheduler
 
 print_config()
 
+# %%
+print(torch.cuda.is_available())
+
 # %% [markdown]
 # ## Setup data directory
 #
@@ -51,8 +54,9 @@ print_config()
 # If not specified a temporary directory will be used.
 
 
-# %%  export MONAI_DATA_DIRECTORY="/home/Nobias/data/MONAI_DATA_DIRECTORY/"
+# %%
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
+directory = '/home/Nobias/data/MONAI_DATA_DIRECTORY'
 root_dir = tempfile.mkdtemp() if directory is None else directory
 print(root_dir)
 
@@ -88,7 +92,7 @@ val_transform = Compose(
     ]
 )
 
-# %% Task01_BrainTumour
+# %%
 train_ds = DecathlonDataset(
     root_dir=root_dir, task="Task01_BrainTumour", transform=train_transform, section="training", download=False
 )
@@ -99,20 +103,21 @@ val_ds = DecathlonDataset(
     root_dir=root_dir, task="Task01_BrainTumour", transform=val_transform, section="validation", download=False
 )
 
-val_loader = DataLoader(val_ds, batch_size=2, shuffle=False, num_workers=1)
+val_loader = DataLoader(val_ds, batch_size=20, shuffle=False, num_workers=1)
 
 
 # %% [markdown]
 # ### Visualization of the training images
+#
 
-# # %%
-# plt.subplots(1, 4, figsize=(10, 6))
-# for i in range(4):
-#     plt.subplot(1, 4, i + 1)
-#     plt.imshow(train_ds[i * 20]["image"][0, :, :, 15].detach().cpu(), vmin=0, vmax=1, cmap="gray")
-#     plt.axis("off")
-# plt.tight_layout()
-# plt.show()
+# %%
+plt.subplots(1, 4, figsize=(10, 6))
+for i in range(4):
+    plt.subplot(1, 4, i + 1)
+    plt.imshow(train_ds[i * 20]["image"][0, :, :, 15].detach().cpu(), vmin=0, vmax=1, cmap="gray")
+    plt.axis("off")
+plt.tight_layout()
+plt.show()
 
 # %% [markdown]
 # ### Define network, scheduler, optimizer, and inferer
@@ -158,6 +163,7 @@ for epoch in range(n_epochs):
     max_frames=16
     for step, batch in progress_bar:
         images = batch["image"].to(device)#[1, 1, 32, 48, 32]
+        images[...,0]=0. # Trick used to indicate where to start
 
         ### Create images and context
         # randomly sample next batch to fill the unused tensor
@@ -189,11 +195,12 @@ for epoch in range(n_epochs):
         progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
     epoch_loss_list.append(epoch_loss / (step + 1))
 
-    if (epoch + 1) % val_interval == 0:
+    if (epoch ) % val_interval == 0:
         model.eval()
         val_epoch_loss = 0
         for step, batch in enumerate(val_loader):
             images = batch["image"].to(device)
+            images[...,0]=0.
 
             batch_1 = next(iter(val_loader))["image"].to(device)
             context = model.get_image_context(images.permute(0,4,1,2,3), batch_1.permute(0,4,1,2,3), max_frames)
@@ -218,7 +225,7 @@ for epoch in range(n_epochs):
         mri_length = 32
         max_frames = 16
         step_size = 8
-        Sample = torch.zeros((1, 32, 1, 32, 48))
+        Sample = torch.zeros((1, 32, 1, 32, 48)).to(device)
         while len(done_frames)<mri_length:
             obs_frame_indices, latent_frame_indices, obs_mask, latent_mask = model.next_indices(done_frames, mri_length, max_frames, step_size)
             frame_indices = torch.cat([torch.tensor(obs_frame_indices), torch.tensor(latent_frame_indices)]).long()
@@ -233,7 +240,9 @@ for epoch in range(n_epochs):
             done_frames = done_frames + latent_frame_indices
             with autocast(enabled=True):
                 image = inferer.sample(input_noise=sampled, diffusion_model=model, scheduler=scheduler, conditioning=context)
-                Sample[0,latent_frame_indices] = image[len(obs_frame_indices):]
+                img = image[:,len(obs_frame_indices):]
+                print(f'shape {img.shape}, {Sample[0,latent_frame_indices].shape}')
+                Sample[:,latent_frame_indices] = img
 
         plt.figure(figsize=(2, 2))
         plt.imshow(image[0,15, 0, :, :].cpu(), vmin=0, vmax=1, cmap="gray")
