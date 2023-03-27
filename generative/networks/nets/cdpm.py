@@ -39,7 +39,7 @@ class TimestepEmbedAttnThingsSequential(nn.Sequential, TimestepBlock):
     A sequential module that passes extra things to the children that
     support it as an extra input.
     """
-    def forward(self, x, emb, attn_mask, T=1, frame_indices=None):
+    def forward(self, x, emb, attn_mask, T=1, frame_indices=None)-> torch.Tensor:
         for layer in self:
             if isinstance(layer, TimestepBlock):
                 kwargs = dict(emb=emb)
@@ -66,7 +66,7 @@ class Upsample(nn.Module):
                  upsampling occurs in the inner-two dimensions.
     """
 
-    def __init__(self, channels, use_conv, dims=2):
+    def __init__(self, channels, use_conv, dims=2)-> None:
         super().__init__()
         self.channels = channels
         self.use_conv = use_conv
@@ -74,7 +74,7 @@ class Upsample(nn.Module):
         if use_conv:
             self.conv = Convolution(dims, channels, channels,  padding=1)
 
-    def forward(self, x):
+    def forward(self, x)-> torch.Tensor:
         assert x.shape[1] == self.channels
         if self.dims == 3:
             x = F.interpolate(
@@ -96,7 +96,7 @@ class Downsample(nn.Module):
                  downsampling occurs in the inner-two dimensions.
     """
 
-    def __init__(self, channels, use_conv, dims=2):
+    def __init__(self, channels, use_conv, dims=2)-> None:
         super().__init__()
         self.channels = channels
         self.use_conv = use_conv
@@ -107,7 +107,7 @@ class Downsample(nn.Module):
         else:
             self.op = avg_pool_nd(stride)
 
-    def forward(self, x):
+    def forward(self, x)-> torch.Tensor:
         assert x.shape[1] == self.channels
         return self.op(x)
 
@@ -134,7 +134,7 @@ class ResBlock(TimestepBlock):
         use_conv=False,
         use_scale_shift_norm=False,
         dims=2,
-    ):
+    )-> None:
         super().__init__()
         self.channels = channels
         self.emb_channels = emb_channels
@@ -172,7 +172,7 @@ class ResBlock(TimestepBlock):
         else:
             self.skip_connection = Convolution(dims, channels, self.out_channels, kernel_size = 1)
 
-    def forward(self, x, emb):
+    def forward(self, x, emb)-> torch.Tensor:
         """
         Apply the block to a Tensor, conditioned on a timestep embedding.
         :param x: an [N x C x ...] Tensor of features.
@@ -196,7 +196,7 @@ class ResBlock(TimestepBlock):
 
 class FactorizedAttentionBlock(nn.Module):
 
-    def __init__(self, channels, num_heads, time_embed_dim=None):
+    def __init__(self, channels, num_heads, time_embed_dim=None)-> None:
         super().__init__()
         self.spatial_attention = RPEAttention(
             channels=channels, num_heads=num_heads, time_embed_dim = time_embed_dim, use_rpe_q=False, use_rpe_k=False, use_rpe_v=False,
@@ -206,7 +206,7 @@ class FactorizedAttentionBlock(nn.Module):
             time_embed_dim=time_embed_dim,
         )
 
-    def forward(self, x, attn_mask, temb, T, frame_indices=None):
+    def forward(self, x, attn_mask, temb, T, frame_indices=None)-> torch.Tensor:
         BT, C, H, W = x.shape
         B = BT//T
         # reshape to have T in the last dimension becuase that's what we attend over
@@ -263,7 +263,7 @@ class UNet_2Plus1_Model(nn.Module):
         num_heads=1,
         num_heads_upsample=-1,
         use_scale_shift_norm=False,
-    ):
+    )-> None:
         super().__init__()
 
         if num_heads_upsample == -1:
@@ -384,7 +384,7 @@ class UNet_2Plus1_Model(nn.Module):
         """
         return next(self.input_blocks.parameters()).dtype
 
-    def forward(self, x, timesteps, context=None):
+    def forward(self, x, timesteps, context=None)-> torch.Tensor:
         """
         Apply the model to an input batch.
         :param x: list of both an [N x C x ...] Tensor of inputs, noisy input, and target.
@@ -431,7 +431,7 @@ class UNet_2Plus1_Model(nn.Module):
         out = self.out(h)
         return out.view(B, T, self.out_channels, H, W)
 
-    def timestep_embedding(self, timesteps, dim, max_period=10000):
+    def timestep_embedding(self, timesteps, dim, max_period=10000)-> torch.Tensor:
         """
         Create sinusoidal timestep embeddings.
         :param timesteps: a 1-D Tensor of N indices, one per batch element.
@@ -450,7 +450,7 @@ class UNet_2Plus1_Model(nn.Module):
             embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
         return embedding
 
-    def get_feature_vectors(self, x, timesteps, y=None):
+    def get_feature_vectors(self, x, timesteps, y=None)-> torch.Tensor:
         """
         Apply the model and return all of the intermediate tensors.
         :param x: an [N x C x ...] Tensor of inputs.
@@ -543,7 +543,7 @@ class UNet_2Plus1_Model(nn.Module):
                 new_t[b, instance_T:] = t[b][indices[b, instance_T:]]
         return new_batch, new_tensors, indices
 
-    def next_indices(self, done_frames, images_length, max_frames = 16, step_size = None ):
+    def next_indices(self, done_frames, images_length, max_frames = 16, step_size = None):
         if step_size is None:
             step_size = max_frames//2
         if len(done_frames) == 1:
