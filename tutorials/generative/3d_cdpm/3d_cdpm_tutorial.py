@@ -145,6 +145,7 @@ optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
 
 # %% [markdown]
 # ### Model training
+# ##### Take longer to converge as we have much more traning combinations.
 
 # %%
 n_epochs = 200
@@ -256,11 +257,18 @@ print(f"train completed, total time: {total_time}.")
 # ### Learning curves
 
 # %%
-plt.style.use("seaborn-v0_8")
+print(epoch_loss_list)
+
+# %%
+print(val_epoch_loss_list)
+
+# %%
+# plt.style.use("seaborn-v0_8")
+n_epochs = 101
 plt.title("Learning Curves", fontsize=20)
 plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, color="C0", linewidth=2.0, label="Train")
 plt.plot(
-    np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
+    np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)+1),
     val_epoch_loss_list,
     color="C1",
     linewidth=2.0,
@@ -273,23 +281,43 @@ plt.ylabel("Loss", fontsize=16)
 plt.legend(prop={"size": 14})
 plt.show()
 
-
 # %% [markdown]
 # ### Plotting synthetic sample
 
 # %%
-model.eval()
-noise = torch.randn((1, 1, 32, 48, 32))
-noise = noise.to(device)
-scheduler.set_timesteps(num_inference_steps=1000)
-image = inferer.sample(input_noise=noise, diffusion_model=model, scheduler=scheduler)
+# Sampling image during training
+done_frames = [0]
+mri_length = 32
+max_frames = 16
+step_size = 8
+Sample = torch.zeros((1, 32, 1, 32, 48)).to(device)
+while len(done_frames)<mri_length:
+    obs_frame_indices, latent_frame_indices, obs_mask, latent_mask = model.next_indices(done_frames, mri_length, max_frames, step_size)
+    frame_indices = torch.cat([torch.tensor(obs_frame_indices), torch.tensor(latent_frame_indices)]).long()
 
+    sampled = Sample[:,frame_indices]
+    print(f'Conditioning on {sorted(obs_frame_indices)} slices, predicting {sorted(latent_frame_indices)}.')
+
+    sampled = sampled.to(device)
+    context = (frame_indices.view(1,-1).to(device), obs_mask.to(device), latent_mask.to(device), sampled)
+
+    scheduler.set_timesteps(num_inference_steps=1000)
+    done_frames = done_frames + latent_frame_indices
+    with autocast(enabled=True):
+        image = inferer.sample(input_noise=sampled, diffusion_model=model, scheduler=scheduler, conditioning=context)
+        img = image[:,len(obs_frame_indices):]
+        print(f'shape {img.shape}, {Sample[0,latent_frame_indices].shape}')
+        Sample[:,latent_frame_indices] = img
 
 # %%
+Sample = Sample.permute(0,3,4,1,2)
+
+# %%
+
 plt.style.use("default")
-plotting_image_0 = np.concatenate([image[0, 0, :, :, 15].cpu(), np.flipud(image[0, 0, :, 24, :].cpu().T)], axis=1)
-plotting_image_1 = np.concatenate([np.flipud(image[0, 0, 15, :, :].cpu().T), np.zeros((32, 32))], axis=1)
-plt.imshow(np.concatenate([plotting_image_0, plotting_image_1], axis=0), vmin=0, vmax=1, cmap="gray")
+plotting_image_0 = np.concatenate([Sample[0, 0, :, :, 15].cpu(), np.flipud(Sample[0, 0, :, 24, :].cpu().T)], axis=1)
+plotting_image_1 = np.concatenate([np.flipud(Sample[0, 0, 15, :, :].cpu().T), np.zeros((32, 32))], axis=1)
+plt.imshow(np.concatenate([plotting_image_0, plotting_image_1], axis=0), vmin=-2.0, vmax=4, cmap="gray")
 plt.tight_layout()
 plt.axis("off")
 plt.show()
