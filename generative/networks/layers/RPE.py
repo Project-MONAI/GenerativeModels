@@ -31,7 +31,7 @@ class RPENet(nn.Module):
         channels: int,
         num_heads: int,
         time_embed_dim: int,
-    ):
+    )-> None:
         super().__init__()
         self.embed_distances = nn.Linear(3, channels)
         self.embed_diffusion_time = nn.Linear(time_embed_dim, channels)
@@ -70,16 +70,16 @@ class RPE(nn.Module):
         channels: int,
         num_heads: int,
         time_embed_dim: int,
-    ):
+    )-> None:
         super().__init__()
         self.num_heads = num_heads
         self.head_dim = channels // self.num_heads
         self.rpe_net = RPENet(channels, num_heads, time_embed_dim)
 
-    def get_R(self, pairwise_distances, temb):
+    def get_R(self, pairwise_distances, temb)-> torch.Tensor:
         return self.rpe_net(temb, pairwise_distances)
 
-    def forward(self, x, pairwise_distances, temb, mode):
+    def forward(self, x, pairwise_distances, temb, mode)-> torch.Tensor:
         if mode == "qk":
             return self.forward_qk(x, pairwise_distances, temb)
         elif mode == "v":
@@ -87,7 +87,7 @@ class RPE(nn.Module):
         else:
             raise ValueError(f"Unexpected RPE attention mode: {mode}")
 
-    def forward_qk(self, qk, pairwise_distances, temb):
+    def forward_qk(self, qk, pairwise_distances, temb)-> torch.Tensor:
         # qk is either of q or k and has shape BxDxHxTx(C/H)
         # Output shape should be # BxDxHxTxT
         R = self.get_R(pairwise_distances, temb)
@@ -95,7 +95,7 @@ class RPE(nn.Module):
             "bdhtf,btshf->bdhts", qk, R  # BxDxHxTxT
         )
 
-    def forward_v(self, attn, pairwise_distances, temb):
+    def forward_v(self, attn, pairwise_distances, temb)-> torch.Tensor:
         # attn has shape BxDxHxTxT
         # Output shape should be # BxDxHxYx(C/H)
         R = self.get_R(pairwise_distances, temb)
@@ -104,7 +104,7 @@ class RPE(nn.Module):
             "bdhts,btshf->bdhtf", attn, R  # BxDxHxTxT
         )
 
-    def forward_safe_qk(self, x, pairwise_distances, temb):
+    def forward_safe_qk(self, x, pairwise_distances, temb)-> torch.Tensor:
         R = self.get_R(pairwise_distances, temb)
         B, T, _, H, F = R.shape
         D = x.shape[1]
@@ -138,7 +138,7 @@ class RPEAttention(nn.Module):
         use_rpe_q: bool = True,
         use_rpe_k: bool = True,
         use_rpe_v: bool = True,
-    ):
+    )-> None:
         super().__init__()
         self.num_heads = num_heads
         head_dim = channels // num_heads
@@ -147,7 +147,7 @@ class RPEAttention(nn.Module):
         self.proj_out = nn.Linear(channels, channels)
         self.norm = nn.GroupNorm(32, channels)# Separate channels into 32 groups
 
-        def make_rpe_func():
+        def make_rpe_func()-> torch.Tensor:
             return RPE(
                 channels=channels, num_heads=num_heads,
                 time_embed_dim=time_embed_dim,
@@ -156,7 +156,7 @@ class RPEAttention(nn.Module):
         self.rpe_k = make_rpe_func() if use_rpe_k else None
         self.rpe_v = make_rpe_func() if use_rpe_v else None
 
-    def forward(self, x, temb, frame_indices, attn_mask=None):
+    def forward(self, x, temb, frame_indices, attn_mask=None)-> torch.Tensor:
         B, D, C, T = x.shape
         x = x.reshape(B*D, C, T)
         x = self.norm(x)
@@ -179,7 +179,7 @@ class RPEAttention(nn.Module):
 
         # softmax where all elements with mask==0 can attend to eachother and all with mask==1
         # can attend to eachother (but elements with mask==0 can't attend to elements with mask==1)
-        def softmax(w, attn_mask):
+        def softmax(w, attn_mask)-> torch.Tensor:
             if attn_mask is not None:
                 allowed_interactions = attn_mask.view(B, 1, T) * attn_mask.view(B, T, 1)
                 allowed_interactions += (1-attn_mask.view(B, 1, T)) * (1-attn_mask.view(B, T, 1))
