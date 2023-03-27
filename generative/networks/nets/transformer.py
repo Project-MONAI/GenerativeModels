@@ -50,6 +50,7 @@ class DecoderOnlyTransformer(nn.Module):
         attn_layers_heads: Number of attention heads.
         with_cross_attention: Whether to use cross attention for conditioning.
         embedding_dropout_rate: Dropout rate for the embedding.
+        use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
     """
 
     def __init__(
@@ -61,6 +62,7 @@ class DecoderOnlyTransformer(nn.Module):
         attn_layers_heads: int,
         with_cross_attention: bool = False,
         embedding_dropout_rate: float = 0.0,
+        use_flash_attention: bool = False,
     ) -> None:
         super().__init__()
         self.num_tokens = num_tokens
@@ -85,6 +87,7 @@ class DecoderOnlyTransformer(nn.Module):
                     causal=True,
                     sequence_length=max_seq_len,
                     with_cross_attention=with_cross_attention,
+                    use_flash_attention=use_flash_attention,
                 )
                 for _ in range(attn_layers_depth)
             ]
