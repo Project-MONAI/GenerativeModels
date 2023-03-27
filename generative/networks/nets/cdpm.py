@@ -66,7 +66,12 @@ class Upsample(nn.Module):
                  upsampling occurs in the inner-two dimensions.
     """
 
-    def __init__(self, channels, use_conv, dims=2)-> None:
+    def __init__(
+        self, 
+        channels: int, 
+        use_conv: bool, 
+        dims: int = 2
+        )-> None:
         super().__init__()
         self.channels = channels
         self.use_conv = use_conv
@@ -74,7 +79,7 @@ class Upsample(nn.Module):
         if use_conv:
             self.conv = Convolution(dims, channels, channels,  padding=1)
 
-    def forward(self, x)-> torch.Tensor:
+    def forward(self, x: torch.Tensor)-> torch.Tensor:
         assert x.shape[1] == self.channels
         if self.dims == 3:
             x = F.interpolate(
@@ -96,7 +101,12 @@ class Downsample(nn.Module):
                  downsampling occurs in the inner-two dimensions.
     """
 
-    def __init__(self, channels, use_conv, dims=2)-> None:
+    def __init__(
+        self, 
+        channels: int, 
+        use_conv: bool, 
+        dims: int=2
+        )-> None:
         super().__init__()
         self.channels = channels
         self.use_conv = use_conv
@@ -127,13 +137,13 @@ class ResBlock(TimestepBlock):
 
     def __init__(
         self,
-        channels,
-        emb_channels,
+        channels: int,
+        emb_channels: int,
         dropout,
-        out_channels=None,
-        use_conv=False,
-        use_scale_shift_norm=False,
-        dims=2,
+        out_channels: int| None = None,
+        use_conv: bool=False,
+        use_scale_shift_norm: bool=False,
+        dims: int=2,
     )-> None:
         super().__init__()
         self.channels = channels
@@ -172,7 +182,7 @@ class ResBlock(TimestepBlock):
         else:
             self.skip_connection = Convolution(dims, channels, self.out_channels, kernel_size = 1)
 
-    def forward(self, x, emb)-> torch.Tensor:
+    def forward(self, x: torch.Tensor, emb: torch.Tensor)-> torch.Tensor:
         """
         Apply the block to a Tensor, conditioned on a timestep embedding.
         :param x: an [N x C x ...] Tensor of features.
@@ -196,7 +206,12 @@ class ResBlock(TimestepBlock):
 
 class FactorizedAttentionBlock(nn.Module):
 
-    def __init__(self, channels, num_heads, time_embed_dim=None)-> None:
+    def __init__(
+        self, 
+        channels: int, 
+        num_heads: int, 
+        time_embed_dim: int | None=None
+        )-> None:
         super().__init__()
         self.spatial_attention = RPEAttention(
             channels=channels, num_heads=num_heads, time_embed_dim = time_embed_dim, use_rpe_q=False, use_rpe_k=False, use_rpe_v=False,
@@ -206,7 +221,7 @@ class FactorizedAttentionBlock(nn.Module):
             time_embed_dim=time_embed_dim,
         )
 
-    def forward(self, x, attn_mask, temb, T, frame_indices=None)-> torch.Tensor:
+    def forward(self, x: torch.Tensor, attn_mask: torch.Tensor, temb: torch.Tensor, T: int, frame_indices: torch.Tensor|None=None)-> torch.Tensor:
         BT, C, H, W = x.shape
         B = BT//T
         # reshape to have T in the last dimension becuase that's what we attend over
@@ -250,19 +265,19 @@ class UNet_2Plus1_Model(nn.Module):
 
     def __init__(
         self,
-        in_channels,
-        model_channels,
-        out_channels,
-        num_res_blocks,
-        attention_resolutions,
-        image_size=None,
-        dropout=0,
-        channel_mult=(1, 2, 4, 8),
-        conv_resample=True,
-        dims=2,
-        num_heads=1,
-        num_heads_upsample=-1,
-        use_scale_shift_norm=False,
+        in_channels: int,
+        model_channels: int,
+        out_channels: int,
+        num_res_blocks: int,
+        attention_resolutions: list[int],
+        image_size:int | list[int]| None=None,
+        dropout: int=0,
+        channel_mult: list[int]=(1, 2, 4, 8),
+        conv_resample: bool=True,
+        dims: int=2,
+        num_heads: int=1,
+        num_heads_upsample: int=-1,
+        use_scale_shift_norm: bool=False,
     )-> None:
         super().__init__()
 
@@ -450,7 +465,7 @@ class UNet_2Plus1_Model(nn.Module):
             embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
         return embedding
 
-    def get_feature_vectors(self, x, timesteps, y=None)-> torch.Tensor:
+    def get_feature_vectors(self, x: torch.Tensor, timesteps: torch.Tensor, y: torch.Tensor| None=None)-> torch.Tensor:
         """
         Apply the model and return all of the intermediate tensors.
         :param x: an [N x C x ...] Tensor of inputs.
