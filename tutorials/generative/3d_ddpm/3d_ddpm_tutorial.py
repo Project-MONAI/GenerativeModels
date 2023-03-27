@@ -116,13 +116,13 @@ val_transform = Compose(
 
 # %%
 train_ds = DecathlonDataset(
-    root_dir=root_dir, task="Task01_BrainTumour", transform=train_transform, section="training", download=False
+    root_dir=root_dir, task="Task01_BrainTumour", transform=train_transform, section="training", download=True
 )
 
 train_loader = DataLoader(train_ds, batch_size=16, shuffle=True, num_workers=8)
 
 val_ds = DecathlonDataset(
-    root_dir=root_dir, task="Task01_BrainTumour", transform=val_transform, section="validation", download=False
+    root_dir=root_dir, task="Task01_BrainTumour", transform=val_transform, section="validation", download=True
 )
 
 val_loader = DataLoader(val_ds, batch_size=16, shuffle=False, num_workers=8)
