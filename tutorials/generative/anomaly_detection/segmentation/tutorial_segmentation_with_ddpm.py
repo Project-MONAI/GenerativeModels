@@ -1,6 +1,7 @@
 # ---
 # jupyter:
 #   jupytext:
+#     formats: ipynb,py:light
 #     text_representation:
 #       extension: .py
 #       format_name: light
@@ -11,6 +12,19 @@
 #     language: python
 #     name: python3
 # ---
+
+# +
+# Copyright (c) MONAI Consortium
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# -
 
 #
 # # Diffusion Models for Implicit Image Segmentation Ensembles<br>
@@ -27,27 +41,18 @@
 
 # ## Setup environment
 
-# !python -c "import monai" || pip install -q "monai-weekly[pillow, tqdm, einops]"
+# !python -c "import monai" || pip install -q "monai-weekly[pillow, tqdm]"
 # !python -c "import matplotlib" || pip install -q matplotlib
 # !python -c "import seaborn" || pip install -q seaborn
 
 #
 # ## Setup imports
 
-# Copyright 2020 MONAI Consortium<br>
-# Licensed under the Apache License, Version 2.0 (the "License");<br>
-# you may not use this file except in compliance with the License.<br>
-# You may obtain a copy of the License at<br>
-#     http://www.apache.org/licenses/LICENSE-2.0<br>
-# Unless required by applicable law or agreed to in writing, software<br>
-# distributed under the License is distributed on an "AS IS" BASIS,<br>
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.<br>
-# See the License for the specific language governing permissions and<br>
-# limitations under the License.
-
 # +
 import os
+import tempfile
 import time
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -61,8 +66,9 @@ from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
 from generative.inferers import DiffusionInferer
-from generative.networks.nets.diffusion_model_unet import  DiffusionModelUNet
+from generative.networks.nets.diffusion_model_unet import DiffusionModelUNet
 from generative.networks.schedulers.ddpm import DDPMScheduler
+
 torch.multiprocessing.set_sharing_strategy("file_system")
 print_config()
 # -
@@ -107,7 +113,6 @@ train_transforms = transforms.Compose(
         transforms.ScaleIntensityRangePercentilesd(keys="image", lower=0, upper=99.5, b_min=0, b_max=1),
         transforms.RandSpatialCropd(keys=["image", "label"], roi_size=(64, 64, 1), random_size=False),
         transforms.Lambdad(keys=["image", "label"], func=lambda x: x.squeeze(-1)),
-
     ]
 )
 
@@ -160,10 +165,9 @@ val_loader = DataLoader(
 # -
 
 #
-# ## Define network, scheduler, optimizer, and inferer<br>
-# At this step, we instantiate the MONAI components to create a DDPM, the UNET, the noise scheduler, and the inferer used for training and sampling. We are using<br>
-# the DDPM scheduler containing 1000 timesteps, and a 2D UNET with attention mechanisms
-# in the 3rd level (`num_head_channels=64`).<br>
+# ## Define network, scheduler, optimizer, and inferer
+#
+# At this step, we instantiate the MONAI components to create a DDPM, the UNET, the noise scheduler, and the inferer used for training and sampling. We are using the DDPM scheduler containing 1000 timesteps, and a 2D UNET with attention mechanisms in the 3rd level (`num_head_channels=64`).<br>
 #
 
 device = torch.device("cuda")
@@ -209,18 +213,22 @@ for epoch in range(n_epochs):
 
     for step, data in enumerate(train_loader):
         images = data["image"].to(device)
-        seg = data["label"].to(device)  #this is the ground truth segmentation
+        seg = data["label"].to(device)  # this is the ground truth segmentation
         optimizer.zero_grad(set_to_none=True)
         timesteps = torch.randint(0, 1000, (len(images),)).to(device)  # pick a random time step t
 
         with autocast(enabled=True):
-                # Generate random noise
-                noise = torch.randn_like(seg).to(device)
-                noisy_seg = scheduler.add_noise(original_samples=seg, noise=noise, timesteps=timesteps)  #we only add noise to the segmentation mask
-                combined=torch.cat((images,noisy_seg), dim=1)                               #we concatenate the brain MR image with the noisy segmenatation mask, to condition the generation process
-                prediction = model(x=combined, timesteps=timesteps)
-                # Get model prediction
-                loss = F.mse_loss(prediction.float(), noise.float())
+            # Generate random noise
+            noise = torch.randn_like(seg).to(device)
+            noisy_seg = scheduler.add_noise(
+                original_samples=seg, noise=noise, timesteps=timesteps
+            )  # we only add noise to the segmentation mask
+            combined = torch.cat(
+                (images, noisy_seg), dim=1
+            )  # we concatenate the brain MR image with the noisy segmenatation mask, to condition the generation process
+            prediction = model(x=combined, timesteps=timesteps)
+            # Get model prediction
+            loss = F.mse_loss(prediction.float(), noise.float())
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
@@ -232,32 +240,32 @@ for epoch in range(n_epochs):
         val_epoch_loss = 0
         for step, data_val in enumerate(val_loader):
             images = data_val["image"].to(device)
-            seg = data_val["label"].to(device)  #this is the ground truth segmentation
+            seg = data_val["label"].to(device)  # this is the ground truth segmentation
             timesteps = torch.randint(0, 1000, (len(images),)).to(device)
             with torch.no_grad():
-                    with autocast(enabled=True):
-                        noise = torch.randn_like(seg).to(device)
-                        noisy_seg = scheduler.add_noise(original_samples=seg, noise=noise, timesteps=timesteps)
-                        combined=torch.cat((images,noisy_seg), dim=1)
-                        prediction = model(x=combined, timesteps=timesteps)
-                        val_loss = F.mse_loss(prediction.float(), noise.float())
+                with autocast(enabled=True):
+                    noise = torch.randn_like(seg).to(device)
+                    noisy_seg = scheduler.add_noise(original_samples=seg, noise=noise, timesteps=timesteps)
+                    combined = torch.cat((images, noisy_seg), dim=1)
+                    prediction = model(x=combined, timesteps=timesteps)
+                    val_loss = F.mse_loss(prediction.float(), noise.float())
             val_epoch_loss += val_loss.item()
         print("Epoch", epoch, "Validation loss", val_epoch_loss / (step + 1))
         val_epoch_loss_list.append(val_epoch_loss / (step + 1))
 
-torch.save(model.state_dict(), './segmodel.pt')
+torch.save(model.state_dict(), "./segmodel.pt")
 total_time = time.time() - total_start
 print(f"train diffusion completed, total time: {total_time}.")
 plt.style.use("seaborn-bright")
 plt.title("Learning Curves Diffusion Model", fontsize=20)
 plt.plot(np.linspace(1, n_epochs, n_epochs), epoch_loss_list, color="C0", linewidth=2.0, label="Train")
 plt.plot(
-        np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
-        val_epoch_loss_list,
-        color="C1",
-        linewidth=2.0,
-        label="Validation",
-    )
+    np.linspace(val_interval, n_epochs, int(n_epochs / val_interval)),
+    val_epoch_loss_list,
+    color="C1",
+    linewidth=2.0,
+    label="Validation",
+)
 plt.yticks(fontsize=12)
 plt.xticks(fontsize=12)
 plt.xlabel("Epochs", fontsize=16)
@@ -274,19 +282,19 @@ plt.show()
 # First, we pick an image of our validation set, and check the ground truth segmentation mask.
 
 # +
-idx=0
-data=val_ds[idx]
-inputimg = data["image"][0,...] # Pick an input slice of the validation set to be segmented
-inputlabel= data["label"] [0,...]   # Check out the ground truth label mask. If it is empty, pick another input slice.
+idx = 0
+data = val_ds[idx]
+inputimg = data["image"][0, ...]  # Pick an input slice of the validation set to be segmented
+inputlabel = data["label"][0, ...]  # Check out the ground truth label mask. If it is empty, pick another input slice.
 
 
-plt.figure("input"+str(inputlabel))
+plt.figure("input" + str(inputlabel))
 plt.imshow(inputimg, vmin=0, vmax=1, cmap="gray")
 plt.axis("off")
 plt.tight_layout()
 plt.show()
 
-plt.figure("input"+str(inputlabel))
+plt.figure("input" + str(inputlabel))
 plt.imshow(inputlabel, vmin=0, vmax=1, cmap="gray")
 plt.axis("off")
 plt.tight_layout()
@@ -302,32 +310,38 @@ model.eval()
 # Starting from the input image (which ist the brain MR image), we follow Algorithm 1 of the paper "Diffusion Models for Implicit Image Segmentation Ensembles" (https://arxiv.org/pdf/2112.03145.pdf) n times.\
 # This gives us an ensemble of n different predicted segmentation masks.
 
-n=5
+n = 5
 input_img = inputimg[None, None, ...].to(device)
-Ensemble=[]
+ensemble = []
 for k in range(5):
     noise = torch.randn_like(input_img).to(device)
-    current_img=noise                               #for the segmentation mask, we start from random noise.
-    combined=torch.cat((input_img,noise), dim=1)    #We concatenate the input brain MR image to add anatomical information.
+    current_img = noise  # for the segmentation mask, we start from random noise.
+    combined = torch.cat(
+        (input_img, noise), dim=1
+    )  # We concatenate the input brain MR image to add anatomical information.
 
     scheduler.set_timesteps(num_inference_steps=1000)
     progress_bar = tqdm(scheduler.timesteps)
-    chain=torch.zeros(current_img.shape)
+    chain = torch.zeros(current_img.shape)
     for t in progress_bar:  # go through the noising process
         with autocast(enabled=False):
             with torch.no_grad():
                 model_output = model(combined, timesteps=torch.Tensor((t,)).to(current_img.device))
-                current_img, _ = scheduler.step(model_output, t, current_img)  #this is the prediction x_t at the time step t
-                if t%100==0:
-                    chain=torch.cat((chain, current_img.cpu()), dim=-1)
-                combined=torch.cat((input_img,current_img), dim=1)   #in every step during the denoising process, the brain MR image is concatenated to add anatomical information
+                current_img, _ = scheduler.step(
+                    model_output, t, current_img
+                )  # this is the prediction x_t at the time step t
+                if t % 100 == 0:
+                    chain = torch.cat((chain, current_img.cpu()), dim=-1)
+                combined = torch.cat(
+                    (input_img, current_img), dim=1
+                )  # in every step during the denoising process, the brain MR image is concatenated to add anatomical information
 
     plt.style.use("default")
-    plt.imshow(chain[0,0,...,64:].cpu(), vmin=0, vmax=1, cmap="gray")
+    plt.imshow(chain[0, 0, ..., 64:].cpu(), vmin=0, vmax=1, cmap="gray")
     plt.tight_layout()
     plt.axis("off")
     plt.show()
-    Ensemble.append(current_img) #this is the output of the diffusion model after T=1000 denoising steps
+    ensemble.append(current_img)  # this is the output of the diffusion model after T=1000 denoising steps
 
 
 #
@@ -339,8 +353,8 @@ for k in range(5):
 #
 #
 
-def dice_coeff(im1, im2, empty_score=1.0):
 
+def dice_coeff(im1, im2, empty_score=1.0):
     im1 = np.asarray(im1).astype(bool)
     im2 = np.asarray(im2).astype(bool)
 
@@ -351,37 +365,35 @@ def dice_coeff(im1, im2, empty_score=1.0):
     # Compute Dice coefficient
     intersection = np.logical_and(im1, im2)
 
-    return (2. * intersection.sum() / im_sum)
+    return 2.0 * intersection.sum() / im_sum
 
 
 # +
-for i in range(len(Ensemble)):
+for i in range(len(ensemble)):
 
-    prediction=torch.where(Ensemble[i] > 0.5, 1, 0).float()   # a binary mask is obtained via thresholding
-    score=dice_coeff(prediction[0, 0].cpu(), inputlabel.cpu()) # we compute the dice scores for all samples separately
-    print('Dice score of sample' + str(i), score)
+    prediction = torch.where(ensemble[i] > 0.5, 1, 0).float()  # a binary mask is obtained via thresholding
+    score = dice_coeff(
+        prediction[0, 0].cpu(), inputlabel.cpu()
+    )  # we compute the dice scores for all samples separately
+    print("Dice score of sample" + str(i), score)
 
 
-E=torch.where(torch.cat(Ensemble) > 0.5, 1, 0).float()
-var=torch.var(E, dim=0)   #pixel-wise variance map over the ensemble
-mean=torch.mean(E, dim=0)  #pixel-wise mean map over the ensemble
-mean_prediction=torch.where(mean > 0.5, 1, 0).float()
+E = torch.where(torch.cat(ensemble) > 0.5, 1, 0).float()
+var = torch.var(E, dim=0)  # pixel-wise variance map over the ensemble
+mean = torch.mean(E, dim=0)  # pixel-wise mean map over the ensemble
+mean_prediction = torch.where(mean > 0.5, 1, 0).float()
 
-score=dice_coeff(mean_prediction[0, ...].cpu(), inputlabel.cpu()) # Here we predict the Dice score for the mean map
-print('Dice score on the mean map', score)
+score = dice_coeff(mean_prediction[0, ...].cpu(), inputlabel.cpu())  # Here we predict the Dice score for the mean map
+print("Dice score on the mean map", score)
 
 plt.style.use("default")
-plt.imshow(mean[0,...].cpu(), vmin=0, vmax=1, cmap="gray")  # We plot the mean map
+plt.imshow(mean[0, ...].cpu(), vmin=0, vmax=1, cmap="gray")  # We plot the mean map
 plt.tight_layout()
 plt.axis("off")
 plt.show()
 plt.style.use("default")
-plt.imshow(var[0,...].cpu(), vmin=0, vmax=1, cmap="jet")  # We plot the variance map
+plt.imshow(var[0, ...].cpu(), vmin=0, vmax=1, cmap="jet")  # We plot the variance map
 plt.tight_layout()
 plt.axis("off")
 plt.show()
-
-
-# -
-
 
