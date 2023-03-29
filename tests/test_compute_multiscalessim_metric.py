@@ -14,9 +14,9 @@ from __future__ import annotations
 import unittest
 
 import torch
+from monai.utils import set_determinism
 
 from generative.metrics import MultiScaleSSIMMetric
-from monai.utils import set_determinism
 
 
 class TestMultiScaleSSIMMetric(unittest.TestCase):

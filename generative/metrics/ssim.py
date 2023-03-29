@@ -60,7 +60,7 @@ class SSIMMetric(RegressionMetric):
         data_range: float = 1.0,
         kernel_type: KernelType | str = KernelType.GAUSSIAN,
         kernel_size: int | Sequence[int, ...] = 11,
-        kernel_sigma: int | Sequence[int, ...] = 1.5,
+        kernel_sigma: float | Sequence[float, ...] = 1.5,
         k1: float = 0.01,
         k2: float = 0.03,
         reduction: MetricReduction | str = MetricReduction.MEAN,
@@ -126,11 +126,16 @@ class SSIMMetric(RegressionMetric):
         return ssim_per_batch
 
 
-def _gaussian_kernel(spatial_dims, channel: int, kernel_size, kernel_sigma) -> torch.Tensor:
+def _gaussian_kernel(
+    spatial_dims: int, num_channels: int, kernel_size: Sequence[int, ...], kernel_sigma: Sequence[float, ...]
+) -> torch.Tensor:
     """Computes 2D or 3D gaussian kernel.
 
     Args:
-        channel: number of channels in the image
+        spatial_dims: number of spatial dimensions of the input images.
+        num_channels: number of channels in the image
+        kernel_size: size of kernel
+        kernel_sigma: standard deviation for Gaussian kernel.
     """
 
     def gaussian_1d(kernel_size: int, sigma: float) -> torch.Tensor:
@@ -148,7 +153,7 @@ def _gaussian_kernel(spatial_dims, channel: int, kernel_size, kernel_sigma) -> t
     gaussian_kernel_y = gaussian_1d(kernel_size[1], kernel_sigma[1])
     kernel = torch.matmul(gaussian_kernel_x.t(), gaussian_kernel_y)  # (kernel_size, 1) * (1, kernel_size)
 
-    kernel_dimensions = (channel, 1, kernel_size[0], kernel_size[1])
+    kernel_dimensions = (num_channels, 1, kernel_size[0], kernel_size[1])
 
     if spatial_dims == 3:
         gaussian_kernel_z = gaussian_1d(kernel_size[2], kernel_sigma[2])[None,]
@@ -156,7 +161,7 @@ def _gaussian_kernel(spatial_dims, channel: int, kernel_size, kernel_sigma) -> t
             kernel.unsqueeze(-1).repeat(1, 1, kernel_size[2]),
             gaussian_kernel_z.expand(kernel_size[0], kernel_size[1], kernel_size[2]),
         )
-        kernel_dimensions = (channel, 1, kernel_size[0], kernel_size[1], kernel_size[2])
+        kernel_dimensions = (num_channels, 1, kernel_size[0], kernel_size[1], kernel_size[2])
 
     return kernel.expand(kernel_dimensions)
 
@@ -168,7 +173,7 @@ def compute_ssim_and_cs(
     data_range: float = 1.0,
     kernel_type: KernelType | str = KernelType.GAUSSIAN,
     kernel_size: Sequence[int, ...] = 11,
-    kernel_sigma: Sequence[int, ...] = 1.5,
+    kernel_sigma: Sequence[float, ...] = 1.5,
     k1: float = 0.01,
     k2: float = 0.03,
 ) -> tuple[torch.Tensor, torch.Tensor]:
