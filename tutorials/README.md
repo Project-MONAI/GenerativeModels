@@ -67,8 +67,8 @@ module with torch.distributed.launch.
 
 #### Anomaly Detection with Diffusion Models
 
-* [Weakly Supervised Anomaly Detection with Classifier-free Guidance](./generative/anomaly_detection/2d_classifierfree_guidance_anomalydetection_tutorial.ipynb):
-This tutorial shows how to use a DDPM to perform weakly supervised anomaly detection using classifier-free guidance based on the
+* [Weakly Supervised Anomaly Detection with Implicit Guidance](./generative/anomaly_detection/2d_classifierfree_guidance_anomalydetection_tutorial.ipynb):
+This tutorial shows how to use a DDPM to perform weakly supervised anomaly detection using classifier-free (implicit) guidance based on the
 method proposed by Sanchez et al. [What is Healthy? Generative Counterfactual Diffusion for Lesion Localization](https://arxiv.org/abs/2207.12268). DGM 4 MICCAI 2022
 
 
