@@ -169,11 +169,11 @@ l1_loss = L1Loss()
 
 # %% [markdown]
 # ### VQ-VAE Model training
-# We will train our VQ-VAE for 30 epochs.
+# We will train our VQ-VAE for 20 epochs.
 
 # %%
-n_epochs = 30
-val_interval = 10
+n_epochs = 20
+val_interval = 5
 epoch_losses = []
 val_epoch_losses = []
 
@@ -335,15 +335,15 @@ for epoch in range(n_epochs):
     progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=110)
     progress_bar.set_description(f"Epoch {epoch}")
     for step, batch in progress_bar:
+
         images = batch["image"].to(device)
 
         optimizer.zero_grad(set_to_none=True)
 
-        logits, quantizations_target, _ = inferer(images, vqvae_model, transformer_model, ordering, return_latent=True)
+        logits, target, _ = inferer(images, vqvae_model, transformer_model, ordering, return_latent=True)
         logits = logits.transpose(1, 2)
 
-        # train the transformer to predict token n+1 using tokens 0-n
-        loss = ce_loss(logits[:, :, :-1], quantizations_target[:, 1:])
+        loss = ce_loss(logits, target)
 
         loss.backward()
         optimizer.step()
@@ -358,6 +358,7 @@ for epoch in range(n_epochs):
         val_loss = 0
         with torch.no_grad():
             for val_step, batch in enumerate(val_loader, start=1):
+
                 images = batch["image"].to(device)
 
                 logits, quantizations_target, _ = inferer(
@@ -498,7 +499,7 @@ plt.imshow(likelihood.cpu()[0, ...])
 plt.axis("off")
 plt.title("Log-likelihood")
 plt.subplot(1, 2, 2)
-mask = log_likelihood.cpu()[0, ...] < torch.quantile(log_likelihood, 0.05).item()
+mask = log_likelihood.cpu()[0, ...] < torch.quantile(log_likelihood, 0.03).item()
 plt.imshow(mask)
 plt.axis("off")
 plt.title("Healing mask")
