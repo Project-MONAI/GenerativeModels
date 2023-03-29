@@ -32,7 +32,7 @@ class MultiScaleSSIMMetric(RegressionMetric):
 
     [1] Wang, Z., Simoncelli, E.P. and Bovik, A.C., 2003, November.
             Multiscale structural similarity for image quality assessment.
-            In The Thrity-Seventh Asilomar Conference on Signals, Systems
+            In The Thirty-Seventh Asilomar Conference on Signals, Systems
             & Computers, 2003 (Vol. 2, pp. 1398-1402). Ieee.
 
     Args:
