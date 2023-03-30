@@ -37,8 +37,17 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from monai.utils import StrEnum
 
-class PNDMScheduler(nn.Module):
+from .scheduler import Scheduler
+
+
+class PNDMPredictionType(StrEnum):
+    EPSILON = "epsilon"
+    V_PREDICTION = "v_prediction"
+
+
+class PNDMScheduler(Scheduler):
     """
     Pseudo numerical methods for diffusion models (PNDM) proposes using more advanced ODE integration techniques,
     namely Runge-Kutta method and a linear multi-step method. Based on: Liu et al.,
@@ -70,33 +79,19 @@ class PNDMScheduler(nn.Module):
     def __init__(
         self,
         num_train_timesteps: int = 1000,
-        beta_start: float = 1e-4,
-        beta_end: float = 2e-2,
-        beta_schedule: str = "linear",
+        schedule: str = "linear_beta",
         skip_prk_steps: bool = False,
         set_alpha_to_one: bool = False,
-        prediction_type: str = "epsilon",
+        prediction_type: str = PNDMPredictionType.EPSILON,
         steps_offset: int = 0,
+        **schedule_args
     ) -> None:
-        super().__init__()
-        self.beta_schedule = beta_schedule
-        if beta_schedule == "linear":
-            self.betas = torch.linspace(beta_start, beta_end, num_train_timesteps, dtype=torch.float32)
-        elif beta_schedule == "scaled_linear":
-            # this schedule is very specific to the latent diffusion model.
-            self.betas = (
-                torch.linspace(beta_start**0.5, beta_end**0.5, num_train_timesteps, dtype=torch.float32) ** 2
-            )
-        else:
-            raise NotImplementedError(f"{beta_schedule} does is not implemented for {self.__class__}")
+        super().__init__(num_train_timesteps,schedule,**schedule_args)
 
-        if prediction_type.lower() not in ["epsilon", "v_prediction"]:
-            raise ValueError(f"prediction_type given as {prediction_type} must be one of `epsilon` or `v_prediction`")
+        if prediction_type not in PNDMPredictionType.__members__.values():
+            raise ValueError(f"Argument `prediction_type` must be a member of PNDMPredictionType")
 
         self.prediction_type = prediction_type
-        self.num_train_timesteps = num_train_timesteps
-        self.alphas = 1.0 - self.betas
-        self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
 
         self.final_alpha_cumprod = torch.tensor(1.0) if set_alpha_to_one else self.alphas_cumprod[0]
 
@@ -116,8 +111,6 @@ class PNDMScheduler(nn.Module):
         self.counter = 0
         self.cur_sample = None
         self.ets = []
-
-        self._timesteps = np.arange(0, num_train_timesteps)[::-1].copy()
 
         # default the number of inference timesteps to the number of train steps
         self.set_timesteps(num_train_timesteps)
@@ -302,7 +295,7 @@ class PNDMScheduler(nn.Module):
         beta_prod_t = 1 - alpha_prod_t
         beta_prod_t_prev = 1 - alpha_prod_t_prev
 
-        if self.prediction_type == "v_prediction":
+        if self.prediction_type == PNDMPredictionType.V_PREDICTION:
             model_output = (alpha_prod_t**0.5) * model_output + (beta_prod_t**0.5) * sample
 
         # corresponds to (α_(t−δ) - α_t) divided by
@@ -322,32 +315,3 @@ class PNDMScheduler(nn.Module):
         )
 
         return prev_sample
-
-    def add_noise(self, original_samples: torch.Tensor, noise: torch.Tensor, timesteps: torch.Tensor) -> torch.Tensor:
-        """
-        Add noise to the original samples.
-
-        Args:
-            original_samples: original samples
-            noise: noise to add to samples
-            timesteps: timesteps tensor indicating the timestep to be computed for each sample.
-
-        Returns:
-            noisy_samples: sample with added noise
-        """
-        # Make sure alphas_cumprod and timestep have same device and dtype as original_samples
-        self.alphas_cumprod = self.alphas_cumprod.to(device=original_samples.device, dtype=original_samples.dtype)
-        timesteps = timesteps.to(original_samples.device)
-
-        sqrt_alpha_cumprod = self.alphas_cumprod[timesteps] ** 0.5
-        sqrt_alpha_cumprod = sqrt_alpha_cumprod.flatten()
-        while len(sqrt_alpha_cumprod.shape) < len(original_samples.shape):
-            sqrt_alpha_cumprod = sqrt_alpha_cumprod.unsqueeze(-1)
-
-        sqrt_one_minus_alpha_prod = (1 - self.alphas_cumprod[timesteps]) ** 0.5
-        sqrt_one_minus_alpha_prod = sqrt_one_minus_alpha_prod.flatten()
-        while len(sqrt_one_minus_alpha_prod.shape) < len(original_samples.shape):
-            sqrt_one_minus_alpha_prod = sqrt_one_minus_alpha_prod.unsqueeze(-1)
-
-        noisy_samples = sqrt_alpha_cumprod * original_samples + sqrt_one_minus_alpha_prod * noise
-        return noisy_samples

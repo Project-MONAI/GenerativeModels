@@ -42,31 +42,74 @@ from generative.utils import ComponentStore, unsqueeze_right
 NoiseSchedules = ComponentStore("NoiseSchedules", "Functions to generate noise schedules")
 
 
-@NoiseSchedules.add_def("linear_beta", "Linear beta schedule, args: num_train_timesteps, beta_start, beta_end")
+@NoiseSchedules.add_def("linear_beta", "Linear beta schedule")
 def _linear_beta(num_train_timesteps, beta_start=1e-4, beta_end=2e-2):
+    """
+    Linear beta noise schedule function.
+
+    Args:
+        num_train_timesteps: number of timesteps
+        beta_start: start of beta range, default 1e-4
+        beta_end: end of beta range, default 2e-2
+
+    Returns:
+        betas: beta schedule tensor
+    """
     return torch.linspace(beta_start, beta_end, num_train_timesteps, dtype=torch.float32)
 
 
-@NoiseSchedules.add_def(
-    "scaled_linear_beta", "Scaled linear beta schedule, args: num_train_timesteps, beta_start, beta_end"
-)
+@NoiseSchedules.add_def("scaled_linear_beta", "Scaled linear beta schedule")
 def _scaled_linear_beta(num_train_timesteps, beta_start=1e-4, beta_end=2e-2):
+    """
+    Scaled linear beta noise schedule function.
+
+    Args:
+        num_train_timesteps: number of timesteps
+        beta_start: start of beta range, default 1e-4
+        beta_end: end of beta range, default 2e-2
+
+    Returns:
+        betas: beta schedule tensor
+    """
     return torch.linspace(beta_start**0.5, beta_end**0.5, num_train_timesteps, dtype=torch.float32) ** 2
 
 
-@NoiseSchedules.add_def("sigmoid_beta", "Sigmoid beta schedule, args: num_train_timesteps, beta_start, beta_end")
+@NoiseSchedules.add_def("sigmoid_beta", "Sigmoid beta schedule")
 def _sigmoid_beta(num_train_timesteps, beta_start=1e-4, beta_end=2e-2, sig_range=6):
+    """
+    Sigmoid beta noise schedule function.
+
+    Args:
+        num_train_timesteps: number of timesteps
+        beta_start: start of beta range, default 1e-4
+        beta_end: end of beta range, default 2e-2
+        sig_range: pos/neg range of sigmoid input, default 6
+
+    Returns:
+        betas: beta schedule tensor
+    """
     betas = torch.linspace(-sig_range, sig_range, num_train_timesteps)
     return torch.sigmoid(betas) * (beta_end - beta_start) + beta_start
 
 
-@NoiseSchedules.add_def("cosine_beta", "Cosine beta schedule, args: num_train_timesteps")
-def _cosine_beta(num_train_timesteps, s=0.008):
-    x = torch.linspace(0, num_train_timesteps, num_train_timesteps - 1)
+@NoiseSchedules.add_def("cosine_beta", "Cosine beta schedule")
+def _cosine_beta(num_train_timesteps, s=8e-3):
+    """
+    Cosine noise schedule returning.
+
+    Args:
+        num_train_timesteps: number of timesteps
+        s: smoothing factor, default 8e-3
+
+    Returns:
+        (betas, alphas, alpha_cumprod) values
+    """
+    x = torch.linspace(0, num_train_timesteps, num_train_timesteps + 1)
     alphas_cumprod = torch.cos(((x / num_train_timesteps) + s) / (1 + s) * torch.pi * 0.5) ** 2
-    alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
-    betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
-    return torch.clip(betas, 0.0001, 0.9999)
+    alphas_cumprod /= alphas_cumprod[0].item()
+    alphas = torch.clip(alphas_cumprod[1:] / alphas_cumprod[:-1], 0.0001, 0.9999)
+    betas = 1.0 - alphas
+    return betas, alphas, alphas_cumprod[:-1]
 
 
 class Scheduler(nn.Module):
@@ -83,13 +126,13 @@ class Scheduler(nn.Module):
     def __init__(self, num_train_timesteps: int = 1000, schedule: str = "linear", **schedule_args) -> None:
         super().__init__()
         schedule_args["num_train_timesteps"] = num_train_timesteps
-        noise = NoiseSchedules[schedule](**schedule_args)
+        noise_sched = NoiseSchedules[schedule](**schedule_args)
 
         # set betas, alphas, alphas_cumprod based off return value from noise function
-        if isinstance(noise, tuple):
-            self.betas, self.alphas, self.alphas_cumprod = noise
+        if isinstance(noise_sched, tuple):
+            self.betas, self.alphas, self.alphas_cumprod = noise_sched
         else:
-            self.betas = noise
+            self.betas = noise_sched
             self.alphas = 1.0 - self.betas
             self.alphas_cumprod = torch.cumprod(self.alphas, dim=0)
 

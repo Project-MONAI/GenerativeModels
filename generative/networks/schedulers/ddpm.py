@@ -37,8 +37,7 @@ import torch.nn as nn
 
 from monai.utils import StrEnum
 
-from .scheduler import Scheduler, NoiseSchedules
-from generative.utils import unsqueeze_right
+from .scheduler import Scheduler
 
 
 class DDPMVarianceType(StrEnum):
