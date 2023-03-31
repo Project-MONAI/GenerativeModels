@@ -35,7 +35,7 @@ import torch
 from monai.metrics.metric import Metric
 
 
-class FID(Metric):
+class FIDMetric(Metric):
     """
     Frechet Inception Distance (FID). The FID calculates the distance between two distributions of feature vectors.
     Based on: Heusel M. et al. "Gans trained by a two time-scale update rule converge to a local nash equilibrium."
@@ -56,8 +56,8 @@ class FID(Metric):
 
 
 def get_fid_score(y_pred: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-    y = y.float()
-    y_pred = y_pred.float()
+    y = y.double()
+    y_pred = y_pred.double()
 
     if y.ndimension() > 2:
         raise ValueError("Inputs should have (number images, number of features) shape.")
