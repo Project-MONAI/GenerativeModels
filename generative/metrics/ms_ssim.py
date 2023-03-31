@@ -121,7 +121,7 @@ class MultiScaleSSIMMetric(RegressionMetric):
         avg_pool = getattr(F, f"avg_pool{self.spatial_dims}d")
 
         multiscale_list: list[torch.Tensor] = []
-        for i in range(len(weights)):
+        for _ in range(len(weights)):
             ssim, cs = compute_ssim_and_cs(
                 y_pred=y_pred,
                 y=y,

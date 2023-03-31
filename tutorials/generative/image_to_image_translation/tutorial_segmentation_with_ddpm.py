@@ -184,9 +184,7 @@ model = DiffusionModelUNet(
 )
 model.to(device)
 
-scheduler = DDPMScheduler(
-    num_train_timesteps=1000,
-)
+scheduler = DDPMScheduler(num_train_timesteps=1000)
 optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
 inferer = DiffusionInferer(scheduler)
 
@@ -396,4 +394,3 @@ plt.imshow(var[0, ...].cpu(), vmin=0, vmax=1, cmap="jet")  # We plot the varianc
 plt.tight_layout()
 plt.axis("off")
 plt.show()
-
