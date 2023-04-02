@@ -78,7 +78,7 @@ def _cov(input_data: torch.Tensor, rowvar: bool = True) -> torch.Tensor:
 def _sqrtm(input_data: torch.Tensor) -> torch.Tensor:
     """Compute the square root of a matrix."""
     scipy_res, _ = linalg.sqrtm(input_data.detach().cpu().numpy().astype(np.float_), disp=False)
-    return torch.from_numpy(scipy_res.real).to(input_data)
+    return torch.from_numpy(scipy_res)
 
 
 def compute_frechet_distance(
@@ -94,6 +94,12 @@ def compute_frechet_distance(
         print(f"FID calculation produces singular product; adding {epsilon} to diagonal of covariance estimates")
         offset = torch.eye(sigma_x.size(0), device=mu_x.device, dtype=mu_x.dtype) * epsilon
         covmean = _sqrtm((sigma_x + offset).mm(sigma_y + offset))
+
+    # Numerical error might give slight imaginary component
+    if torch.is_complex(covmean):
+        if not torch.allclose(torch.diagonal(covmean).imag, torch.tensor(0, dtype=torch.double), atol=1e-3):
+            raise ValueError(f"Imaginary component {torch.max(torch.abs(covmean.imag))} too high.")
+        covmean = covmean.real
 
     tr_covmean = torch.trace(covmean)
     return diff.dot(diff) + torch.trace(sigma_x) + torch.trace(sigma_y) - 2 * tr_covmean
