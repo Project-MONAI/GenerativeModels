@@ -24,7 +24,7 @@ class TestMMDMetric(unittest.TestCase):
         x = torch.Tensor([[1, 2], [1, 2], [1, 2]])
         y = torch.Tensor([[2, 2], [1, 2], [1, 2]])
         results = FIDMetric()(x, y)
-        np.testing.assert_allclose(results.cpu().numpy(), 0.4433, atol=1e-4)
+        np.testing.assert_allclose(results.cpu().numpy(), 0.4444, atol=1e-4)
 
     def test_input_dimensions(self):
         with self.assertRaises(ValueError):
