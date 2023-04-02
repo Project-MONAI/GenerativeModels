@@ -22,7 +22,6 @@
 # ## Setup imports
 
 # +
-import os
 import tempfile
 import time
 import os
@@ -37,7 +36,6 @@ from monai.data import DataLoader
 from monai.utils import set_determinism
 from torch.cuda.amp import GradScaler, autocast
 
-
 print_config()
 # -
 
@@ -45,7 +43,7 @@ print_config()
 
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
 root_dir = tempfile.mkdtemp() if directory is None else directory
-
+root_dir = '/tmp/tmpic4meymr'
 # ### Set deterministic training for reproducibility
 
 set_determinism(42)
@@ -65,24 +63,24 @@ set_determinism(42)
 # 6. The last `Lambdad` transform obtains `slice_label` by summing up the label to have a single scalar value (healthy `=1` or not `=2` ).
 
 # +
-channel = 0  # 0 = Flair
-assert channel in [0, 1, 2, 3], "Choose a valid channel"
+channel = 1  # 1 = T1-weighted
+
 
 train_transforms = transforms.Compose(
     [
-        transforms.LoadImaged(keys=["image", "label"]),
-        transforms.EnsureChannelFirstd(keys=["image", "label"]),
+        transforms.LoadImaged(keys=["image"]),
+        transforms.EnsureChannelFirstd(keys=["image"]),
         transforms.Lambdad(keys=["image"], func=lambda x: x[channel, :, :, :]),
         transforms.AddChanneld(keys=["image"]),
-        transforms.EnsureTyped(keys=["image", "label"]),
-        transforms.Orientationd(keys=["image", "label"], axcodes="RAS"),
-        transforms.Spacingd(keys=["image", "label"], pixdim=(3.0, 3.0, 2.0), mode=("bilinear", "nearest")),
-        transforms.CenterSpatialCropd(keys=["image", "label"], roi_size=(64, 64, 44)),
-        transforms.ScaleIntensityRangePercentilesd(keys="image", lower=0, upper=99.5, b_min=0, b_max=1),
-        transforms.RandSpatialCropd(keys=["image", "label"], roi_size=(64, 64, 1), random_size=False),
-        transforms.Lambdad(keys=["image", "label"], func=lambda x: x.squeeze(-1)),
-        transforms.CopyItemsd(keys=["label"], times=1, names=["slice_label"]),
-        transforms.Lambdad(keys=["slice_label"], func=lambda x: 2.0 if x.sum() > 0 else 1.0),
+        transforms.EnsureTyped(keys=["image"]),
+        transforms.Orientationd(keys=["image"], axcodes="RAS"),
+        # transforms.Spacingd(keys=["image", ], pixdim=(3.0, 3.0, 2.0), mode=("bilinear", "nearest")),
+        # transforms.CenterSpatialCropd(keys=["image", "label"], roi_size=(64, 64, 44)),
+        # transforms.ScaleIntensityRangePercentilesd(keys="image", lower=0, upper=99.5, b_min=0, b_max=1),
+        # transforms.RandSpatialCropd(keys=["image", "label"], roi_size=(64, 64, 1), random_size=False),
+        # transforms.Lambdad(keys=["image", "label"], func=lambda x: x.squeeze(-1)),
+        # transforms.CopyItemsd(keys=["label"], times=1, names=["slice_label"]),
+        # transforms.Lambdad(keys=["slice_label"], func=lambda x: 2.0 if x.sum() > 0 else 1.0),
     ]
 )
 # -
@@ -96,7 +94,7 @@ train_ds = DecathlonDataset(
     section="training",
     cache_rate=1.0,  # you may need a few Gb of RAM... Set to 0 otherwise
     num_workers=4,
-    download=False,  # Set download to True if the dataset hasnt been downloaded yet
+    download=True,  # Set download to True if the dataset hasnt been downloaded yet
     seed=0,
     transform=train_transforms,
 )
