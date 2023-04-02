@@ -64,8 +64,6 @@ set_determinism(42)
 
 # +
 channel = 1  # 1 = T1-weighted
-
-
 train_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),
@@ -74,13 +72,9 @@ train_transforms = transforms.Compose(
         transforms.AddChanneld(keys=["image"]),
         transforms.EnsureTyped(keys=["image"]),
         transforms.Orientationd(keys=["image"], axcodes="RAS"),
-        # transforms.Spacingd(keys=["image", ], pixdim=(3.0, 3.0, 2.0), mode=("bilinear", "nearest")),
-        # transforms.CenterSpatialCropd(keys=["image", "label"], roi_size=(64, 64, 44)),
-        # transforms.ScaleIntensityRangePercentilesd(keys="image", lower=0, upper=99.5, b_min=0, b_max=1),
-        # transforms.RandSpatialCropd(keys=["image", "label"], roi_size=(64, 64, 1), random_size=False),
-        # transforms.Lambdad(keys=["image", "label"], func=lambda x: x.squeeze(-1)),
-        # transforms.CopyItemsd(keys=["label"], times=1, names=["slice_label"]),
-        # transforms.Lambdad(keys=["slice_label"], func=lambda x: 2.0 if x.sum() > 0 else 1.0),
+        transforms.ScaleIntensityRangePercentilesd(keys="image", lower=0, upper=99.5, b_min=0, b_max=1),
+        transforms.RandSpatialCropd(keys=["image"], roi_size=(240, 240, 1), random_size=False),
+        transforms.Lambdad(keys=["image"], func=lambda x: x.squeeze(-1)),
     ]
 )
 # -
