@@ -14,6 +14,18 @@
 #     name: python3
 # ---
 
+# %%
+# Copyright (c) MONAI Consortium
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # %% [markdown]
 # # Super-resolution using Stable Diffusion v2 Upscalers
 #
@@ -27,9 +39,6 @@
 # [2] - Ho et al. "Cascaded diffusion models for high fidelity image generation" https://arxiv.org/abs/2106.15282
 #
 # [3] - Ho et al. "High Definition Video Generation with Diffusion Models" https://arxiv.org/abs/2210.02303
-
-# %%
-# TODO: Add buttom with "Open with Colab"
 
 # %% [markdown]
 # ## Set up environment using Colab
@@ -56,14 +65,12 @@ from monai import transforms
 from monai.apps import MedNISTDataset
 from monai.config import print_config
 from monai.data import CacheDataset, DataLoader
-from monai.networks.layers import Act
 from monai.utils import first, set_determinism
 from torch import nn
 from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
-from generative.losses.adversarial_loss import PatchAdversarialLoss
-from generative.losses.perceptual import PerceptualLoss
+from generative.losses import PatchAdversarialLoss, PerceptualLoss
 from generative.networks.nets import AutoencoderKL, DiffusionModelUNet, PatchDiscriminator
 from generative.networks.schedulers import DDPMScheduler
 
@@ -140,7 +147,7 @@ for i in range(3):
 
 # %%
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, seed=0)
-val_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "HeadCT"]
+val_datalist = [{"image": item["image"]} for item in val_data.data if item["class_name"] == "HeadCT"]
 val_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),
@@ -165,27 +172,15 @@ autoencoderkl = AutoencoderKL(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
-    num_channels=256,
+    num_channels=(256, 512, 512),
     latent_channels=3,
-    ch_mult=(1, 2, 2),
     num_res_blocks=2,
     norm_num_groups=32,
     attention_levels=(False, False, True),
 )
 autoencoderkl = autoencoderkl.to(device)
 
-discriminator = PatchDiscriminator(
-    spatial_dims=2,
-    num_layers_d=3,
-    num_channels=64,
-    in_channels=1,
-    out_channels=1,
-    kernel_size=4,
-    activation=(Act.LEAKYRELU, {"negative_slope": 0.2}),
-    norm="BATCH",
-    bias=False,
-    padding=1,
-)
+discriminator = PatchDiscriminator(spatial_dims=2, in_channels=1, num_layers_d=3, num_channels=64)
 discriminator = discriminator.to(device)
 
 
@@ -324,7 +319,7 @@ unet = DiffusionModelUNet(
     num_res_blocks=2,
     num_channels=(256, 256, 512, 1024),
     attention_levels=(False, False, True, True),
-    num_head_channels=64,
+    num_head_channels=(0, 0, 64, 64),
 )
 unet = unet.to(device)
 

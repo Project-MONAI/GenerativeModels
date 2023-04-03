@@ -9,6 +9,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import unittest
 
 import torch
@@ -92,7 +94,6 @@ class TestPatchGAN(unittest.TestCase):
             MultiScalePatchDiscriminator(**TEST_TOO_SMALL_SIZE[0])
 
     def test_script(self):
-
         net = MultiScalePatchDiscriminator(
             num_d=2,
             num_layers_d=3,

@@ -83,7 +83,6 @@ class MedNISTCacheDataset(MedNISTDataset):
         num_workers: int = 0,
         shuffle: bool = False,
     ) -> None:
-
         if not os.path.isdir(root_dir):
             raise ValueError("root directory root_dir must be a directory.")
         self.section = section
@@ -197,7 +196,7 @@ def main_worker(args):
 
     inferer = DiffusionInferer(scheduler)
     # wrap the model with DistributedDataParallel module
-    model = DistributedDataParallel(model, device_ids=[device])
+    model = DistributedDataParallel(model, device_ids=[device], find_unused_parameters=True)
 
     # start a typical PyTorch training
     best_metric = 10000

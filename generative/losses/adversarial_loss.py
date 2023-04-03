@@ -9,8 +9,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import warnings
-from typing import List, Optional, Union
 
 import torch
 from monai.networks.layers.utils import get_act_layer
@@ -20,7 +21,6 @@ from torch.nn.modules.loss import _Loss
 
 
 class AdversarialCriterions(StrEnum):
-
     BCE = "bce"
     HINGE = "hinge"
     LEAST_SQUARE = "least_squares"
@@ -41,12 +41,14 @@ class PatchAdversarialLoss(_Loss):
         criterion: which criterion (hinge, least_squares or bce) you want to use on the discriminators outputs.
         Depending on the criterion, a different activation layer will be used. Make sure you don't run the outputs
         through an activation layer prior to calling the loss.
+        no_activation_leastsq: if True, the activation layer in the case of least-squares is removed.
     """
 
     def __init__(
         self,
-        reduction: Union[LossReduction, str] = LossReduction.MEAN,
+        reduction: LossReduction | str = LossReduction.MEAN,
         criterion: str = AdversarialCriterions.LEAST_SQUARE.value,
+        no_activation_leastsq: bool = False,
     ) -> None:
         super().__init__(reduction=LossReduction(reduction).value)
 
@@ -66,7 +68,10 @@ class PatchAdversarialLoss(_Loss):
             self.activation = get_act_layer("TANH")
             self.fake_label = -1.0
         elif criterion == AdversarialCriterions.LEAST_SQUARE.value:
-            self.activation = get_act_layer(name=("LEAKYRELU", {"negative_slope": 0.05}))
+            if no_activation_leastsq:
+                self.activation = None
+            else:
+                self.activation = get_act_layer(name=("LEAKYRELU", {"negative_slope": 0.05}))
             self.loss_fct = torch.nn.MSELoss(reduction=reduction)
 
         self.criterion = criterion
@@ -101,9 +106,8 @@ class PatchAdversarialLoss(_Loss):
         return zero_label_tensor.expand_as(input)
 
     def forward(
-        self, input: Union[torch.FloatTensor, list], target_is_real: bool, for_discriminator: bool
-    ) -> Union[torch.Tensor, List[torch.Tensor]]:
-
+        self, input: torch.FloatTensor | list, target_is_real: bool, for_discriminator: bool
+    ) -> torch.Tensor | list[torch.Tensor]:
         """
 
         Args:
@@ -137,7 +141,8 @@ class PatchAdversarialLoss(_Loss):
         # Loss calculation
         loss = []
         for disc_ind, disc_out in enumerate(input):
-            disc_out = self.activation(disc_out)
+            if self.activation is not None:
+                disc_out = self.activation(disc_out)
             if self.criterion == AdversarialCriterions.HINGE.value and not target_is_real:
                 loss_ = self.forward_single(-disc_out, target_[disc_ind])
             else:
@@ -152,7 +157,7 @@ class PatchAdversarialLoss(_Loss):
 
         return loss
 
-    def forward_single(self, input: torch.FloatTensor, target: torch.FloatTensor) -> Optional[torch.Tensor]:
+    def forward_single(self, input: torch.FloatTensor, target: torch.FloatTensor) -> torch.Tensor | None:
         if (
             self.criterion == AdversarialCriterions.BCE.value
             or self.criterion == AdversarialCriterions.LEAST_SQUARE.value

@@ -1,0 +1,157 @@
+# This defines the training script for the network
+
+# choose a new directory for every run
+output_dir: $datetime.datetime.now().strftime('./results/output_%y%m%d_%H%M%S')
+dataset_dir: ./data
+
+train_data:
+  _target_ : MedNISTDataset
+  root_dir: '@dataset_dir'
+  section: training
+  download: true
+  progress: false
+  seed: 0
+
+val_data:
+  _target_ : MedNISTDataset
+  root_dir: '@dataset_dir'
+  section: validation
+  download: true
+  progress: false
+  seed: 0
+
+train_datalist: '$[{"image": item["image"]} for item in @train_data.data if item["class_name"] == "Hand"]'
+val_datalist: '$[{"image": item["image"]} for item in @val_data.data if item["class_name"] == "Hand"]'
+
+batch_size: 8
+num_substeps: 1
+num_workers: 4
+use_thread_workers: false
+
+lr: 0.000025
+rand_prob: 0.5
+num_epochs: 75
+val_interval: 5
+save_interval: 5
+
+train_transforms:
+- _target_: RandAffined
+  keys: '@image'
+  rotate_range:
+  - ['$-np.pi / 36', '$np.pi / 36']
+  - ['$-np.pi / 36', '$np.pi / 36']
+  translate_range:
+  - [-1, 1]
+  - [-1, 1]
+  scale_range:
+  - [-0.05, 0.05]
+  - [-0.05, 0.05]
+  spatial_size: [64, 64]
+  padding_mode: "zeros"
+  prob: '@rand_prob'
+
+train_ds:
+  _target_: Dataset
+  data: $@train_datalist
+  transform:
+    _target_: Compose
+    transforms: '$@base_transforms + @train_transforms'
+
+train_loader:
+  _target_: ThreadDataLoader
+  dataset: '@train_ds'
+  batch_size: '@batch_size'
+  repeats: '@num_substeps'
+  num_workers: '@num_workers'
+  use_thread_workers: '@use_thread_workers'
+  persistent_workers: '$@num_workers > 0'
+  shuffle: true
+
+val_ds:
+  _target_: Dataset
+  data: $@val_datalist
+  transform:
+    _target_: Compose
+    transforms: '@base_transforms'
+
+val_loader:
+  _target_: DataLoader
+  dataset: '@val_ds'
+  batch_size: '@batch_size'
+  num_workers: '@num_workers'
+  persistent_workers: '$@num_workers > 0'
+  shuffle: false
+
+lossfn:
+  _target_: torch.nn.MSELoss
+
+optimizer:
+  _target_: torch.optim.Adam
+  params: $@network.parameters()
+  lr: '@lr'
+
+prepare_batch:
+  _target_: generative.engines.DiffusionPrepareBatch
+  num_train_timesteps: '@num_train_timesteps'
+
+val_handlers:
+- _target_: StatsHandler
+  name: train_log
+  output_transform: '$lambda x: None'
+  _disabled_: '@is_not_rank0'
+
+evaluator:
+  _target_: SupervisedEvaluator
+  device: '@device'
+  val_data_loader: '@val_loader'
+  network: '@network'
+  amp: '@use_amp'
+  inferer: '@inferer'
+  prepare_batch: '@prepare_batch'
+  key_val_metric:
+    val_mean_abs_error:
+      _target_: MeanAbsoluteError
+      output_transform: $monai.handlers.from_engine([@pred, @label])
+  metric_cmp_fn: '$scripts.inv_metric_cmp_fn'
+  val_handlers: '$list(filter(bool, @val_handlers))'
+
+handlers:
+- _target_: CheckpointLoader
+  _disabled_: $not os.path.exists(@ckpt_path)
+  load_path: '@ckpt_path'
+  load_dict:
+    model: '@network'
+- _target_: ValidationHandler
+  validator: '@evaluator'
+  epoch_level: true
+  interval: '@val_interval'
+- _target_: CheckpointSaver
+  save_dir: '@output_dir'
+  save_dict:
+    model: '@network'
+  save_interval: '@save_interval'
+  save_final: true
+  epoch_level: true
+  _disabled_: '@is_not_rank0'
+
+trainer:
+  _target_: SupervisedTrainer
+  max_epochs: '@num_epochs'
+  device: '@device'
+  train_data_loader: '@train_loader'
+  network: '@network'
+  loss_function: '@lossfn'
+  optimizer: '@optimizer'
+  inferer: '@inferer'
+  prepare_batch: '@prepare_batch'
+  key_train_metric:
+    train_acc:
+      _target_: MeanSquaredError
+      output_transform: $monai.handlers.from_engine([@pred, @label])
+  metric_cmp_fn: '$scripts.inv_metric_cmp_fn'
+  train_handlers: '$list(filter(bool, @handlers))'
+  amp: '@use_amp'
+
+training:
+- '$monai.utils.set_determinism(0)'
+- '$@trainer.run()'

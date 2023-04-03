@@ -1,0 +1,60 @@
+# This file defines common definitions used in training and inference, most importantly the network definition
+
+imports:
+- $import os
+- $import datetime
+- $import torch
+- $import scripts
+- $import monai
+- $import generative
+- $import torch.distributed as dist
+
+image: $monai.utils.CommonKeys.IMAGE
+label: $monai.utils.CommonKeys.LABEL
+pred: $monai.utils.CommonKeys.PRED
+
+is_dist: '$dist.is_initialized()'
+rank: '$dist.get_rank() if @is_dist else 0'
+is_not_rank0: '$@rank > 0'
+device: '$torch.device(f"cuda:{@rank}" if torch.cuda.is_available() else "cpu")'
+
+network_def:
+  _target_: generative.networks.nets.DiffusionModelUNet
+  spatial_dims: 2
+  in_channels: 1
+  out_channels: 1
+  num_channels: [64, 128, 128]
+  attention_levels: [false, true, true]
+  num_res_blocks: 1
+  num_head_channels: 128
+
+network: $@network_def.to(@device)
+
+bundle_root: .
+ckpt_path: $@bundle_root + '/models/model.pt'
+use_amp: true
+image_dim: 64
+image_size: [1, '@image_dim', '@image_dim']
+num_train_timesteps: 1000
+
+base_transforms:
+- _target_: LoadImaged
+  keys: '@image'
+  image_only: true
+- _target_: EnsureChannelFirstd
+  keys: '@image'
+- _target_: ScaleIntensityRanged
+  keys: '@image'
+  a_min: 0.0
+  a_max: 255.0
+  b_min: 0.0
+  b_max: 1.0
+  clip: true
+
+scheduler:
+  _target_: generative.networks.schedulers.DDPMScheduler
+  num_train_timesteps: '@num_train_timesteps'
+
+inferer:
+  _target_: generative.inferers.DiffusionInferer
+  scheduler: '@scheduler'

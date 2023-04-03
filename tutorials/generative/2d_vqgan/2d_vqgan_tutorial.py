@@ -13,25 +13,8 @@
 #     name: python3
 # ---
 
-# %% [markdown]
-# # Vector Quantized Generative Adversarial Networks with MedNIST Dataset
-#
-# This tutorial illustrates how to use MONAI for training a Vector Quantized Generative Adversarial Network (VQGAN) on 2D images.
-#
-# TODO: Add Open in Colab
-#
-# ## Setup environment
-
 # %%
-# !python -c "import monai" || pip install -q "monai-weekly[pillow, tqdm, einops]"
-# !python -c "import matplotlib" || pip install -q matplotlib
-# %matplotlib inline
-
-# %% [markdown]
-# ## Setup imports
-
-# %%
-# Copyright 2020 MONAI Consortium
+# Copyright (c) MONAI Consortium
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -41,6 +24,24 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+# %% [markdown]
+# # Vector Quantized Generative Adversarial Networks with MedNIST Dataset
+#
+# This tutorial illustrates how to use MONAI for training a Vector Quantized Generative Adversarial Network (VQGAN) on 2D images.
+#
+#
+# ## Setup environment
+
+# %%
+# !python -c "import monai" || pip install -q "monai-weekly[tqdm]"
+# !python -c "import matplotlib" || pip install -q matplotlib
+# %matplotlib inline
+
+# %% [markdown]
+# ## Setup imports
+
+# %%
 import os
 import shutil
 import tempfile
@@ -53,14 +54,11 @@ from monai import transforms
 from monai.apps import MedNISTDataset
 from monai.config import print_config
 from monai.data import CacheDataset, DataLoader
-from monai.networks.layers import Act
 from monai.utils import first, set_determinism
 from torch.nn import L1Loss
 from tqdm import tqdm
 
-# TODO: Add right import reference after deployed
-from generative.losses.adversarial_loss import PatchAdversarialLoss
-from generative.losses.perceptual import PerceptualLoss
+from generative.losses import PatchAdversarialLoss, PerceptualLoss
 from generative.networks.nets import VQVAE, PatchDiscriminator
 
 print_config()
@@ -125,7 +123,7 @@ train_loader = DataLoader(train_ds, batch_size=256, shuffle=True, num_workers=4,
 
 # %%
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, progress=False, seed=0)
-val_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "HeadCT"]
+val_datalist = [{"image": item["image"]} for item in val_data.data if item["class_name"] == "HeadCT"]
 val_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),
@@ -165,29 +163,17 @@ model = VQVAE(
     spatial_dims=2,
     in_channels=1,
     out_channels=1,
+    num_channels=(256, 512),
+    num_res_channels=512,
     num_res_layers=2,
-    num_levels=2,
     downsample_parameters=((2, 4, 1, 1), (2, 4, 1, 1)),
     upsample_parameters=((2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
-    num_channels=[256, 512],
-    num_res_channels=[256, 512],
     num_embeddings=256,
     embedding_dim=32,
 )
 model.to(device)
 
-discriminator = PatchDiscriminator(
-    spatial_dims=2,
-    num_layers_d=3,
-    num_channels=64,
-    in_channels=1,
-    out_channels=1,
-    kernel_size=4,
-    activation=(Act.LEAKYRELU, {"negative_slope": 0.2}),
-    norm="BATCH",
-    bias=False,
-    padding=1,
-)
+discriminator = PatchDiscriminator(spatial_dims=2, in_channels=1, num_layers_d=3, num_channels=64)
 discriminator.to(device)
 
 perceptual_loss = PerceptualLoss(spatial_dims=2, network_type="alex")

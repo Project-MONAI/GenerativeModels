@@ -7,16 +7,34 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.14.1
+#       jupytext_version: 1.14.4
 #   kernelspec:
-#     display_name: Python 3
+#     display_name: Python 3 (ipykernel)
 #     language: python
 #     name: python3
 # ---
 
-# # 3D Latent Diffusion Model
+# +
+# Copyright (c) MONAI Consortium
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# -
 
-# ## Set up imports
+# # 3D Latent Diffusion Model
+# In this tutorial, we will walk through the process of using the MONAI Generative Models package to generate synthetic data using Latent Diffusion Models (LDM)  [1, 2]. Specifically, we will focus on training an LDM to create synthetic brain images from the Brats dataset.
+#
+# [1] - Rombach et al. "High-Resolution Image Synthesis with Latent Diffusion Models" https://arxiv.org/abs/2112.10752
+#
+# [2] - Pinaya et al. "Brain imaging generation with latent diffusion models" https://arxiv.org/abs/2209.07162
+
+# ### Set up imports
 
 # +
 import os
@@ -36,8 +54,7 @@ from torch.nn import L1Loss
 from tqdm import tqdm
 
 from generative.inferers import LatentDiffusionInferer
-from generative.losses.adversarial_loss import PatchAdversarialLoss
-from generative.losses.perceptual import PerceptualLoss
+from generative.losses import PatchAdversarialLoss, PerceptualLoss
 from generative.networks.nets import AutoencoderKL, DiffusionModelUNet, PatchDiscriminator
 from generative.networks.schedulers import DDPMScheduler
 
@@ -47,14 +64,15 @@ print_config()
 # for reproducibility purposes set a seed
 set_determinism(42)
 
-# ## Setup a data directory and download dataset
+# ### Setup a data directory and download dataset
 # Specify a MONAI_DATA_DIRECTORY variable, where the data will be downloaded. If not specified a temporary directory will be used.
 
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
 root_dir = tempfile.mkdtemp() if directory is None else directory
 print(root_dir)
 
-# ## Download the training set
+# ### Prepare data loader for the training set
+# Here we will download the Brats dataset using MONAI's `DecathlonDataset` class, and we prepare the data loader for the training set.
 
 # +
 batch_size = 2
@@ -79,16 +97,16 @@ train_ds = DecathlonDataset(
     task="Task01_BrainTumour",
     section="training",  # validation
     cache_rate=1.0,  # you may need a few Gb of RAM... Set to 0 otherwise
-    num_workers=4,
-    download=False,  # Set download to True if the dataset hasnt been downloaded yet
+    num_workers=8,
+    download=True,  # Set download to True if the dataset hasnt been downloaded yet
     seed=0,
     transform=train_transforms,
 )
-train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=4)
+train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=8, persistent_workers=True)
 print(f'Image shape {train_ds[0]["image"].shape}')
 # -
 
-# ## Visualise examples from the training set
+# ### Visualise examples from the training set
 
 # +
 # Plot axial, coronal and sagittal slices of a training sample
@@ -108,7 +126,12 @@ ax.imshow(img[img.shape[0] // 2, ...], cmap="gray")
 # plt.savefig("training_examples.png")
 # -
 
-# ## Define Networks
+# ## Autoencoder KL
+#
+# ### Define Autoencoder KL network
+#
+# In this section, we will define an autoencoder with KL-regularization for the LDM. The autoencoder's primary purpose is to transform input images into a latent representation that the diffusion model will subsequently learn. By doing so, we can decrease the computational resources required to train the diffusion component, making this approach suitable for learning high-resolution medical images.
+#
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using {device}")
@@ -118,47 +141,22 @@ autoencoder = AutoencoderKL(
     spatial_dims=3,
     in_channels=1,
     out_channels=1,
-    num_channels=32,
+    num_channels=(32, 64, 64),
     latent_channels=3,
-    ch_mult=(1, 2, 2),
     num_res_blocks=1,
     norm_num_groups=16,
     attention_levels=(False, False, True),
 )
 autoencoder.to(device)
 
-unet = DiffusionModelUNet(
-    spatial_dims=3,
-    in_channels=3,
-    out_channels=3,
-    num_res_blocks=1,
-    num_channels=[32, 64, 64],
-    attention_levels=(False, True, True),
-    num_head_channels=1,
-)
-unet.to(device)
 
-discriminator = PatchDiscriminator(
-    spatial_dims=3,
-    num_layers_d=3,
-    num_channels=32,
-    in_channels=1,
-    out_channels=1,
-    kernel_size=4,
-    activation="LEAKYRELU",
-    norm="BATCH",
-    bias=False,
-    padding=1,
-)
+discriminator = PatchDiscriminator(spatial_dims=3, num_layers_d=3, num_channels=32, in_channels=1, out_channels=1)
 discriminator.to(device)
-
-
-scheduler = DDPMScheduler(num_train_timesteps=1000, beta_schedule="linear", beta_start=0.0015, beta_end=0.0195)
-
-inferer = LatentDiffusionInferer(scheduler)
 # -
 
-# ## Define Losses
+# ### Defining Losses
+#
+# We will also specify the perceptual and adversarial losses, including the involved networks, and the optimizers to use during the training process.
 
 # +
 l1_loss = L1Loss()
@@ -180,7 +178,7 @@ kl_weight = 1e-6
 optimizer_g = torch.optim.Adam(params=autoencoder.parameters(), lr=1e-4)
 optimizer_d = torch.optim.Adam(params=discriminator.parameters(), lr=1e-4)
 
-# ## Train AutoEncoder
+# ### Train model
 
 # +
 n_epochs = 100
@@ -250,6 +248,10 @@ for epoch in range(n_epochs):
     epoch_recon_loss_list.append(epoch_loss / (step + 1))
     epoch_gen_loss_list.append(gen_epoch_loss / (step + 1))
     epoch_disc_loss_list.append(disc_epoch_loss / (step + 1))
+
+del discriminator
+del loss_perceptual
+torch.cuda.empty_cache()
 # -
 
 plt.style.use("ggplot")
@@ -287,12 +289,54 @@ ax.imshow(img[:, img.shape[1] // 2, ...], cmap="gray")
 ax = axs[2]
 ax.imshow(img[img.shape[0] // 2, ...], cmap="gray")
 
-# ## Train Diffusion Model
+# ## Diffusion Model
+#
+# ### Define diffusion model and scheduler
+#
+# In this section, we will define the diffusion model that will learn data distribution of the latent representation of the autoencoder. Together with the diffusion model, we define a beta scheduler responsible for defining the amount of noise tahat is added across the diffusion's model Markov chain.
+
+# +
+unet = DiffusionModelUNet(
+    spatial_dims=3,
+    in_channels=3,
+    out_channels=3,
+    num_res_blocks=1,
+    num_channels=(32, 64, 64),
+    attention_levels=(False, True, True),
+    num_head_channels=(0, 64, 64),
+)
+unet.to(device)
+
+
+scheduler = DDPMScheduler(num_train_timesteps=1000, beta_schedule="scaled_linear", beta_start=0.0015, beta_end=0.0195)
+# -
+
+# ### Scaling factor
+#
+# As mentioned in Rombach et al. [1] Section 4.3.2 and D.1, the signal-to-noise ratio (induced by the scale of the latent space) can affect the results obtained with the LDM, if the standard deviation of the latent space distribution drifts too much from that of a Gaussian. For this reason, it is best practice to use a scaling factor to adapt this standard deviation.
+#
+# _Note: In case where the latent space is close to a Gaussian distribution, the scaling factor will be close to one, and the results will not differ from those obtained when it is not used._
+#
+
+# +
+with torch.no_grad():
+    with autocast(enabled=True):
+        z = autoencoder.encode_stage_2_inputs(check_data["image"].to(device))
+
+print(f"Scaling factor set to {1/torch.std(z)}")
+scale_factor = 1 / torch.std(z)
+# -
+
+# We define the inferer using the scale factor:
+
+inferer = LatentDiffusionInferer(scheduler, scale_factor=scale_factor)
 
 optimizer_diff = torch.optim.Adam(params=unet.parameters(), lr=1e-4)
 
+# ### Train diffusion model
+
 # +
-n_epochs = 50
+n_epochs = 150
 epoch_loss_list = []
 autoencoder.eval()
 scaler = GradScaler()
@@ -345,7 +389,9 @@ plt.ylabel("Loss", fontsize=16)
 plt.legend(prop={"size": 14})
 plt.show()
 
-# ## Image generation
+# ### Plotting sampling example
+#
+# Finally, we generate an image with our LDM. For that, we will initialize a latent representation with just noise. Then, we will use the `unet` to perform 1000 denoising steps. In the last step, we decode the latent representation and plot the sampled image.
 
 # +
 autoencoder.eval()
@@ -359,7 +405,7 @@ synthetic_images = inferer.sample(
 )
 # -
 
-# ### Visualise Synthetic
+# ### Visualise synthetic data
 
 idx = 0
 img = synthetic_images[idx, channel].detach().cpu().numpy()  # images

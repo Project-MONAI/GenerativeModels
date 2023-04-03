@@ -1,6 +1,6 @@
 # COPIED FROM https://github.com/Project-MONAI/MONAI/blob/fdd07f36ecb91cfcd491533f4792e1a67a9f89fc/tests/utils.py
 # ---------------------------------------------------------------
-
+#
 # Copyright (c) MONAI Consortium
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -51,7 +51,7 @@ from monai.utils.module import pytorch_after, version_leq
 from monai.utils.type_conversion import convert_data_type
 
 nib, _ = optional_import("nibabel")
-http_error, has_requests = optional_import("requests", name="HTTPError")
+http_error, has_req = optional_import("requests", name="HTTPError")
 
 quick_test_var = "QUICKTEST"
 _tf32_enabled = None
@@ -66,6 +66,16 @@ def testing_data_config(*keys):
             for k, v in _config.items():
                 _test_data_config[k] = v
     return reduce(operator.getitem, keys, _test_data_config)
+
+
+def get_testing_algo_template_path():
+    """
+    a local folder to the testing algorithm template or a url to the compressed template file.
+    Default to None, which effectively uses bundle_gen's ``default_algo_zip`` path.
+
+    https://github.com/Project-MONAI/MONAI/blob/1.1.0/monai/apps/auto3dseg/bundle_gen.py#L380-L381
+    """
+    return os.environ.get("MONAI_TESTING_ALGO_TEMPLATE", None)
 
 
 def clone(data: NdarrayTensor) -> NdarrayTensor:
@@ -128,7 +138,7 @@ def assert_allclose(
 def skip_if_downloading_fails():
     try:
         yield
-    except (ContentTooShortError, HTTPError, ConnectionError) + (http_error,) if has_requests else () as e:
+    except (ContentTooShortError, HTTPError, ConnectionError) + (http_error,) if has_req else () as e:  # noqa: B030
         raise unittest.SkipTest(f"error while downloading: {e}") from e
     except ssl.SSLError as ssl_e:
         if "decryption failed" in str(ssl_e):
@@ -577,7 +587,6 @@ class TimedCall:
             results.put(e)
 
     def __call__(self, obj):
-
         if self.skip_timing:
             return obj
 

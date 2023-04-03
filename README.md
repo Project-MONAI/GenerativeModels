@@ -3,27 +3,28 @@
 </p>
 
 # MONAI Generative Models
-Prototyping repo for generative models to be integrated into MONAI core.
+Prototyping repository for generative models to be integrated into MONAI core, MONAI tutorials, and MONAI model zoo.
 ## Features
-* Network architectures: Diffusion Model, Autoencoder-KL, VQ-VAE, (Multi-scale) Patch-GAN discriminator.
-* Diffusion Model Schedulers: DDPM, DDIM, and PNDM.
+* Network architectures: Diffusion Model, Autoencoder-KL, VQ-VAE, Autoregressive transformers, (Multi-scale) Patch-GAN discriminator.
+* Diffusion Model Noise Schedulers: DDPM, DDIM, and PNDM.
 * Losses: Adversarial losses, Spectral losses, and Perceptual losses (for 2D and 3D data using LPIPS, RadImageNet, and 3DMedicalNet pre-trained models).
-* Metrics: Multi-Scale Structural Similarity Index Measure (MS-SSIM) and Maximum Mean Discrepancy (MMD).
-* Diffusion Models and Latent Diffusion Models Inferers classes (compatible with MONAI style) containing methods to train, sample synthetic images, and obtain the likelihood of inputted data.
+* Metrics: Multi-Scale Structural Similarity Index Measure (MS-SSIM) and Fréchet inception distance (FID).
+* Diffusion Models, Latent Diffusion Models, and VQ-VAE + Transformer Inferers classes (compatible with MONAI style) containing methods to train, sample synthetic images, and obtain the likelihood of inputted data.
 * MONAI-compatible trainer engine (based on Ignite) to train models with reconstruction and adversarial components.
 * Tutorials including:
-  * How to train VQ-VAEs, VQ-GANs, AutoencoderKLs, Diffusion Models and Latent Diffusion Models on 2D and 3D data.
+  * How to train VQ-VAEs, VQ-GANs, VQ-VAE + Transformers, AutoencoderKLs, Diffusion Models, and Latent Diffusion Models on 2D and 3D data.
   * Train diffusion model to perform conditional image generation with classifier-free guidance.
   * Comparison of different diffusion model schedulers.
-  * Diffusion models with different parameterisation (e.g. v prediction and epsilon parameterisation).
+  * Diffusion models with different parameterizations (e.g., v-prediction and epsilon parameterization).
+  * Anomaly Detection using VQ-VAE + Transformers and Diffusion Models.
   * Inpainting with diffusion model (using Repaint method)
   * Super-resolution with Latent Diffusion Models (using Noise Conditioning Augmentation)
 
 ## Roadmap
 Our short-term goals are available in the [Milestones](https://github.com/Project-MONAI/GenerativeModels/milestones)
-section of the repository and this [document](https://docs.google.com/document/d/1vEjrr6dSWUnzmP-Nfc7Y6NpnWdT6fUBK/edit?usp=sharing&ouid=118224691516664207451&rtpof=true&sd=true).
+section of the repository.
 
-In the longer term, we aim to integrate the generative models into the MONAI core library (supporting tasks such as,
+In the longer term, we aim to integrate the generative models into the MONAI core repository (supporting tasks such as,
 image synthesis, anomaly detection, MRI reconstruction, domain transfer)
 
 ## Installation
@@ -31,7 +32,7 @@ To install MONAI Generative Models, it is recommended to clone the codebase dire
 ```
 git clone https://github.com/Project-MONAI/GenerativeModels.git
 ```
-This command will create a GenerativeModels/ folder in your current directory. You can install it by running:
+This command will create a GenerativeModels/ folder in your current directory. You can install it by running the following:
 ```
 cd GenerativeModels/
 python setup.py install
@@ -39,3 +40,12 @@ python setup.py install
 
 ## Contributing
 For guidance on making a contribution to MONAI, see the [contributing guidelines](https://github.com/Project-MONAI/GenerativeModels/blob/main/CONTRIBUTING.md).
+
+## Community
+Join the conversation on Twitter [@ProjectMONAI](https://twitter.com/ProjectMONAI) or join our [Slack channel](https://forms.gle/QTxJq3hFictp31UM9).
+
+## Links
+- Website: https://monai.io/
+- Code: https://github.com/Project-MONAI/GenerativeModels
+- Project tracker: https://github.com/Project-MONAI/GenerativeModels/projects
+- Issue tracker: https://github.com/Project-MONAI/GenerativeModels/issues

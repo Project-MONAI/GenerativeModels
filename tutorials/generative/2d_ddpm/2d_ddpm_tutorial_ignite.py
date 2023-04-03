@@ -13,30 +13,8 @@
 #     name: python3
 # ---
 
-# %% [markdown]
-# # Denoising Diffusion Probabilistic Models with MedNIST Dataset
-#
-# This tutorial illustrates how to use MONAI for training a denoising diffusion probabilistic model (DDPM)[1] to create
-# synthetic 2D images.
-#
-# [1] - Ho et al. "Denoising Diffusion Probabilistic Models" https://arxiv.org/abs/2006.11239
-#
-# TODO: Add Open in Colab
-#
-# ## Setup environment
-
 # %%
-# !python -c "import monai" || pip install -q "monai-weekly[pillow, tqdm, einops]"
-# !python -c "import matplotlib" || pip install -q matplotlib
-# !python -c "import ignite" || pip install -q pytorch-ignite
-
-# %matplotlib inline
-
-# %% [markdown]
-# ## Setup imports
-
-# %% jupyter={"outputs_hidden": false}
-# Copyright 2020 MONAI Consortium
+# Copyright (c) MONAI Consortium
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -46,10 +24,31 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+# %% [markdown]
+# # Denoising Diffusion Probabilistic Models with MedNIST Dataset
+#
+# This tutorial illustrates how to use MONAI for training a denoising diffusion probabilistic model (DDPM)[1] to create
+# synthetic 2D images.
+#
+# [1] - Ho et al. "Denoising Diffusion Probabilistic Models" https://arxiv.org/abs/2006.11239
+#
+#
+# ## Setup environment
+
+# %%
+# !python -c "import monai" || pip install -q "monai-weekly[tqdm]"
+# !python -c "import ignite" || pip install -q pytorch-ignite
+# !python -c "import matplotlib" || pip install -q matplotlib
+# %matplotlib inline
+
+# %% [markdown]
+# ## Setup imports
+
+# %% jupyter={"outputs_hidden": false}
 import os
 import shutil
 import tempfile
-from typing import Dict, Mapping, Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -59,13 +58,12 @@ from monai import transforms
 from monai.apps import MedNISTDataset
 from monai.config import print_config
 from monai.data import CacheDataset, DataLoader
-from monai.engines import PrepareBatch, SupervisedEvaluator, SupervisedTrainer, default_prepare_batch
+from monai.engines import SupervisedEvaluator, SupervisedTrainer
 from monai.handlers import MeanAbsoluteError, MeanSquaredError, StatsHandler, ValidationHandler, from_engine
 from monai.utils import first, set_determinism
 
 from generative.inferers import DiffusionInferer
-
-# TODO: Add right import reference after deployed
+from generative.engines import DiffusionPrepareBatch
 from generative.networks.nets import DiffusionModelUNet
 from generative.networks.schedulers import DDPMScheduler
 
@@ -173,7 +171,7 @@ model = DiffusionModelUNet(
     num_channels=(64, 128, 128),
     attention_levels=(False, True, True),
     num_res_blocks=1,
-    num_head_channels=128,
+    num_head_channels=(0, 128, 128),
 )
 model.to(device)
 
@@ -183,55 +181,6 @@ scheduler = DDPMScheduler(num_train_timesteps=num_train_timesteps)
 optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
 
 inferer = DiffusionInferer(scheduler)
-# %% [markdown]
-# ### Define a class for preparing batches
-
-# %%
-
-
-class DiffusionPrepareBatch(PrepareBatch):
-    """
-    This class is used as a callable for the `prepare_batch` parameter of engine classes for diffusion training.
-
-    Assuming a supervised training process, it will generate a noise field using `get_noise` for an input image, and
-    return the image and noise field as the image/target pair plus the noise field the kwargs under the key "noise".
-    This assumes the inferer being used in conjunction with this class expects a "noise" parameter to be provided.
-
-    If the `condition_name` is provided, this must refer to a key in the input dictionary containing the condition
-    field to be passed to the inferer. This will appear in the keyword arguments under the key "condition".
-
-    """
-
-    def __init__(self, num_train_timesteps: int, condition_name: Optional[str] = None):
-        self.condition_name = condition_name
-        self.num_train_timesteps = num_train_timesteps
-
-    def get_noise(self, images):
-        """Returns the noise tensor for input tensor `images`, override this for different noise distributions."""
-        return torch.randn_like(images)
-
-    def get_timesteps(self, images):
-        return torch.randint(0, self.num_train_timesteps, (images.shape[0],), device=images.device).long()
-
-    def __call__(
-        self,
-        batchdata: Dict[str, torch.Tensor],
-        device: Optional[Union[str, torch.device]] = None,
-        non_blocking: bool = False,
-        **kwargs,
-    ):
-        images, _ = default_prepare_batch(batchdata, device, non_blocking, **kwargs)
-        noise = self.get_noise(images).to(device, non_blocking=non_blocking, **kwargs)
-        timesteps = self.get_timesteps(images).to(device, non_blocking=non_blocking, **kwargs)
-
-        kwargs = {"noise": noise, "timesteps": timesteps}
-
-        if self.condition_name is not None and isinstance(batchdata, Mapping):
-            kwargs["conditioning"] = batchdata[self.condition_name].to(device, non_blocking=non_blocking, **kwargs)
-
-        # return input, target, arguments, and keyword arguments where noise is the target and also a keyword value
-        return images, noise, (), kwargs
-
 
 # %% [markdown]
 # ### Model training

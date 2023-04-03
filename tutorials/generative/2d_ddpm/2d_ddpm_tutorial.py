@@ -13,28 +13,8 @@
 #     name: python3
 # ---
 
-# %% [markdown]
-# # Denoising Diffusion Probabilistic Models with MedNIST Dataset
-#
-# This tutorial illustrates how to use MONAI for training a denoising diffusion probabilistic model (DDPM)[1] to create
-# synthetic 2D images.
-#
-# [1] - Ho et al. "Denoising Diffusion Probabilistic Models" https://arxiv.org/abs/2006.11239
-#
-# TODO: Add Open in Colab
-#
-# ## Setup environment
-
 # %%
-# !python -c "import monai" || pip install -q "monai-weekly[pillow, tqdm, einops]"
-# !python -c "import matplotlib" || pip install -q matplotlib
-# %matplotlib inline
-
-# %% [markdown]
-# ## Setup imports
-
-# %% jupyter={"outputs_hidden": false}
-# Copyright 2020 MONAI Consortium
+# Copyright (c) MONAI Consortium
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -44,6 +24,27 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+# %% [markdown]
+# # Denoising Diffusion Probabilistic Models with MedNIST Dataset
+#
+# This tutorial illustrates how to use MONAI for training a denoising diffusion probabilistic model (DDPM)[1] to create
+# synthetic 2D images.
+#
+# [1] - Ho et al. "Denoising Diffusion Probabilistic Models" https://arxiv.org/abs/2006.11239
+#
+#
+# ## Setup environment
+
+# %%
+# !python -c "import monai" || pip install -q "monai-weekly[tqdm]"
+# !python -c "import matplotlib" || pip install -q matplotlib
+# %matplotlib inline
+
+# %% [markdown]
+# ## Setup imports
+
+# %% jupyter={"outputs_hidden": false}
 import os
 import shutil
 import tempfile
@@ -62,8 +63,6 @@ from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
 from generative.inferers import DiffusionInferer
-
-# TODO: Add right import reference after deployed
 from generative.networks.nets import DiffusionModelUNet
 from generative.networks.schedulers import DDPMScheduler
 
@@ -190,7 +189,7 @@ inferer = DiffusionInferer(scheduler)
 use_pretrained = False
 
 if use_pretrained:
-    model = torch.hub.load("marksgraham/pretrained_generative_models", model="ddpm_2d", verbose=True).to(device)
+    model = torch.hub.load("marksgraham/pretrained_generative_models:v0.2", model="ddpm_2d", verbose=True).to(device)
 else:
     n_epochs = 75
     val_interval = 5

@@ -9,6 +9,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .fid import FID
+from __future__ import annotations
+
+from .fid import FIDMetric
 from .mmd import MMD
-from .ms_ssim import MSSSIM
+from .ms_ssim import MultiScaleSSIMMetric
+from .ssim import SSIMMetric

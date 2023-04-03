@@ -12,6 +12,7 @@ repos:
     rev: v4.4.0
     hooks:
       - id: end-of-file-fixer
+        exclude: ^tutorials/
       - id: trailing-whitespace
       - id: check-yaml
       - id: check-docstring-first
@@ -24,7 +25,6 @@ repos:
       - id: forbid-new-submodules
       - id: pretty-format-json
         args: ['--autofix', '--no-sort-keys', '--indent=4']
-      - id: end-of-file-fixer
       - id: mixed-line-ending
 
   - repo: https://github.com/asottile/pyupgrade

@@ -1,0 +1,61 @@
+{
+    "schema": "https://github.com/Project-MONAI/MONAI-extra-test-data/releases/download/0.8.1/meta_schema_20220729.json",
+    "version": "0.1.0",
+    "changelog": {
+        "0.1.0": "Initial version"
+    },
+    "monai_version": "1.0.0",
+    "pytorch_version": "1.10.2",
+    "numpy_version": "1.21.2",
+    "optional_packages_version": {
+        "generative": "0.1.0"
+    },
+    "task": "MedNIST Hand Generation",
+    "description": "",
+    "authors": "Walter Hugo Lopez Pinaya, Mark Graham, and Eric Kerfoot",
+    "copyright": "Copyright (c) KCL",
+    "references": [],
+    "intended_use": "This is suitable for research purposes only",
+    "image_classes": "Single channel magnitude data",
+    "data_source": "MedNIST",
+    "network_data_format": {
+        "inputs": {
+            "image": {
+                "type": "image",
+                "format": "magnitude",
+                "modality": "xray",
+                "num_channels": 1,
+                "spatial_shape": [
+                    1,
+                    64,
+                    64
+                ],
+                "dtype": "float32",
+                "value_range": [],
+                "is_patch_data": false,
+                "channel_def": {
+                    "0": "image"
+                }
+            }
+        },
+        "outputs": {
+            "pred": {
+                "type": "image",
+                "format": "magnitude",
+                "modality": "xray",
+                "num_channels": 1,
+                "spatial_shape": [
+                    1,
+                    64,
+                    64
+                ],
+                "dtype": "float32",
+                "value_range": [],
+                "is_patch_data": false,
+                "channel_def": {
+                    "0": "image"
+                }
+            }
+        }
+    }
+}
