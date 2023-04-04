@@ -114,7 +114,19 @@ def _cosine_beta(num_train_timesteps, s=8e-3):
 
 class Scheduler(nn.Module):
     """
-    Base class for other schedulers based on a beta noise schedule.
+    Base class for other schedulers based on a noise schedule function.
+
+    This class is meant as the base for other schedulers which implement their own way of sampling or stepping. Here
+    the class defines beta, alpha, and alpha_cumprod values from a noise schedule function named with `schedule`,
+    which is the name of a component in NoiseSchedules. These components must all be callables which return either
+    the beta schedule alone or a triple containing (betas, alphas, alphas_cumprod) values. New schedule functions
+    can be provided by using the NoiseSchedules.add_def, for example:
+
+    .. code-block:: python
+
+        @NoiseSchedules.add_def("linear_beta", "Linear beta schedule")
+        def _linear_beta(num_train_timesteps, beta_start=1e-4, beta_end=2e-2):
+            return torch.linspace(beta_start, beta_end, num_train_timesteps, dtype=torch.float32)
 
     Args:
         num_train_timesteps: number of diffusion steps used to train the model.

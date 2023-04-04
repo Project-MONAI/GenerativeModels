@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+from .scheduler import Scheduler
 from .ddim import DDIMScheduler
 from .ddpm import DDPMScheduler
 from .pndm import PNDMScheduler

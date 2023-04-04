@@ -39,7 +39,7 @@ import torch.nn as nn
 
 from monai.utils import StrEnum
 
-from .scheduler import Scheduler
+from generative.networks.schedulers import Scheduler
 
 
 class PNDMPredictionType(StrEnum):
