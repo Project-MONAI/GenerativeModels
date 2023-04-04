@@ -123,11 +123,14 @@ class Scheduler(nn.Module):
     can be provided by using the NoiseSchedules.add_def, for example:
 
     .. code-block:: python
+        from generative.networks.schedulers import NoiseSchedules, DDPMScheduler
 
-        @NoiseSchedules.add_def("linear_beta", "Linear beta schedule")
-        def _linear_beta(num_train_timesteps, beta_start=1e-4, beta_end=2e-2):
+        @NoiseSchedules.add_def("my_beta_schedule", "Some description of your function")
+        def _beta_function(num_train_timesteps, beta_start=1e-4, beta_end=2e-2):
             return torch.linspace(beta_start, beta_end, num_train_timesteps, dtype=torch.float32)
 
+        scheduler = DDPMScheduler(1000, "my_beta_schedule")
+        
     Args:
         num_train_timesteps: number of diffusion steps used to train the model.
         schedule: member of NoiseSchedules,
