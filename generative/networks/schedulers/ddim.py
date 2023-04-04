@@ -257,13 +257,13 @@ class DDIMScheduler(Scheduler):
         # 3. compute predicted original sample from predicted noise also called
         # "predicted x_0" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
 
-        if self.prediction_type == "epsilon":
+        if self.prediction_type == DDIMPredictionType.EPSILON:
             pred_original_sample = (sample - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
             pred_epsilon = model_output
-        elif self.prediction_type == "sample":
+        elif self.prediction_type == DDIMPredictionType.SAMPLE:
             pred_original_sample = model_output
             pred_epsilon = (sample - alpha_prod_t ** (0.5) * pred_original_sample) / beta_prod_t ** (0.5)
-        elif self.prediction_type == "v_prediction":
+        elif self.prediction_type == DDIMPredictionType.V_PREDICTION:
             pred_original_sample = (alpha_prod_t**0.5) * sample - (beta_prod_t**0.5) * model_output
             pred_epsilon = (alpha_prod_t**0.5) * model_output + (beta_prod_t**0.5) * sample
 
