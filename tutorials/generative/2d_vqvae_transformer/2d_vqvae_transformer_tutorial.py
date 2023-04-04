@@ -6,32 +6,15 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.14.4
+#       jupytext_version: 1.14.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
 #     name: python3
 # ---
 
-# %% [markdown]
-# # Vector Quantized Variational Autoencoders and Transformers with MedNIST Dataset
-#
-# This tutorial illustrates how to use MONAI for training a Vector Quantized Variational Autoencoder (VQVAE)[1] and a transformer model on 2D images.
-#
-# This is a two step process:
-# - We will train our VQVAE model to be able to reconstruct the input images.
-# - This will be followed by using the trained VQVAE model to encode images to feed into the transformer network to train.
-#
-# We will work with the MedNIST dataset available on MONAI
-# (https://docs.monai.io/en/stable/apps.html#monai.apps.MedNISTDataset). In order to train faster, we will select just one of the available classes ("HeadCT"), resulting in a training set with 7999 2D images.
-#
-# [1] - [Oord et al. "Neural Discrete Representation Learning"](https://arxiv.org/abs/1711.00937)
-#
-#
-# ### Setup imports
-
 # %%
-# Copyright 2020 MONAI Consortium
+# Copyright (c) MONAI Consortium
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -41,6 +24,34 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+# %% [markdown]
+# # Vector Quantized Variational Autoencoders and Transformers with MedNIST Dataset
+#
+# This tutorial illustrates how to use MONAI for training a Vector Quantized Variational Autoencoder (VQVAE)[1,2] and a transformer model on 2D images.
+#
+# This is a two step process:
+# - We will train our VQVAE model to be able to reconstruct the input images.
+# - This will be followed by using the trained VQVAE model to encode images to feed into the transformer network to train.
+#
+# We will work with the [MedNIST dataset](https://docs.monai.io/en/stable/apps.html#monai.apps.MedNISTDataset) available on MONAI. In order to train faster, we will select just one of the available classes ("HeadCT"), resulting in a training set with 7999 2D images.
+#
+# [1] - Oord et al. "Neural Discrete Representation Learning" https://arxiv.org/abs/1711.00937
+#
+# [2] - Tudosiu et al. "Morphology-Preserving Autoregressive 3D Generative Modelling of the Brain" https://arxiv.org/abs/2209.03177
+#
+#
+# ### Setup environment
+
+# %%
+# !python -c "import monai" || pip install -q "monai-weekly[tqdm]"
+# !python -c "import matplotlib" || pip install -q matplotlib
+# %matplotlib inline
+
+# %% [markdown]
+# ### Setup imports
+
+# %%
 import os
 import tempfile
 import shutil
@@ -51,15 +62,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from torch.nn import L1Loss, CrossEntropyLoss
-import torch.nn.functional as F
 from monai import transforms
 from monai.apps import MedNISTDataset
 from monai.config import print_config
 from monai.data import DataLoader, Dataset
 from monai.utils import first, set_determinism
 from tqdm import tqdm
-from ignite.utils import convert_tensor
 
+from generative.inferers import VQVAETransformerInferer
 from generative.networks.nets import VQVAE, DecoderOnlyTransformer
 from generative.utils.ordering import Ordering
 from generative.utils.enums import OrderingType
@@ -105,7 +115,7 @@ train_transforms = transforms.Compose(
     ]
 )
 train_ds = Dataset(data=train_datalist, transform=train_transforms)
-train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=4)
+train_loader = DataLoader(train_ds, batch_size=128, shuffle=True, num_workers=4, persistent_workers=True)
 
 # %% [markdown]
 # ### Visualse some examples from the dataset
@@ -132,7 +142,7 @@ val_transforms = transforms.Compose(
     ]
 )
 val_ds = Dataset(data=val_datalist, transform=val_transforms)
-val_loader = DataLoader(val_ds, batch_size=128, shuffle=True, num_workers=4)
+val_loader = DataLoader(val_ds, batch_size=128, shuffle=True, num_workers=4, persistent_workers=True)
 
 # %% [markdown]
 # ## VQVAE Training
@@ -156,7 +166,7 @@ vqvae_model = VQVAE(
     num_embeddings=256,
     embedding_dim=32,
 )
-vqvae_model.to(device)
+vqvae_model = vqvae_model.to(device)
 
 # %%
 optimizer = torch.optim.Adam(params=vqvae_model.parameters(), lr=1e-4)
@@ -296,27 +306,28 @@ plt.show()
 # We can use the same dataloader with augmentations as used for training the VQVAE model. However given the memory intensive nature of Transformer models we will need to reduce the batch size
 
 # %%
-train_loader = DataLoader(train_ds, batch_size=16, shuffle=True, num_workers=4)
-val_loader = DataLoader(val_ds, batch_size=16, shuffle=True, num_workers=4)
+train_loader = DataLoader(train_ds, batch_size=16, shuffle=True, num_workers=4, persistent_workers=True)
+val_loader = DataLoader(val_ds, batch_size=16, shuffle=True, num_workers=4, persistent_workers=True)
 
 # %% [markdown]
 # ### Latent sequence ordering
 # We need to define an ordering of which we convert our 2D latent space into a 1D sequence. For this we will use a simple raster scan.
 
 # %%
-spatial_shape = next(iter(train_loader))["image"].shape[2:]
-
-# %%
-# Get spatial dimensions of data
-# We divide the spatial shape by 4 as the vqvae downsamples the image by a factor of 4 along each dimension
-spatial_shape = next(iter(train_loader))["image"].shape[2:]
-spatial_shape = (int(spatial_shape[0] / 4), int(spatial_shape[1] / 4))
+# Get spatial dimensions of encoded data
+test_scan = next(iter(train_loader))["image"].to(device)
+spatial_shape = vqvae_model.encode_stage_2_inputs(test_scan).shape[2:]
 
 ordering = Ordering(ordering_type=OrderingType.RASTER_SCAN.value, spatial_dims=2, dimensions=(1,) + spatial_shape)
 
-sequence_ordering = ordering.get_sequence_ordering()
-revert_sequence_ordering = ordering.get_revert_sequence_ordering()
 
+# %% [markdown]
+# ### Begin of sentence token (BOS)
+#
+# After we transform the data into a 1D representation, we need to define a value token to define the begining of the sequence (a.k.a., BOS token in NLP). This way, when we feed it to the transformer, the transformer will predict what is the value of the first valid token in the sequence. Since in the VQ-VAE, we are using the token values from 0 to 255 to define the elements of the codebook, here we will specify the next value as the be BOS, i.e. 256.
+
+# %%
+bos_token = 256
 
 # %% [markdown]
 # ## Define Network, optimizer and losses
@@ -331,7 +342,9 @@ transformer_model = DecoderOnlyTransformer(
     attn_layers_depth=12,
     attn_layers_heads=8,
 )
-transformer_model.to(device)
+transformer_model = transformer_model.to(device)
+
+inferer = VQVAETransformerInferer()
 
 # %%
 optimizer = torch.optim.Adam(params=transformer_model.parameters(), lr=5e-4)
@@ -339,45 +352,8 @@ ce_loss = CrossEntropyLoss()
 
 
 # %% [markdown]
-# First we will define a function to allow us to generate random samples from the transformer. This will allow us to keep track of training progress as well to see how samples look during the training cycle
-
-
-# %%
-@torch.no_grad()
-def generate(net, vqvae_model, starting_tokens, seq_len, **kwargs):
-    progress_bar = iter(range(seq_len))
-
-    latent_seq = starting_tokens.long()
-    for _ in progress_bar:
-        # if the sequence context is growing too long we must crop it at block_size
-        if latent_seq.size(1) <= net.max_seq_len:
-            idx_cond = latent_seq
-        else:
-            idx_cond = latent_seq[:, -net.max_seq_len :]
-
-        # forward the model to get the logits for the index in the sequence
-        logits = net(x=idx_cond)
-        # pluck the logits at the final step and scale by desired temperature
-        logits = logits[:, -1, :]
-        # optionally crop the logits to only the top k options
-
-        # apply softmax to convert logits to (normalized) probabilities
-        probs = F.softmax(logits, dim=-1)
-        # remove the chance to be sampled the BOS token
-        probs[:, vqvae_model.num_embeddings - 1] = 0
-
-        # sample from the distribution
-        idx_next = torch.multinomial(probs, num_samples=1)
-        latent_seq = torch.cat((latent_seq, idx_next), dim=1)
-
-    latent_seq = latent_seq[:, 1:]
-
-    return latent_seq
-
-
-# %% [markdown]
 # ### Transformer Model Training
-# We will train the model for 100 epochs
+# We will train the model for 50 epochs
 
 # %%
 n_epochs = 50
@@ -395,24 +371,13 @@ for epoch in range(n_epochs):
     progress_bar.set_description(f"Epoch {epoch}")
     for step, batch in progress_bar:
         images = batch["image"].to(device)
-        # Encode images using vqvae and transformer to 1D sequence
-        quantizations = vqvae_model.index_quantize(images)
-        quantizations = quantizations.reshape(quantizations.shape[0], -1)
-        quantizations = quantizations[:, sequence_ordering]
-
-        # Pad input to give start of sequence token
-        quantizations = F.pad(quantizations, (1, 0), "constant", 256)  # pad with 0 i.e. BOS token
-        quantizations = quantizations.long()
-
-        quantizations_input = convert_tensor(quantizations[:, :-1], device, non_blocking=True)
-        quantizations_target = convert_tensor(quantizations[:, 1:], device, non_blocking=True)
 
         optimizer.zero_grad(set_to_none=True)
 
-        # model outputs
-        logits = transformer_model(x=quantizations_input).transpose(1, 2)
+        logits, target, _ = inferer(images, vqvae_model, transformer_model, ordering, return_latent=True)
+        logits = logits.transpose(1, 2)
 
-        loss = ce_loss(logits, quantizations_target)
+        loss = ce_loss(logits, target)
 
         loss.backward()
         optimizer.step()
@@ -428,34 +393,23 @@ for epoch in range(n_epochs):
         with torch.no_grad():
             for val_step, batch in enumerate(val_loader, start=1):
                 images = batch["image"].to(device)
-                # Encode images using vqvae and transformer to 1D sequence
-                quantizations = vqvae_model.index_quantize(images)
-                quantizations = quantizations.reshape(quantizations.shape[0], -1)
-                quantizations = quantizations[:, sequence_ordering]
-
-                # Pad input to give start of sequence token
-                quantizations = F.pad(quantizations, (1, 0), "constant", 256)  # pad with 256 i.e. BOS token
-                quantizations = quantizations.long()
-
-                quantizations_input = convert_tensor(quantizations[:, :-1], device, non_blocking=True)
-                quantizations_target = convert_tensor(quantizations[:, 1:], device, non_blocking=True)
-
-                # model outputs
-                logits = transformer_model(x=quantizations_input).transpose(1, 2)
+                logits, quantizations_target, _ = inferer(
+                    images, vqvae_model, transformer_model, ordering, return_latent=True
+                )
+                logits = logits.transpose(1, 2)
 
                 loss = ce_loss(logits, quantizations_target)
 
                 # Generate a random sample to visualise progress
                 if val_step == 1:
-                    starting_token = 256 * torch.ones((1, 1), device=device)
-                    generated_latent = generate(
-                        transformer_model, vqvae_model, starting_token, spatial_shape[0] * spatial_shape[1]
+                    sample = inferer.sample(
+                        vqvae_model=vqvae_model,
+                        transformer_model=transformer_model,
+                        ordering=ordering,
+                        latent_spatial_dim=(spatial_shape[0], spatial_shape[1]),
+                        starting_tokens=vqvae_model.num_embeddings * torch.ones((1, 1), device=device),
                     )
-                    generated_latent = generated_latent[0]
-                    vqvae_latent = generated_latent[revert_sequence_ordering]
-                    vqvae_latent = vqvae_latent.reshape((1,) + spatial_shape)
-                    decoded = vqvae_model.decode_samples(vqvae_latent)
-                    intermediary_images.append(decoded[:, 0])
+                    intermediary_images.append(sample[:, 0])
 
                 val_loss += loss.item()
 
@@ -509,13 +463,14 @@ for image_n in range(len(val_samples)):
 # %%
 samples = []
 for i in range(5):
-    starting_token = 256 * torch.ones((1, 1), device=device)
-    generated_latent = generate(transformer_model, vqvae_model, starting_token, spatial_shape[0] * spatial_shape[1])
-    generated_latent = generated_latent[0]
-    vqvae_latent = generated_latent[revert_sequence_ordering]
-    vqvae_latent = vqvae_latent.reshape((1,) + spatial_shape)
-    decoded = vqvae_model.decode_samples(vqvae_latent)
-    samples.append(decoded[:, 0])
+    sample = inferer.sample(
+        vqvae_model=vqvae_model,
+        transformer_model=transformer_model,
+        ordering=ordering,
+        latent_spatial_dim=(spatial_shape[0], spatial_shape[1]),
+        starting_tokens=vqvae_model.num_embeddings * torch.ones((1, 1), device=device),
+    )
+    samples.append(sample[:, 0])
 
 # %%
 fig, ax = plt.subplots(nrows=1, ncols=5)

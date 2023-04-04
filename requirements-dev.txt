@@ -55,4 +55,3 @@ optuna
 git+https://github.com/Project-MONAI/MetricsReloaded@monai-support#egg=MetricsReloaded
 lpips==0.1.4
 xformers==0.0.16
-x-transformers==1.8.1

@@ -36,7 +36,7 @@ TEST_CASES = [
         },
         {
             "num_tokens": 16 + 1,
-            "max_seq_len": 4 + 1,
+            "max_seq_len": 4,
             "attn_layers_dim": 4,
             "attn_layers_depth": 2,
             "attn_layers_heads": 1,
@@ -44,7 +44,7 @@ TEST_CASES = [
         },
         {"ordering_type": OrderingType.RASTER_SCAN.value, "spatial_dims": 2, "dimensions": (2, 2, 2)},
         (2, 1, 8, 8),
-        (2, 5, 17),
+        (2, 4, 17),
         (2, 2, 2),
     ],
     [
@@ -62,7 +62,7 @@ TEST_CASES = [
         },
         {
             "num_tokens": 16 + 1,
-            "max_seq_len": 9 + 1,
+            "max_seq_len": 8,
             "attn_layers_dim": 4,
             "attn_layers_depth": 2,
             "attn_layers_heads": 1,
@@ -70,7 +70,7 @@ TEST_CASES = [
         },
         {"ordering_type": OrderingType.RASTER_SCAN.value, "spatial_dims": 3, "dimensions": (2, 2, 2, 2)},
         (2, 1, 8, 8, 8),
-        (2, 9, 17),
+        (2, 8, 17),
         (2, 2, 2, 2),
     ],
 ]
@@ -103,7 +103,7 @@ class TestVQVAETransformerInferer(unittest.TestCase):
     ):
         stage_1 = VQVAE(**stage_1_params)
         max_seq_len = 3
-        stage_2_params_shorter = {k: v for k, v in stage_2_params.items()}
+        stage_2_params_shorter = dict(stage_2_params)
         stage_2_params_shorter["max_seq_len"] = max_seq_len
         stage_2 = DecoderOnlyTransformer(**stage_2_params_shorter)
         ordering = Ordering(**ordering_params)
@@ -136,7 +136,7 @@ class TestVQVAETransformerInferer(unittest.TestCase):
         )
         stage_2 = DecoderOnlyTransformer(
             num_tokens=16 + 1,
-            max_seq_len=4 + 1,
+            max_seq_len=4,
             attn_layers_dim=4,
             attn_layers_depth=2,
             attn_layers_heads=1,
@@ -178,7 +178,7 @@ class TestVQVAETransformerInferer(unittest.TestCase):
         )
         stage_2 = DecoderOnlyTransformer(
             num_tokens=16 + 1,
-            max_seq_len=3,
+            max_seq_len=2,
             attn_layers_dim=4,
             attn_layers_depth=2,
             attn_layers_heads=1,
@@ -233,7 +233,7 @@ class TestVQVAETransformerInferer(unittest.TestCase):
     ):
         stage_1 = VQVAE(**stage_1_params)
         max_seq_len = 3
-        stage_2_params_shorter = {k: v for k, v in stage_2_params.items()}
+        stage_2_params_shorter = dict(stage_2_params)
         stage_2_params_shorter["max_seq_len"] = max_seq_len
         stage_2 = DecoderOnlyTransformer(**stage_2_params_shorter)
         ordering = Ordering(**ordering_params)

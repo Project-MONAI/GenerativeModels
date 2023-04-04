@@ -35,6 +35,7 @@ class TestDecoderOnlyTransformer(unittest.TestCase):
             attn_layers_depth=2,
             attn_layers_heads=2,
             with_cross_attention=True,
+            embedding_dropout_rate=0,
         )
         with eval_mode(net):
             net.forward(torch.randint(0, 10, (1, 16)), context=torch.randn(1, 4, 8))

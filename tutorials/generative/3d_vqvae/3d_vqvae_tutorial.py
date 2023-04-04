@@ -1,23 +1,5 @@
-# %% [markdown]
-# # Vector Quantized Variational Autoencoders for 3D reconstruction of images
-#
-# This tutorial illustrates how to use MONAI for training a Vector Quantized Variational Autoencoder (VQVAE)[1] on 3D images.
-#
-# Here, we will train our VQVAE model to be able to reconstruct the input images.  We will work with the Decathlon Dataset available on [MONAI](https://docs.monai.io/en/stable/apps.html#monai.apps.DecathlonDataset). In order to train faster, we will select just one of the available tasks ("Task01_BrainTumour").
-#
-# The VQVAE can also be used as a generative model if an autoregressor model (e.g., PixelCNN, Decoder Transformer) is trained on the discrete latent representations of the VQVAE bottleneck. This falls outside of the scope of this tutorial.
-#
-# [1] - [Oord et al. "Neural Discrete Representation Learning"](https://arxiv.org/abs/1711.00937)
-#
-# TODO: Add Open in Colab
-#
-# ### Setup environment
-
-# %% [markdown]
-# ### Setup imports
-
 # %%
-# Copyright 2020 MONAI Consortium
+# Copyright (c) MONAI Consortium
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -27,6 +9,30 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+# %% [markdown]
+# # Vector Quantized Variational Autoencoders for 3D reconstruction of images
+#
+# This tutorial illustrates how to use MONAI for training a Vector Quantized Variational Autoencoder (VQVAE)[1] on 3D images.
+#
+# Here, we will train our VQVAE model to be able to reconstruct the input images.  We will work with the Decathlon Dataset available on [MONAI](https://docs.monai.io/en/stable/apps.html#monai.apps.DecathlonDataset). In order to train faster, we will select just one of the available tasks ("Task01_BrainTumour").
+#
+# The VQVAE can also be used as a generative model if an autoregressor model (e.g., PixelCNN, Decoder Transformer) is trained on the discrete latent representations of the VQVAE bottleneck. This falls outside of the scope of this tutorial.
+#
+# [1] - Oord et al. "Neural Discrete Representation Learning" https://arxiv.org/abs/1711.00937
+#
+#
+# ### Set up environment
+
+# %%
+# !python -c "import monai" || pip install -q "monai-weekly[tqdm, nibabel]"
+# !python -c "import matplotlib" || pip install -q matplotlib
+# %matplotlib inline
+
+# %% [markdown]
+# ### Setup imports
+
+# %%
 import os
 import shutil
 import tempfile
@@ -99,7 +105,7 @@ val_ds = DecathlonDataset(
     root_dir=root_dir, task="Task01_BrainTumour", transform=val_transform, section="validation", download=True
 )
 
-val_loader = DataLoader(val_ds, batch_size=16, shuffle=False, num_workers=8)
+val_loader = DataLoader(val_ds, batch_size=16, shuffle=False, num_workers=8, persistent_workers=True)
 
 # %% [markdown]
 # ### Visualize the training images

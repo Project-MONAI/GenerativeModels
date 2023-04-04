@@ -1,9 +1,22 @@
+# +
+# Copyright (c) MONAI Consortium
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# -
+
 # # AutoencoderKL
 #
-# This demo is a toy example of how to use MONAI's AutoencoderKL. In particular, it uses
+# This demo is a toy example of how to use MONAI's `AutoencoderKL` class. In particular, it uses
 # the Autoencoder with a Kullback-Leibler regularisation as implemented by Rombach et. al [1].
 #
-# [1] Rombach et. al - ["High-Resolution Image Synthesis with Latent Diffusion Models"](https://arxiv.org/pdf/2112.10752.pdf)
+# [1] Rombach et. al "High-Resolution Image Synthesis with Latent Diffusion Models" https://arxiv.org/pdf/2112.10752.pdf
 #
 #
 #
@@ -16,15 +29,10 @@
 #
 #
 
-# +
-# TODO: Add buttom with "Open with Colab"
-# -
-
 # ## Set up environment using Colab
 
-# !pip install -q "monai-weekly[tqdm]==1.1.dev2239"
-# !pip install -q matplotlib
-# !pip install -q einops
+# !python -c "import monai" || pip install -q "monai-weekly[tqdm]"
+# !python -c "import matplotlib" || pip install -q matplotlib
 # %matplotlib inline
 
 # ## Setup imports
@@ -87,7 +95,7 @@ train_transforms = transforms.Compose(
     ]
 )
 train_ds = Dataset(data=train_datalist, transform=train_transforms)
-train_loader = DataLoader(train_ds, batch_size=64, shuffle=True, num_workers=4)
+train_loader = DataLoader(train_ds, batch_size=64, shuffle=True, num_workers=4, persistent_workers=True)
 
 # ### Visualise examples from the training set
 
@@ -110,7 +118,7 @@ val_transforms = transforms.Compose(
     ]
 )
 val_ds = Dataset(data=val_datalist, transform=val_transforms)
-val_loader = DataLoader(val_ds, batch_size=64, shuffle=True, num_workers=4)
+val_loader = DataLoader(val_ds, batch_size=64, shuffle=True, num_workers=4, persistent_workers=True)
 
 # ## Define the network
 
@@ -148,7 +156,6 @@ perceptual_loss.to(device)
 optimizer_g = torch.optim.Adam(params=model.parameters(), lr=1e-4)
 optimizer_d = torch.optim.Adam(params=discriminator.parameters(), lr=5e-4)
 
-# %%
 l1_loss = L1Loss()
 adv_loss = PatchAdversarialLoss(criterion="least_squares")
 adv_weight = 0.01
