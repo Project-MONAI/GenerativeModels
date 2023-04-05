@@ -43,7 +43,7 @@ NoiseSchedules = ComponentStore("NoiseSchedules", "Functions to generate noise s
 
 
 @NoiseSchedules.add_def("linear_beta", "Linear beta schedule")
-def _linear_beta(num_train_timesteps, beta_start=1e-4, beta_end=2e-2):
+def _linear_beta(num_train_timesteps: int, beta_start: float = 1e-4, beta_end: float = 2e-2):
     """
     Linear beta noise schedule function.
 
@@ -59,7 +59,7 @@ def _linear_beta(num_train_timesteps, beta_start=1e-4, beta_end=2e-2):
 
 
 @NoiseSchedules.add_def("scaled_linear_beta", "Scaled linear beta schedule")
-def _scaled_linear_beta(num_train_timesteps, beta_start=1e-4, beta_end=2e-2):
+def _scaled_linear_beta(num_train_timesteps: int, beta_start: float = 1e-4, beta_end: float = 2e-2):
     """
     Scaled linear beta noise schedule function.
 
@@ -75,7 +75,7 @@ def _scaled_linear_beta(num_train_timesteps, beta_start=1e-4, beta_end=2e-2):
 
 
 @NoiseSchedules.add_def("sigmoid_beta", "Sigmoid beta schedule")
-def _sigmoid_beta(num_train_timesteps, beta_start=1e-4, beta_end=2e-2, sig_range=6):
+def _sigmoid_beta(num_train_timesteps: int, beta_start: float = 1e-4, beta_end: float = 2e-2, sig_range: float = 6):
     """
     Sigmoid beta noise schedule function.
 
@@ -92,14 +92,14 @@ def _sigmoid_beta(num_train_timesteps, beta_start=1e-4, beta_end=2e-2, sig_range
     return torch.sigmoid(betas) * (beta_end - beta_start) + beta_start
 
 
-@NoiseSchedules.add_def("cosine_beta", "Cosine beta schedule")
-def _cosine_beta(num_train_timesteps, s=8e-3):
+@NoiseSchedules.add_def("cosine", "Cosine schedule")
+def _cosine_beta(num_train_timesteps: int, s: float = 8e-3):
     """
-    Cosine noise schedule.
+    Cosine noise schedule, see https://arxiv.org/abs/2102.09672
 
     Args:
         num_train_timesteps: number of timesteps
-        s: smoothing factor, default 8e-3
+        s: smoothing factor, default 8e-3 (see referenced paper)
 
     Returns:
         (betas, alphas, alpha_cumprod) values
@@ -129,10 +129,17 @@ class Scheduler(nn.Module):
         def _beta_function(num_train_timesteps, beta_start=1e-4, beta_end=2e-2):
             return torch.linspace(beta_start, beta_end, num_train_timesteps, dtype=torch.float32)
 
-        scheduler = DDPMScheduler(1000, "my_beta_schedule")
+        scheduler = DDPMScheduler(num_train_timesteps=1000, schedule="my_beta_schedule")
 
-    To see what noise functions are available, print the object NoiseSchedules to get a listing of stored objects
-    with their docstring descriptions.
+    All such functions should have an initial positional integer argument `num_train_timesteps` stating the number of
+    timesteps the schedule is for, otherwise any other arguments can be given which will be passed by keyword through
+    the constructor's `schedule_args` value. To see what noise functions are available, print the object NoiseSchedules
+    to get a listing of stored objects with their docstring descriptions.
+
+    Note: in previous versions of the schedulers the argument `schedule_beta` was used to state the beta schedule
+    type, this now replaced with `schedule` and most names used with the previous argument now have "_beta" appended
+    to them, eg. 'schedule_beta="linear"' -> 'schedule="linear_beta"'. The `beta_start` and `beta_end` arguments are
+    still used for some schedules but these are provided as keyword arguments now.
 
     Args:
         num_train_timesteps: number of diffusion steps used to train the model.

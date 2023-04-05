@@ -40,6 +40,13 @@ from generative.networks.schedulers import Scheduler
 
 
 class DDIMPredictionType(StrEnum):
+    """
+    Set of valid prediction type names for the DDIM scheduler's `prediction_type` argument.
+    
+    epsilon: predicting the noise of the diffusion process
+    sample: directly predicting the noisy sample
+    v_prediction: velocity prediction, see section 2.4 https://imagen.research.google/video/paper.pdf
+    """
     EPSILON = "epsilon"
     SAMPLE = "sample"
     V_PREDICTION = "v_prediction"
@@ -53,10 +60,7 @@ class DDIMScheduler(Scheduler):
 
     Args:
         num_train_timesteps: number of diffusion steps used to train the model.
-        beta_start: the starting `beta` value of inference.
-        beta_end: the final `beta` value.
-        beta_schedule: {``"linear"``, ``"scaled_linear"``}
-            the beta schedule, a mapping from a beta range to a sequence of betas for stepping the model.
+        schedule: member of NoiseSchedules, name of noise schedule function in component store
         clip_sample: option to clip predicted sample between -1 and 1 for numerical stability.
         set_alpha_to_one: each diffusion step uses the value of alphas product at that step and at the previous one.
             For the final step there is no previous alpha. When this option is `True` the previous alpha product is
@@ -64,10 +68,9 @@ class DDIMScheduler(Scheduler):
         steps_offset: an offset added to the inference steps. You can use a combination of `steps_offset=1` and
             `set_alpha_to_one=False`, to make the last step use step 0 for the previous alpha product, as done in
             stable diffusion.
-        prediction_type: {``"epsilon"``, ``"sample"``, ``"v_prediction"``}
-            prediction type of the scheduler function, one of `epsilon` (predicting the noise of the diffusion
-            process), `sample` (directly predicting the noisy sample`) or `v_prediction` (see section 2.4
-            https://imagen.research.google/video/paper.pdf)
+        prediction_type: member of DDPMPredictionType
+        schedule_args: arguments to pass to the schedule function
+        
     """
 
     def __init__(

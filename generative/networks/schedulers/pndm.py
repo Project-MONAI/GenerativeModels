@@ -42,6 +42,12 @@ from generative.networks.schedulers import Scheduler
 
 
 class PNDMPredictionType(StrEnum):
+    """
+    Set of valid prediction type names for the PNDM scheduler's `prediction_type` argument.
+    
+    epsilon: predicting the noise of the diffusion process
+    v_prediction: velocity prediction, see section 2.4 https://imagen.research.google/video/paper.pdf
+    """
     EPSILON = "epsilon"
     V_PREDICTION = "v_prediction"
 
@@ -54,10 +60,7 @@ class PNDMScheduler(Scheduler):
 
     Args:
         num_train_timesteps: number of diffusion steps used to train the model.
-        beta_start: the starting `beta` value of inference.
-        beta_end: the final `beta` value.
-        beta_schedule: {``"linear"``, ``"scaled_linear"``}
-            the beta schedule, a mapping from a beta range to a sequence of betas for stepping the model.
+        schedule: member of NoiseSchedules, name of noise schedule function in component store
         skip_prk_steps:
             allows the scheduler to skip the Runge-Kutta steps that are defined in the original paper as being required
             before plms step.
@@ -65,14 +68,12 @@ class PNDMScheduler(Scheduler):
             each diffusion step uses the value of alphas product at that step and at the previous one. For the final
             step there is no previous alpha. When this option is `True` the previous alpha product is fixed to `1`,
             otherwise it uses the value of alpha at step 0.
-        prediction_type: {``"epsilon"``, ``"v_prediction"``}
-            prediction type of the scheduler function, one of `epsilon` (predicting the noise of the diffusion
-            process) or `v_prediction` (see section 2.4
-            https://imagen.research.google/video/paper.pdf)
+        prediction_type: member of DDPMPredictionType
         steps_offset:
             an offset added to the inference steps. You can use a combination of `offset=1` and
             `set_alpha_to_one=False`, to make the last step use step 0 for the previous alpha product, as done in
             stable diffusion.
+        schedule_args: arguments to pass to the schedule function
     """
 
     def __init__(

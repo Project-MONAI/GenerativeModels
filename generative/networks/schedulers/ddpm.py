@@ -40,6 +40,10 @@ from generative.networks.schedulers import Scheduler
 
 
 class DDPMVarianceType(StrEnum):
+    """
+    Valid names for DDPM Scheduler's `variance_type` argument. Options to clip the variance used when adding noise 
+    to the denoised sample.
+    """
     FIXED_SMALL = "fixed_small"
     FIXED_LARGE = "fixed_large"
     LEARNED = "learned"
@@ -47,6 +51,13 @@ class DDPMVarianceType(StrEnum):
 
 
 class DDPMPredictionType(StrEnum):
+    """
+    Set of valid prediction type names for the DDPM scheduler's `prediction_type` argument.
+    
+    epsilon: predicting the noise of the diffusion process
+    sample: directly predicting the noisy sample
+    v_prediction: velocity prediction, see section 2.4 https://imagen.research.google/video/paper.pdf
+    """
     EPSILON = "epsilon"
     SAMPLE = "sample"
     V_PREDICTION = "v_prediction"
@@ -60,17 +71,11 @@ class DDPMScheduler(Scheduler):
 
     Args:
         num_train_timesteps: number of diffusion steps used to train the model.
-        beta_start: the starting `beta` value of inference.
-        beta_end: the final `beta` value.
-        beta_schedule: member of BetaSchedules
-            the beta schedule, a mapping from a beta range to a sequence of betas for stepping the model.
-        variance_type: member of VarianceType
-            options to clip the variance used when adding noise to the denoised sample.
+        schedule: member of NoiseSchedules, name of noise schedule function in component store
+        variance_type: member of DDPMVarianceType
         clip_sample: option to clip predicted sample between -1 and 1 for numerical stability.
-        prediction_type: {``"epsilon"``, ``"sample"``, ``"v_prediction"``}
-            prediction type of the scheduler function, one of `epsilon` (predicting the noise of the diffusion
-            process), `sample` (directly predicting the noisy sample`) or `v_prediction` (see section 2.4
-            https://imagen.research.google/video/paper.pdf)
+        prediction_type: member of DDPMPredictionType
+        schedule_args: arguments to pass to the schedule function
     """
 
     def __init__(
