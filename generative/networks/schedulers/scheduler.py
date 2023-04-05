@@ -95,7 +95,7 @@ def _sigmoid_beta(num_train_timesteps, beta_start=1e-4, beta_end=2e-2, sig_range
 @NoiseSchedules.add_def("cosine_beta", "Cosine beta schedule")
 def _cosine_beta(num_train_timesteps, s=8e-3):
     """
-    Cosine noise schedule returning.
+    Cosine noise schedule.
 
     Args:
         num_train_timesteps: number of timesteps
@@ -130,7 +130,10 @@ class Scheduler(nn.Module):
             return torch.linspace(beta_start, beta_end, num_train_timesteps, dtype=torch.float32)
 
         scheduler = DDPMScheduler(1000, "my_beta_schedule")
-        
+
+    To see what noise functions are available, print the object NoiseSchedules to get a listing of stored objects
+    with their docstring descriptions.
+
     Args:
         num_train_timesteps: number of diffusion steps used to train the model.
         schedule: member of NoiseSchedules,
@@ -138,7 +141,7 @@ class Scheduler(nn.Module):
         schedule_args: arguments to pass to the schedule function
     """
 
-    def __init__(self, num_train_timesteps: int = 1000, schedule: str = "linear", **schedule_args) -> None:
+    def __init__(self, num_train_timesteps: int = 1000, schedule: str = "linear_beta", **schedule_args) -> None:
         super().__init__()
         schedule_args["num_train_timesteps"] = num_train_timesteps
         noise_sched = NoiseSchedules[schedule](**schedule_args)

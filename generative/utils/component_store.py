@@ -10,6 +10,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+from textwrap import dedent, indent
 from collections import namedtuple
 from keyword import iskeyword
 from typing import TypeVar, Callable, Any, Dict, Iterable
@@ -25,7 +26,27 @@ def is_variable(name):
 class ComponentStore:
     """
     Represents a storage object for other objects (specifically functions) keyed to a name with a description.
+
     These objects act as global named places for storing components for objects parameterised by component names.
+    Typically this is functions although other objects can be added. Printing a component store will produce a
+    list of members along with their docstring information if present.
+
+    Example:
+
+    .. code-block:: python
+
+        TestStore = ComponentStore("Test Store", "A test store for demo purposes")
+
+        @TestStore.add_def("my_func_name", "Some description of your function")
+        def _my_func(a, b):
+            '''A description of your function here.'''
+            return a * b
+
+        print(TestStore)  # will print out name, description, and 'my_func_name' with the docstring
+
+        func = TestStore["my_func_name"]
+        result = func(7, 6)
+
     """
 
     _Component = namedtuple("Component", ("description", "value"))  # internal value pair
@@ -70,7 +91,13 @@ class ComponentStore:
     def __str__(self):
         result = f"Component Store '{self.name}': {self.description}\nAvailable components:"
         for k, v in self.components.items():
-            result += f"\n  {k}: {v.description}"
+            result += f"\n* {k}:"
+
+            if hasattr(v.value, "__doc__"):
+                doc = indent(dedent(v.value.__doc__.lstrip("\n").rstrip()), "    ")
+                result += f"\n{doc}\n"
+            else:
+                result += f" {v.description}"
 
         return result
 

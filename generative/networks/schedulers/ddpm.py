@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import numpy as np
 import torch
-import torch.nn as nn
 
 from monai.utils import StrEnum
 
@@ -81,9 +80,9 @@ class DDPMScheduler(Scheduler):
         variance_type: str = DDPMVarianceType.FIXED_SMALL,
         clip_sample: bool = True,
         prediction_type: str = DDPMPredictionType.EPSILON,
-        **schedule_args
+        **schedule_args,
     ) -> None:
-        super().__init__(num_train_timesteps, schedule,**schedule_args)
+        super().__init__(num_train_timesteps, schedule, **schedule_args)
 
         if variance_type not in DDPMVarianceType.__members__.values():
             raise ValueError("Argument `variance_type` must be a member of `DDPMVarianceType`")

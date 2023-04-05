@@ -35,7 +35,6 @@ from typing import Any
 
 import numpy as np
 import torch
-import torch.nn as nn
 
 from monai.utils import StrEnum
 
@@ -84,9 +83,9 @@ class PNDMScheduler(Scheduler):
         set_alpha_to_one: bool = False,
         prediction_type: str = PNDMPredictionType.EPSILON,
         steps_offset: int = 0,
-        **schedule_args
+        **schedule_args,
     ) -> None:
-        super().__init__(num_train_timesteps,schedule,**schedule_args)
+        super().__init__(num_train_timesteps, schedule, **schedule_args)
 
         if prediction_type not in PNDMPredictionType.__members__.values():
             raise ValueError(f"Argument `prediction_type` must be a member of PNDMPredictionType")

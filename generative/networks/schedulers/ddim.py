@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import numpy as np
 import torch
-import torch.nn as nn
 
 from monai.utils import StrEnum
 
@@ -79,15 +78,15 @@ class DDIMScheduler(Scheduler):
         set_alpha_to_one: bool = True,
         steps_offset: int = 0,
         prediction_type: str = DDIMPredictionType.EPSILON,
-        **schedule_args
+        **schedule_args,
     ) -> None:
-        super().__init__(num_train_timesteps,schedule,**schedule_args)
+        super().__init__(num_train_timesteps, schedule, **schedule_args)
 
         if prediction_type not in DDIMPredictionType.__members__.values():
             raise ValueError(f"Argument `prediction_type` must be a member of DDIMPredictionType")
 
         self.prediction_type = prediction_type
- 
+
         # At every step in ddim, we are looking into the previous alphas_cumprod
         # For the final step, there is no previous alphas_cumprod because we are already at 0
         # `set_alpha_to_one` decides whether we set this parameter simply to one or
@@ -185,11 +184,11 @@ class DDIMScheduler(Scheduler):
         # 3. compute predicted original sample from predicted noise also called
         # "predicted x_0" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
         if self.prediction_type == DDIMPredictionType.EPSILON:
-            pred_original_sample = (sample - (beta_prod_t ** 0.5) * model_output) / (alpha_prod_t ** 0.5)
+            pred_original_sample = (sample - (beta_prod_t**0.5) * model_output) / (alpha_prod_t**0.5)
             pred_epsilon = model_output
         elif self.prediction_type == DDIMPredictionType.SAMPLE:
             pred_original_sample = model_output
-            pred_epsilon = (sample - (alpha_prod_t ** 0.5) * pred_original_sample) / (beta_prod_t ** 0.5)
+            pred_epsilon = (sample - (alpha_prod_t**0.5) * pred_original_sample) / (beta_prod_t**0.5)
         elif self.prediction_type == DDIMPredictionType.V_PREDICTION:
             pred_original_sample = (alpha_prod_t**0.5) * sample - (beta_prod_t**0.5) * model_output
             pred_epsilon = (alpha_prod_t**0.5) * model_output + (beta_prod_t**0.5) * sample
@@ -201,13 +200,13 @@ class DDIMScheduler(Scheduler):
         # 5. compute variance: "sigma_t(η)" -> see formula (16)
         # σ_t = sqrt((1 − α_t−1)/(1 − α_t)) * sqrt(1 − α_t/α_t−1)
         variance = self._get_variance(timestep, prev_timestep)
-        std_dev_t = eta * variance ** 0.5
+        std_dev_t = eta * variance**0.5
 
         # 6. compute "direction pointing to x_t" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
         pred_sample_direction = (1 - alpha_prod_t_prev - std_dev_t**2) ** 0.5 * pred_epsilon
 
         # 7. compute x_t-1 without "random noise" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
-        pred_prev_sample = alpha_prod_t_prev ** 0.5 * pred_original_sample + pred_sample_direction
+        pred_prev_sample = alpha_prod_t_prev**0.5 * pred_original_sample + pred_sample_direction
 
         if eta > 0:
             # randn_like does not support generator https://github.com/pytorch/pytorch/issues/27072
@@ -278,4 +277,3 @@ class DDIMScheduler(Scheduler):
         pred_post_sample = alpha_prod_t_prev ** (0.5) * pred_original_sample + pred_sample_direction
 
         return pred_post_sample, pred_original_sample
-
