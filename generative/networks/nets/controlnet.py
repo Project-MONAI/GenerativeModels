@@ -18,15 +18,16 @@ from monai.networks.blocks import Convolution
 from monai.utils import ensure_tuple_rep
 from torch import nn
 
-from generative.networks.nets.diffusion_model_unet import get_mid_block, get_down_block, get_timestep_embedding
+from generative.networks.nets.diffusion_model_unet import get_down_block, get_mid_block, get_timestep_embedding
+
 
 def zero_module(module):
     for p in module.parameters():
         nn.init.zeros_(p)
     return module
 
-class ControlNet(nn.Module):
 
+class ControlNet(nn.Module):
     def __init__(
         self,
         spatial_dims: int,
@@ -126,7 +127,6 @@ class ControlNet(nn.Module):
         self.down_blocks = nn.ModuleList([])
         output_channel = num_channels[0]
 
-
         controlnet_block = Convolution(
             spatial_dims=spatial_dims,
             in_channels=output_channel,
@@ -190,8 +190,6 @@ class ControlNet(nn.Module):
                 )
                 controlnet_block = zero_module(controlnet_block)
                 self.controlnet_down_blocks.append(controlnet_block)
-
-
 
         # mid
         mid_block_channel = num_channels[-1]
@@ -275,7 +273,6 @@ class ControlNet(nn.Module):
 
         # 5. mid
         h = self.middle_block(hidden_states=h, temb=emb, context=context)
-
 
         # 6. Control net blocks
         controlnet_down_block_res_samples = ()
