@@ -49,7 +49,6 @@
 import os
 import tempfile
 import time
-import os
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -61,8 +60,6 @@ from monai.apps import DecathlonDataset
 from monai.config import print_config
 from monai.data import DataLoader
 from monai.utils import set_determinism
-from torch.cuda.amp import GradScaler, autocast
-from tqdm import tqdm
 from sklearn.linear_model import LogisticRegression
 
 from generative.inferers import DiffusionInferer
@@ -80,7 +77,6 @@ print_config()
 # %% jupyter={"outputs_hidden": false}
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
 root_dir = tempfile.mkdtemp() if directory is None else directory
-root_dir = '/home/s2086085/pedro_idcom/experiment_data'
 
 # %% [markdown]
 # ## Set deterministic training for reproducibility
@@ -100,8 +96,8 @@ set_determinism(42)
 #
 # 1. `LoadImaged` loads the brain images from files.
 # 2. `EnsureChannelFirstd` ensures the original data to construct "channel first" shape.
-# 3.  The first `Lambdad` transform chooses the first channel of the image, which is the T1-weighted image.
-# 4. `Spacingd` resamples the image to the specified voxel spacing, we use 3,3,2 mm to match the original paper.
+# 3.  The first `Lambdad` transform chooses the first channel of the image, which is the Flair image.
+# 4. `Spacingd` resamples the image to the specified voxel spacing, we use 3,3,2 mm.
 # 5. `ScaleIntensityRangePercentilesd` Apply range scaling to a numpy array based on the intensity distribution of the input. Transform is very common with MRI images.
 # 6. `RandSpatialCropd` randomly crop out a 2D patch from the 3D image.
 # 6. The last `Lambdad` transform obtains `slice_label` by summing up the label to have a single scalar value (healthy `=1` or not `=2` ).
@@ -114,8 +110,7 @@ train_transforms = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image", "label"]),
         transforms.EnsureChannelFirstd(keys=["image", "label"]),
-        transforms.Lambdad(keys=["image"], func=lambda x: x[channel, :, :, :]),
-        transforms.AddChanneld(keys=["image"]),
+        transforms.Lambdad(keys=["image"], func=lambda x: x[channel, None, :, :, :]),
         transforms.EnsureTyped(keys=["image", "label"]),
         transforms.Orientationd(keys=["image", "label"], axcodes="RAS"),
         transforms.Spacingd(keys=["image", "label"], pixdim=(3.0, 3.0, 2.0), mode=("bilinear", "nearest")),
@@ -138,7 +133,7 @@ train_ds = DecathlonDataset(
     section="training",
     cache_rate=1.0,  # you may need a few Gb of RAM... Set to 0 otherwise
     num_workers=4,
-    download=False,  # Set download to True if the dataset hasnt been downloaded yet
+    download=True,  # Set download to True if the dataset hasnt been downloaded yet
     seed=0,
     transform=train_transforms,
 )
@@ -152,7 +147,7 @@ val_ds = DecathlonDataset(
     section="validation",
     cache_rate=1,  # you may need a few Gb of RAM... Set to 0 otherwise
     num_workers=4,
-    download=False,  # Set download to True if the dataset hasnt been downloaded yet
+    download=True,  # Set download to True if the dataset hasnt been downloaded yet
     seed=0,
     transform=train_transforms,
 )
@@ -172,33 +167,34 @@ print(f'Validation Image shape {val_ds[0]["image"].shape}')
 # The `embedding_dimension` parameter controls the dimension of the latent dimension learned by the semantic encoder.
 #
 
+
 # %% jupyter={"outputs_hidden": false}
 class Diffusion_AE(torch.nn.Module):
-    def __init__(self, embedding_dimension = 64):
+    def __init__(self, embedding_dimension=64):
         super().__init__()
         self.unet = DiffusionModelUNet(
-                    spatial_dims=2,
-                    in_channels=1,
-                    out_channels=1,
-                    num_channels=(128, 256, 256),
-                    attention_levels=(False, True, True),
-                    num_res_blocks=1,
-                    num_head_channels=64,
-                    with_conditioning=True,
-                    cross_attention_dim=1,
-                )
+            spatial_dims=2,
+            in_channels=1,
+            out_channels=1,
+            num_channels=(128, 256, 256),
+            attention_levels=(False, True, True),
+            num_res_blocks=1,
+            num_head_channels=64,
+            with_conditioning=True,
+            cross_attention_dim=1,
+        )
         self.semantic_encoder = torchvision.models.resnet18()
         self.semantic_encoder.conv1 = torch.nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.semantic_encoder.fc = torch.nn.Linear(512, embedding_dimension)
-        
-        
+
     def forward(self, xt, x_cond, t):
         latent = self.semantic_encoder(x_cond)
         noise_pred = self.unet(x=xt, timesteps=t, context=latent.unsqueeze(2))
         return noise_pred, latent
-    
+
+
 device = torch.device("cuda:2")
-model = Diffusion_AE(embedding_dimension = 512).to(device)
+model = Diffusion_AE(embedding_dimension=512).to(device)
 scheduler = DDIMScheduler(num_train_timesteps=1000)
 optimizer = torch.optim.Adam(params=model.parameters(), lr=1e-5)
 inferer = DiffusionInferer(scheduler)
@@ -208,7 +204,9 @@ inferer = DiffusionInferer(scheduler)
 # ## Training a diffusion model and semantic encoder
 
 # %%
-n_iterations = 1e4 # training for longer helps a lot with reconstruction quality, even if the loss is already low
+n_iterations = (
+    1e4  # training for longer (1e4 ~ 3h) helps a lot with reconstruction quality, even if the loss is already low
+)
 batch_size = 64
 val_interval = 100
 iter_loss_list, val_iter_loss_list = [], []
@@ -229,19 +227,21 @@ while iteration < n_iterations:
         iteration += 1
         model.train()
         optimizer.zero_grad(set_to_none=True)
-        images= batch["image"].to(device)        
+        images = batch["image"].to(device)
         noise = torch.randn_like(images).to(device)
         # Create timesteps
         timesteps = torch.randint(0, inferer.scheduler.num_train_timesteps, (batch_size,)).to(device).long()
         # Get model prediction
         # cross attention expects shape [batch size, sequence length, channels], we are use channels = latent dimension and sequence length = 1
         latent = model.semantic_encoder(images)
-        noise_pred = inferer(inputs=images, diffusion_model=model.unet, noise=noise, timesteps=timesteps, condition = latent.unsqueeze(2))
+        noise_pred = inferer(
+            inputs=images, diffusion_model=model.unet, noise=noise, timesteps=timesteps, condition=latent.unsqueeze(2)
+        )
         loss = F.mse_loss(noise_pred.float(), noise.float())
 
         loss.backward()
         optimizer.step()
-        
+
         iter_loss += loss.item()
         sys.stdout.write(f"Iteration {iteration}/{n_iterations} - train Loss {loss.item():.4f}" + "\r")
         sys.stdout.flush()
@@ -255,15 +255,23 @@ while iteration < n_iterations:
                     timesteps = torch.randint(0, inferer.scheduler.num_train_timesteps, (batch_size,)).to(device).long()
                     noise = torch.randn_like(images).to(device)
                     latent = model.semantic_encoder(images)
-                    noise_pred = inferer(inputs=images, diffusion_model=model.unet, noise=noise, timesteps=timesteps, condition = latent.unsqueeze(2))
+                    noise_pred = inferer(
+                        inputs=images,
+                        diffusion_model=model.unet,
+                        noise=noise,
+                        timesteps=timesteps,
+                        condition=latent.unsqueeze(2),
+                    )
                     val_loss = F.mse_loss(noise_pred.float(), noise.float())
-                    
+
                 val_iter_loss += val_loss.item()
             iter_loss_list.append(iter_loss / val_interval)
             val_iter_loss_list.append(val_iter_loss / (val_step + 1))
             iterations.append(iteration)
             iter_loss = 0
-            print(f"Iteration {iteration} - Interval Loss {iter_loss_list[-1]:.4f}, Interval Loss Val {val_iter_loss_list[-1]:.4f}")
+            print(
+                f"Iteration {iteration} - Interval Loss {iter_loss_list[-1]:.4f}, Interval Loss Val {val_iter_loss_list[-1]:.4f}"
+            )
 
 
 total_time = time.time() - total_start
@@ -290,16 +298,30 @@ plt.show()
 # %%
 scheduler.set_timesteps(num_inference_steps=100)
 batch = next(iter(val_loader))
-images = batch["image"].to(device)        
+images = batch["image"].to(device)
 noise = torch.randn_like(images).to(device)
 latent = model.semantic_encoder(images)
-reconstruction = inferer.sample(input_noise=noise, diffusion_model=model.unet, scheduler=scheduler, save_intermediates=False, conditioning=latent.unsqueeze(2))
+reconstruction = inferer.sample(
+    input_noise=noise,
+    diffusion_model=model.unet,
+    scheduler=scheduler,
+    save_intermediates=False,
+    conditioning=latent.unsqueeze(2),
+)
 
 # %%
-grid = torchvision.utils.make_grid(torch.cat([images[:8],reconstruction[:8]]), nrow=8, padding=2, normalize=True, range=None, scale_each=False, pad_value=0)
-plt.figure(figsize=(15,5))
-plt.imshow(grid.detach().cpu().numpy()[0], cmap= 'gray')
-plt.axis('off')
+grid = torchvision.utils.make_grid(
+    torch.cat([images[:8], reconstruction[:8]]),
+    nrow=8,
+    padding=2,
+    normalize=True,
+    range=None,
+    scale_each=False,
+    pad_value=0,
+)
+plt.figure(figsize=(15, 5))
+plt.imshow(grid.detach().cpu().numpy()[0], cmap="gray")
+plt.axis("off")
 
 # %% [markdown]
 # ## Evaluate Latent Space
@@ -311,15 +333,17 @@ plt.axis('off')
 # get latent space of training set
 latents_train = []
 classes_train = []
-for i in range(15): # 15 slices from each volume
+# 15 slices from each volume
+nb_slices_per_volume = 15
+for _ in range(nb_slices_per_volume):
     for batch in train_loader:
         images = batch["image"].to(device)
         latent = model.semantic_encoder(images)
         latents_train.append(latent.detach().cpu().numpy())
         classes_train.append(batch["slice_label"].numpy())
-    
-latents_train = np.concatenate(latents_train, axis=0)   
-classes_train = np.concatenate(classes_train, axis=0)   
+
+latents_train = np.concatenate(latents_train, axis=0)
+classes_train = np.concatenate(classes_train, axis=0)
 
 # get latent space of validation set
 latents_val = []
@@ -333,10 +357,10 @@ latents_val = np.concatenate(latents_val, axis=0)
 classes_val = np.concatenate(classes_val, axis=0)
 
 # %%
-latents_train.shape , classes_train.shape
+latents_train.shape, classes_train.shape
 
 # %%
-clf = LogisticRegression(solver = 'newton-cg', random_state=0).fit(latents_train, classes_train)
+clf = LogisticRegression(solver="newton-cg", random_state=0).fit(latents_train, classes_train)
 clf.score(latents_train, classes_train), clf.score(latents_val, classes_val)
 
 # %%
@@ -352,21 +376,39 @@ s = -1.5
 
 scheduler.set_timesteps(num_inference_steps=100)
 batch = next(iter(val_loader))
-images = batch["image"].to(device)        
+images = batch["image"].to(device)
 noise = torch.randn_like(images).to(device)
 
 latent = model.semantic_encoder(images)
 
 latent_manip = latent + s * w[0]
 
-reconstruction = inferer.sample(input_noise=noise, diffusion_model=model.unet, scheduler=scheduler, save_intermediates=False, conditioning=latent.unsqueeze(1))
-manipulated_images = inferer.sample(input_noise=noise, diffusion_model=model.unet, scheduler=scheduler, save_intermediates=False, conditioning=latent_manip.unsqueeze(1))
+reconstruction = inferer.sample(
+    input_noise=noise,
+    diffusion_model=model.unet,
+    scheduler=scheduler,
+    save_intermediates=False,
+    conditioning=latent.unsqueeze(1),
+)
+manipulated_images = inferer.sample(
+    input_noise=noise,
+    diffusion_model=model.unet,
+    scheduler=scheduler,
+    save_intermediates=False,
+    conditioning=latent_manip.unsqueeze(1),
+)
 
 # %%
 nb = 8
-grid = torchvision.utils.make_grid(torch.cat([images[:nb], reconstruction[:nb], manipulated_images[:nb]]), 
-                                   nrow=8,  normalize=False, range=None, scale_each=False, pad_value=0)
-plt.figure(figsize=(15,5))
-plt.imshow(grid.detach().cpu().numpy()[0], cmap= 'gray')
-plt.axis('off')
-plt.title(f"Original, Reconstruction, Manipulated s = {s}");
+grid = torchvision.utils.make_grid(
+    torch.cat([images[:nb], reconstruction[:nb], manipulated_images[:nb]]),
+    nrow=8,
+    normalize=False,
+    range=None,
+    scale_each=False,
+    pad_value=0,
+)
+plt.figure(figsize=(15, 5))
+plt.imshow(grid.detach().cpu().numpy()[0], cmap="gray")
+plt.axis("off")
+plt.title(f"Original, Reconstruction, Manipulated s = {s}")
