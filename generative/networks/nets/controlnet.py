@@ -126,10 +126,18 @@ class ControlNet(nn.Module):
         self.down_blocks = nn.ModuleList([])
         output_channel = num_channels[0]
 
-        # TODO: add control net down blocks
-        # controlnet_block = nn.Conv2d(output_channel, output_channel, kernel_size=1)
-        # controlnet_block = zero_module(controlnet_block)
-        # self.controlnet_down_blocks.append(controlnet_block)
+
+        controlnet_block = Convolution(
+            spatial_dims=spatial_dims,
+            in_channels=output_channel,
+            out_channels=output_channel,
+            strides=1,
+            kernel_size=1,
+            padding=0,
+            conv_only=True,
+        )
+        controlnet_block = zero_module(controlnet_block.conv)
+        self.controlnet_down_blocks.append(controlnet_block)
 
         for i in range(len(num_channels)):
             input_channel = output_channel
@@ -157,22 +165,40 @@ class ControlNet(nn.Module):
 
             self.down_blocks.append(down_block)
 
-            # TODO: add control net down blocks
-            # for _ in range(layers_per_block):
-            #     controlnet_block = nn.Conv2d(output_channel, output_channel, kernel_size=1)
-            #     controlnet_block = zero_module(controlnet_block)
-            #     self.controlnet_down_blocks.append(controlnet_block)
+            for _ in range(num_res_blocks[i]):
+                controlnet_block = Convolution(
+                    spatial_dims=spatial_dims,
+                    in_channels=output_channel,
+                    out_channels=output_channel,
+                    strides=1,
+                    kernel_size=1,
+                    padding=0,
+                    conv_only=True,
+                )
+                controlnet_block = zero_module(controlnet_block)
+                self.controlnet_down_blocks.append(controlnet_block)
             #
-            # if not is_final_block:
-            #     controlnet_block = nn.Conv2d(output_channel, output_channel, kernel_size=1)
-            #     controlnet_block = zero_module(controlnet_block)
-            #     self.controlnet_down_blocks.append(controlnet_block)
+            if not is_final_block:
+                controlnet_block = Convolution(
+                    spatial_dims=spatial_dims,
+                    in_channels=output_channel,
+                    out_channels=output_channel,
+                    strides=1,
+                    kernel_size=1,
+                    padding=0,
+                    conv_only=True,
+                )
+                controlnet_block = zero_module(controlnet_block)
+                self.controlnet_down_blocks.append(controlnet_block)
+
 
 
         # mid
+        mid_block_channel = num_channels[-1]
+
         self.middle_block = get_mid_block(
             spatial_dims=spatial_dims,
-            in_channels=num_channels[-1],
+            in_channels=mid_block_channel,
             temb_channels=time_embed_dim,
             norm_num_groups=norm_num_groups,
             norm_eps=norm_eps,
@@ -184,10 +210,17 @@ class ControlNet(nn.Module):
             use_flash_attention=use_flash_attention,
         )
 
-        # TODO: Add control net mid block
-        # controlnet_block = nn.Conv2d(mid_block_channel, mid_block_channel, kernel_size=1)
-        # controlnet_block = zero_module(controlnet_block)
-        # self.controlnet_mid_block = controlnet_block
+        controlnet_block = Convolution(
+            spatial_dims=spatial_dims,
+            in_channels=output_channel,
+            out_channels=output_channel,
+            strides=1,
+            kernel_size=1,
+            padding=0,
+            conv_only=True,
+        )
+        controlnet_block = zero_module(controlnet_block)
+        self.controlnet_mid_block = controlnet_block
 
     def forward(
         self,
@@ -197,7 +230,7 @@ class ControlNet(nn.Module):
         conditioning_scale: float = 1.0,
         context: torch.Tensor | None = None,
         class_labels: torch.Tensor | None = None,
-    ) -> tuple(tuple[torch.Tensor], torch.Tensor):
+    ) -> tuple[tuple[torch.Tensor], torch.Tensor]:
         """
         Args:
             x: input tensor (N, C, SpatialDims).
