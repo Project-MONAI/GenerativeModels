@@ -44,21 +44,17 @@ from generative.networks.nets.diffusion_model_unet import get_down_block, get_mi
 
 class ControlNetConditioningEmbedding(nn.Module):
     """
-    Network to embed the conditioning into a latent space.
+    Network to encode the conditioning into a latent space.
     """
 
     def __init__(
-        self,
-        spatial_dims: int,
-        conditioning_embedding_channels: int,
-        conditioning_channels: int = 3,
-        num_channels: Sequence[int] = (16, 32, 96, 256),
+        self, spatial_dims: int, in_channels: int, out_channels: int, num_channels: Sequence[int] = (16, 32, 96, 256)
     ):
         super().__init__()
 
         self.conv_in = Convolution(
             spatial_dims=spatial_dims,
-            in_channels=conditioning_channels,
+            in_channels=in_channels,
             out_channels=num_channels[0],
             strides=1,
             kernel_size=3,
@@ -99,7 +95,7 @@ class ControlNetConditioningEmbedding(nn.Module):
             Convolution(
                 spatial_dims=spatial_dims,
                 in_channels=num_channels[-1],
-                out_channels=conditioning_embedding_channels,
+                out_channels=out_channels,
                 strides=1,
                 kernel_size=3,
                 padding=1,
@@ -148,7 +144,8 @@ class ControlNet(nn.Module):
             classes.
         upcast_attention: if True, upcast attention operations to full precision.
         use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
-        conditioning_embedding_num_channel: number of channels for the conditioning embedding.
+        conditioning_embedding_in_channels: number of input channels for the conditioning embedding.
+        conditioning_embedding_num_channels: number of channels for the blocks in the conditioning embedding.
     """
 
     def __init__(
@@ -168,7 +165,8 @@ class ControlNet(nn.Module):
         num_class_embeds: int | None = None,
         upcast_attention: bool = False,
         use_flash_attention: bool = False,
-        conditioning_embedding_num_channel: Sequence[int] | None = (16, 32, 96, 256),
+        conditioning_embedding_in_channels: int = 1,
+        conditioning_embedding_num_channels: Sequence[int] | None = (16, 32, 96, 256),
     ) -> None:
         super().__init__()
         if with_conditioning is True and cross_attention_dim is None:
@@ -242,11 +240,15 @@ class ControlNet(nn.Module):
 
         # control net conditioning embedding
         self.controlnet_cond_embedding = ControlNetConditioningEmbedding(
-            conditioning_embedding_channels=num_channels[0], num_channels=conditioning_embedding_num_channel
+            spatial_dims=spatial_dims,
+            in_channels=conditioning_embedding_in_channels,
+            num_channels=conditioning_embedding_num_channels,
+            out_channels=num_channels[0],
         )
 
         # down
         self.down_blocks = nn.ModuleList([])
+        self.controlnet_down_blocks = nn.ModuleList([])
         output_channel = num_channels[0]
 
         controlnet_block = Convolution(
