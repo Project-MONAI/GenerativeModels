@@ -32,11 +32,7 @@ class MMDMetric(Metric):
         y_pred_transform: Callable to transform the y_pred tensor before computing the metric.
     """
 
-    def __init__(
-        self,
-        y_transform: Callable | None = None,
-        y_pred_transform: Callable | None = None,
-    ) -> None:
+    def __init__(self, y_transform: Callable | None = None, y_pred_transform: Callable | None = None) -> None:
         super().__init__()
 
         self.y_transform = y_transform
