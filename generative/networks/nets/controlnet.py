@@ -8,17 +8,116 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# =========================================================================
+# Adapted from https://github.com/huggingface/diffusers
+# which has the following license:
+# https://github.com/huggingface/diffusers/blob/main/LICENSE
+#
+# Copyright 2022 UC Berkeley Team and The HuggingFace Team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# =========================================================================
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 
 import torch
+import torch.nn.functional as F
 from monai.networks.blocks import Convolution
 from monai.utils import ensure_tuple_rep
 from torch import nn
 
 from generative.networks.nets.diffusion_model_unet import get_down_block, get_mid_block, get_timestep_embedding
+
+
+class ControlNetConditioningEmbedding(nn.Module):
+    """
+    Network to embed the conditioning into a latent space.
+    """
+
+    def __init__(
+        self,
+        spatial_dims: int,
+        conditioning_embedding_channels: int,
+        conditioning_channels: int = 3,
+        num_channels: Sequence[int] = (16, 32, 96, 256),
+    ):
+        super().__init__()
+
+        self.conv_in = Convolution(
+            spatial_dims=spatial_dims,
+            in_channels=conditioning_channels,
+            out_channels=num_channels[0],
+            strides=1,
+            kernel_size=3,
+            padding=1,
+            conv_only=True,
+        )
+
+        self.blocks = nn.ModuleList([])
+
+        for i in range(len(num_channels) - 1):
+            channel_in = num_channels[i]
+            channel_out = num_channels[i + 1]
+            self.blocks.append(
+                Convolution(
+                    spatial_dims=spatial_dims,
+                    in_channels=channel_in,
+                    out_channels=channel_in,
+                    strides=1,
+                    kernel_size=3,
+                    padding=1,
+                    conv_only=True,
+                )
+            )
+
+            self.blocks.append(
+                Convolution(
+                    spatial_dims=spatial_dims,
+                    in_channels=channel_in,
+                    out_channels=channel_out,
+                    strides=2,
+                    kernel_size=3,
+                    padding=1,
+                    conv_only=True,
+                )
+            )
+
+        self.conv_out = zero_module(
+            Convolution(
+                spatial_dims=spatial_dims,
+                in_channels=num_channels[-1],
+                out_channels=conditioning_embedding_channels,
+                strides=1,
+                kernel_size=3,
+                padding=1,
+                conv_only=True,
+            )
+        )
+
+    def forward(self, conditioning):
+        embedding = self.conv_in(conditioning)
+        embedding = F.silu(embedding)
+
+        for block in self.blocks:
+            embedding = block(embedding)
+            embedding = F.silu(embedding)
+
+        embedding = self.conv_out(embedding)
+
+        return embedding
 
 
 def zero_module(module):
@@ -28,6 +127,30 @@ def zero_module(module):
 
 
 class ControlNet(nn.Module):
+    """
+    Control network for diffusion models based on Zhang and Agrawala "Adding Conditional Control to Text-to-Image
+    Diffusion Models" (https://arxiv.org/abs/2302.05543)
+
+    Args:
+        spatial_dims: number of spatial dimensions.
+        in_channels: number of input channels.
+        num_res_blocks: number of residual blocks (see ResnetBlock) per level.
+        num_channels: tuple of block output channels.
+        attention_levels: list of levels to add attention.
+        norm_num_groups: number of groups for the normalization.
+        norm_eps: epsilon for the normalization.
+        resblock_updown: if True use residual blocks for up/downsampling.
+        num_head_channels: number of channels in each attention head.
+        with_conditioning: if True add spatial transformers to perform conditioning.
+        transformer_num_layers: number of layers of Transformer blocks to use.
+        cross_attention_dim: number of context dimensions to use.
+        num_class_embeds: if specified (as an int), then this model will be class-conditional with `num_class_embeds`
+            classes.
+        upcast_attention: if True, upcast attention operations to full precision.
+        use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
+        conditioning_embedding_num_channel: number of channels for the conditioning embedding.
+    """
+
     def __init__(
         self,
         spatial_dims: int,
@@ -45,6 +168,7 @@ class ControlNet(nn.Module):
         num_class_embeds: int | None = None,
         upcast_attention: bool = False,
         use_flash_attention: bool = False,
+        conditioning_embedding_num_channel: Sequence[int] | None = (16, 32, 96, 256),
     ) -> None:
         super().__init__()
         if with_conditioning is True and cross_attention_dim is None:
@@ -116,12 +240,10 @@ class ControlNet(nn.Module):
         if num_class_embeds is not None:
             self.class_embedding = nn.Embedding(num_class_embeds, time_embed_dim)
 
-        # TODO: add control net conditioning embedding
-        # # control net conditioning embedding
-        # self.controlnet_cond_embedding = ControlNetConditioningEmbedding(
-        #     conditioning_embedding_channels=block_out_channels[0],
-        #     block_out_channels=conditioning_embedding_out_channels,
-        # )
+        # control net conditioning embedding
+        self.controlnet_cond_embedding = ControlNetConditioningEmbedding(
+            conditioning_embedding_channels=num_channels[0], num_channels=conditioning_embedding_num_channel
+        )
 
         # down
         self.down_blocks = nn.ModuleList([])
@@ -233,10 +355,10 @@ class ControlNet(nn.Module):
         Args:
             x: input tensor (N, C, SpatialDims).
             timesteps: timestep tensor (N,).
+            controlnet_cond: controlnet conditioning tensor (N, C, SpatialDims).
+            conditioning_scale: conditioning scale.
             context: context tensor (N, 1, ContextDim).
             class_labels: context tensor (N, ).
-            down_block_additional_residuals: additional residual tensors for down blocks (N, C, FeatureMapsDims).
-            mid_block_additional_residual: additional residual tensor for mid block (N, C, FeatureMapsDims).
         """
         # 1. time
         t_emb = get_timestep_embedding(timesteps, self.block_out_channels[0])
