@@ -14,6 +14,11 @@ brain MRI data. The model is divided into two parts: an autoencoder with a KL-re
 into a latent space and a diffusion model that learns to generate conditioned synthetic latent representations. This
 model is conditioned on age, sex, the volume of ventricular cerebrospinal fluid, and brain volume normalised for head size.
 
+![](./figure_1.png) <br>
+<p align="center">
+Figure 1 - Synthetic image from the model. </p>
+
+
 ## **Data**
 The model was trained on brain data from 31,740 participants from the UK Biobank [2]. We used high-resolution 3D T1w MRI with voxel size of 1mm3, resulting in volumes with 160 x 224 x 160 voxels
 
