@@ -2,7 +2,7 @@
     "schema": "https://github.com/Project-MONAI/MONAI-extra-test-data/releases/download/0.8.1/meta_schema_20220324.json",
     "version": "1.0.0",
     "changelog": {
-        "0.1": "Initial release"
+        "0.2": "Flipped images fixed"
     },
     "monai_version": "1.1.0",
     "pytorch_version": "1.13.0",
