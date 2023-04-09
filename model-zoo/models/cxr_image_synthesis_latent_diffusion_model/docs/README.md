@@ -14,7 +14,7 @@ KL-regularisation model that compresses data into a latent space and a diffusion
 conditioned synthetic latent representations. This model is conditioned on Findings and Impressions from radiological
 reports. The original repository can be found [here](https://github.com/Warvito/generative_chestxray)
 
-<p align="center">![](./figure_1.png) <br></p>
+![](./figure_1.png) <br>
 <p align="center">
 Figure 1 - Synthetic images from the model. </p>
 
