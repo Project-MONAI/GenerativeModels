@@ -34,6 +34,11 @@ arguments for this task are: "--prompt" (str) text prompt to condition the model
 parameter that controls how much the image generation process follows the text prompt. The higher the value, the more
 the image sticks to a given text input (the common range is between 1-21).
 
+![](./figure_1.png) <br>
+<p align="center">
+Figure 1 - Synthetic images from the model</p>
+
+
 Examples:
 
 ```shell
