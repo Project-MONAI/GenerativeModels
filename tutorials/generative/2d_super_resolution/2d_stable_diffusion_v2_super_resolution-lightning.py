@@ -256,8 +256,8 @@ class AutoEnconder(pl.LightningModule):
 # ## Train Autoencoder
 
 # %%
-n_epochs = 1
-val_interval = 1
+n_epochs = 75
+val_interval = 10
 
                           
 # initialise the LightningModule
@@ -398,8 +398,8 @@ class DiffusionUNET(pl.LightningModule):
 # As mentioned, we will use the conditioned augmentation (introduced in [2] section 3 and used on Stable Diffusion Upscalers and Imagen Video [3] Section 2.5) as it has been shown critical for cascaded diffusion models, as well for super-resolution tasks. For this, we apply Gaussian noise augmentation to the low-resolution images. We will use a scheduler low_res_scheduler to add this noise, with the t step defining the signal-to-noise ratio and use the t value to condition the diffusion model (inputted using class_labels argument).
 
 # %%
-n_epochs = 3
-val_interval = 3
+n_epochs = 200
+val_interval = 20
 
                           
 # initialise the LightningModule
