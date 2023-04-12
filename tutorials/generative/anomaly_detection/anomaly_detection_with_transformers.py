@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.14.1
+#       jupytext_version: 1.14.4
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -307,7 +307,7 @@ transformer_model = DecoderOnlyTransformer(
     max_seq_len=spatial_shape[0] * spatial_shape[1],
     attn_layers_dim=128,
     attn_layers_depth=16,
-    attn_layers_heads=12,
+    attn_layers_heads=16,
 )
 transformer_model.to(device)
 

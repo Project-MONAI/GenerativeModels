@@ -19,7 +19,7 @@ import torch
 from generative.metrics import FIDMetric
 
 
-class TestMMDMetric(unittest.TestCase):
+class TestFIDMetric(unittest.TestCase):
     def test_results(self):
         x = torch.Tensor([[1, 2], [1, 2], [1, 2]])
         y = torch.Tensor([[2, 2], [1, 2], [1, 2]])
