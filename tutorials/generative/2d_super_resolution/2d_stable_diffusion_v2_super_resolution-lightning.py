@@ -56,6 +56,7 @@
 import os
 import shutil
 import tempfile
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -64,11 +65,11 @@ import torch.nn.functional as F
 from monai import transforms
 from monai.apps import MedNISTDataset
 from monai.config import print_config
-from monai.data import CacheDataset, DataLoader
+from monai.data import CacheDataset, ThreadDataLoader
 from monai.utils import first, set_determinism
-from torch import nn
 from torch.cuda.amp import GradScaler, autocast
-from tqdm import tqdm
+from torch import nn
+from tqdm.notebook import tqdm
 
 from generative.losses import PatchAdversarialLoss, PerceptualLoss
 from generative.networks.nets import AutoencoderKL, DiffusionModelUNet, PatchDiscriminator
@@ -91,6 +92,14 @@ set_determinism(42)
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
 root_dir = tempfile.mkdtemp() if directory is None else directory
 print(root_dir)
+
+# %%
+train_data = MedNISTDataset(root_dir=root_dir, section="training",
+                                download=True, seed=0)
+train_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "HeadCT"]
+val_data = MedNISTDataset(root_dir=root_dir, section="validation",
+                              download=True, seed=0)
+val_datalist = [{"image": item["image"]} for item in val_data.data if item["class_name"] == "HeadCT"]
 
 
 # %% [markdown]
@@ -133,6 +142,14 @@ def get_val_transforms():
     )
     return val_transforms
 
+    
+def get_datasets():
+    train_transforms = get_train_transforms()
+    val_transforms = get_val_transforms()
+    train_ds = CacheDataset(data=train_datalist[:320], transform=train_transforms)
+    val_ds = CacheDataset(data=val_datalist[:32], transform=val_transforms)
+    return train_ds, val_ds
+
 
 
 # %% [markdown]
@@ -167,23 +184,14 @@ class AutoEnconder(pl.LightningModule):
         return self.autoencoderkl(z)
 
     def prepare_data(self):
-        train_transforms = get_train_transforms()
-        val_transforms = get_val_transforms()
-        
-        train_data = MedNISTDataset(root_dir=self.data_dir, section="training", download=True, seed=0)
-        train_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "HeadCT"]
-        val_data = MedNISTDataset(root_dir=self.data_dir, section="validation", download=True, seed=0)
-        val_datalist = [{"image": item["image"]} for item in val_data.data if item["class_name"] == "HeadCT"]
-        
-        self.train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
-        self.val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
-        
+        self.train_ds, self.val_ds = get_datasets()
+                
     def train_dataloader(self):
-        return DataLoader(self.train_ds, batch_size=16, shuffle=True,
+        return ThreadDataLoader(self.train_ds, batch_size=16, shuffle=True,
                           num_workers=4, persistent_workers=True)
         
     def val_dataloader(self):
-        return DataLoader(self.val_ds, batch_size=16, shuffle=False,
+        return ThreadDataLoader(self.val_ds, batch_size=16, shuffle=False,
                           num_workers=4)
                           
     def _compute_loss_generator(self, images, reconstruction, z_mu, z_sigma):
@@ -194,11 +202,11 @@ class AutoEnconder(pl.LightningModule):
         loss_g = recons_loss + (self.kl_weight * kl_loss) + (self.perceptual_weight * p_loss)
         return loss_g,recons_loss
     
-    def _compute_loss_discriminator(self, reconstruction):
-        logits_fake = discriminator(reconstruction.contiguous().detach())[-1]
+    def _compute_loss_discriminator(self, images, reconstruction):
+        logits_fake = self.discriminator(reconstruction.contiguous().detach())[-1]
         loss_d_fake = self.adv_loss(logits_fake, target_is_real=False, for_discriminator=True)
-        logits_real = discriminator(images.contiguous().detach())[-1]
-        loss_d_real = adv_loss(logits_real, target_is_real=True, for_discriminator=True)
+        logits_real = self.discriminator(images.contiguous().detach())[-1]
+        loss_d_real = self.adv_loss(logits_real, target_is_real=True, for_discriminator=True)
         discriminator_loss = (loss_d_fake + loss_d_real) * 0.5
         loss_d = self.adv_weight * discriminator_loss
         return loss_d, discriminator_loss
@@ -211,9 +219,11 @@ class AutoEnconder(pl.LightningModule):
         self.log("recons_loss", recons_loss, batch_size=16, prog_bar=True)
 
         if self.current_epoch > self.autoencoder_warm_up_n_epochs:
-            logits_fake = discriminator(reconstruction.contiguous().float())[-1]
-            generator_loss = adv_loss(logits_fake, target_is_real=True, for_discriminator=False)
-            loss_g += adv_weight * generator_loss
+            logits_fake = self.discriminator(reconstruction.contiguous().float())[-1]
+            generator_loss = self.adv_loss(logits_fake, target_is_real=True, for_discriminator=False)
+            loss_g += self.adv_weight * generator_loss
+            self.log("gen_loss", generator_loss, batch_size=16, prog_bar=True)
+            
                           
 
         self.log("loss_g", loss_g, batch_size=16, prog_bar=True)
@@ -223,7 +233,8 @@ class AutoEnconder(pl.LightningModule):
         self.untoggle_optimizer(optimizer_g)
 
         if self.current_epoch > self.autoencoder_warm_up_n_epochs:
-            loss_d, discriminator_loss = self._compute_loss_discriminator(reconstruction)
+            loss_d, discriminator_loss = self._compute_loss_discriminator(images, reconstruction)
+            self.log("disc_loss", loss_d, batch_size=16, prog_bar=True)
             self.log("train_loss_d", loss_d, batch_size=16, prog_bar=True)
             self.manual_backward(loss_d)
             optimizer_d.step()
@@ -231,19 +242,26 @@ class AutoEnconder(pl.LightningModule):
             self.untoggle_optimizer(optimizer_d)
 
                           
-        if self.current_epoch > self.autoencoder_warm_up_n_epochs:
-            gen_epoch_loss += generator_loss.item()
-            disc_epoch_loss += discriminator_loss.item()
-            self.log("gen_loss", gen_loss, batch_size=16, prog_bar=True)
-            self.log("disc_loss", disc_loss, batch_size=16, prog_bar=True)
-                          
                                     
     def validation_step(self, batch, batch_idx):
         images = batch["image"]
         reconstruction, z_mu, z_sigma = self.autoencoderkl(images)
         recons_loss = F.l1_loss(images.float(), reconstruction.float())
-        self.log("val_loss_d", recons_loss, prog_bar=True)
-                              
+        self.log("val_loss_d", recons_loss, batch_size=1, prog_bar=True)
+        self.images = images
+        self.reconstruction = reconstruction
+
+
+    def on_validation_epoch_end(self):
+        # ploting reconstruction
+        plt.figure(figsize=(2, 2))
+        plt.imshow(torch.cat([self.images[0, 0].cpu(), 
+                              self.reconstruction[0, 0].cpu()],
+                             dim=1), vmin=0, vmax=1, cmap="gray")
+        plt.tight_layout()
+        plt.axis("off")
+        plt.show()
+        
 
     def configure_optimizers(self):
         optimizer_g = torch.optim.Adam(self.autoencoderkl.parameters(), lr=5e-5)
@@ -256,7 +274,7 @@ class AutoEnconder(pl.LightningModule):
 # ## Train Autoencoder
 
 # %%
-n_epochs = 75
+n_epochs = 75 
 val_interval = 10
 
                           
@@ -272,11 +290,13 @@ checkpoint_callback = ModelCheckpoint(dirpath=root_dir, filename="best_metric_mo
 trainer = pl.Trainer(devices=1,
                      max_epochs=n_epochs,
                      check_val_every_n_epoch=val_interval,
+                     num_sanity_val_steps=0,
                      callbacks=checkpoint_callback,
                      default_root_dir=root_dir)
 
 # train
 trainer.fit(ae_net)
+
 
 # %% [markdown]
 # ## Rescaling factor
@@ -284,11 +304,19 @@ trainer.fit(ae_net)
 # As mentioned in Rombach et al. [1] Section 4.3.2 and D.1, the signal-to-noise ratio (induced by the scale of the latent space) became crucial in image-to-image translation models (such as the ones used for super-resolution). For this reason, we will compute the component-wise standard deviation to be used as scaling factor.
 
 # %%
-train_loader = ae_net.train_dataloader()
-check_data = first(train_loader)
-z = ae_net.autoencoderkl.train(mode=False).encode_stage_2_inputs(check_data["image"].to(ae_net.device))
-print(f"Scaling factor set to {1/torch.std(z)}")
-scale_factor = 1 / torch.std(z)
+def get_scaler_factor():
+    ae_net.eval()
+    device = torch.device("cuda:0")
+    ae_net.to(device)
+
+    train_loader = ae_net.train_dataloader()
+    check_data = first(train_loader)
+    z = ae_net.autoencoderkl.encode_stage_2_inputs(check_data["image"].to(ae_net.device))
+    print(f"Scaling factor set to {1/torch.std(z)}")
+    scale_factor = 1 / torch.std(z)
+    return scale_factor
+
+scale_factor = get_scaler_factor()
 
 
 # %% [markdown]
@@ -314,7 +342,7 @@ class DiffusionUNET(pl.LightningModule):
                           beta_schedule="linear",
                           beta_start=0.0015,
                           beta_end=0.0195)
-        self.z = ae_net.autoencoderkl.train(mode=False)
+        self.z = ae_net.autoencoderkl.eval()
 
 
     def forward(self, x, timesteps, low_res_timesteps):
@@ -322,68 +350,106 @@ class DiffusionUNET(pl.LightningModule):
                          timesteps=timesteps,
                          class_labels=low_res_timesteps)
     
-    
+           
     def prepare_data(self):
-        train_transforms = get_train_transforms()
-        val_transforms = get_val_transforms()
-        
-        train_data = MedNISTDataset(root_dir=self.data_dir, section="training",
-                                    download=True, seed=0)
-        train_datalist = [{"image": item["image"]} for item in train_data.data if item["class_name"] == "HeadCT"]
-        val_data = MedNISTDataset(root_dir=self.data_dir, section="validation",
-                                  download=True, seed=0)
-        val_datalist = [{"image": item["image"]} for item in val_data.data if item["class_name"] == "HeadCT"]
-        
-        self.train_ds = CacheDataset(data=train_datalist, transform=train_transforms)
-        self.val_ds = CacheDataset(data=val_datalist, transform=val_transforms)
+        self.train_ds, self.val_ds = get_datasets()
         
     def train_dataloader(self):
         return DataLoader(self.train_ds, batch_size=16, shuffle=True,
                           num_workers=4, persistent_workers=True)
         
     def val_dataloader(self):
-        return DataLoader(self.val_ds, batch_size=16, shuffle=True,
+        return DataLoader(self.val_ds, batch_size=16, shuffle=False,
                           num_workers=4)
     
-    def _calculate_loss(self, batch, batch_idx):
+    def _calculate_loss(self, batch, batch_idx, plt_image=False):
         images = batch["image"]
-        low_res_image = batch["low_res_image"]       
-        latent = self.z.encode_stage_2_inputs(images) * scale_factor
-        latent =  latent.detach() # avoid adding this to graph.
-        optimizer = self.optimizers()
+        low_res_image = batch["low_res_image"]  
+        with autocast(enabled=True):
+            with torch.no_grad():
+                latent = self.z.encode_stage_2_inputs(images) * scale_factor
+#             latent =  latent.detach() # avoid adding this to graph.
         
-        # Noise augmentation
-        noise = torch.randn_like(latent)
-        low_res_noise = torch.randn_like(low_res_image)
-        timesteps = torch.randint(0, self.scheduler.num_train_timesteps, (latent.shape[0],),
-                                  device=latent.device).long()
-        low_res_timesteps = torch.randint(
-            0, self.max_noise_level, (low_res_image.shape[0],), device=latent.device
-        ).long()
 
-        noisy_latent = self.scheduler.add_noise(original_samples=latent, 
-                                           noise=noise, timesteps=timesteps)
-        noisy_low_res_image = self.scheduler.add_noise(
-            original_samples=low_res_image, noise=low_res_noise, 
-            timesteps=low_res_timesteps
-        )
+            # Noise augmentation
+            noise = torch.randn_like(latent)
+            low_res_noise = torch.randn_like(low_res_image)
+            timesteps = torch.randint(0, self.scheduler.num_train_timesteps, (latent.shape[0],),
+                                      device=latent.device).long()
+            low_res_timesteps = torch.randint(
+                0, self.max_noise_level, (low_res_image.shape[0],), device=latent.device
+            ).long()
 
-        latent_model_input = torch.cat([noisy_latent, noisy_low_res_image], dim=1)
+            noisy_latent = self.scheduler.add_noise(original_samples=latent, 
+                                               noise=noise, timesteps=timesteps)
+            noisy_low_res_image = self.scheduler.add_noise(
+                original_samples=low_res_image, noise=low_res_noise, 
+                timesteps=low_res_timesteps
+            )
 
-        noise_pred = self.forward(latent_model_input, timesteps, low_res_timesteps)
-        loss = F.mse_loss(noise_pred.float(), noise.float())
+            latent_model_input = torch.cat([noisy_latent, noisy_low_res_image], dim=1)
+
+            noise_pred = self.forward(latent_model_input, timesteps, low_res_timesteps)
+            loss = F.mse_loss(noise_pred.float(), noise.float())
+        
+        if plt_image:
+            # Sampling image during training
+            sampling_image = low_res_image[0].unsqueeze(0)
+            latents = torch.randn((1, 3, 16, 16)).to(sampling_image.device)
+            low_res_noise = torch.randn((1, 1, 16, 16)).to(sampling_image.device)
+            noise_level = 20
+            noise_level = torch.Tensor((noise_level,)).long().to(sampling_image.device)
+            
+            noisy_low_res_image = self.scheduler.add_noise(
+                original_samples=sampling_image,
+                noise=low_res_noise,
+                timesteps=noise_level,
+            )
+            self.scheduler.set_timesteps(num_inference_steps=1000)
+            for t in tqdm(self.scheduler.timesteps, ncols=110):
+                with autocast(enabled=True):
+                    with torch.no_grad():
+                        latent_model_input = torch.cat([latents, noisy_low_res_image], dim=1)
+                        noise_pred = self.forward(latent_model_input, 
+                                                  torch.Tensor((t,)).to(sampling_image.device)
+                                                  , noise_level)
+                    latents, _ = self.scheduler.step(noise_pred, t, latents)
+            with torch.no_grad():
+                decoded = self.z.decode_stage_2_outputs(latents / scale_factor)
+            low_res_bicubic = nn.functional.interpolate(sampling_image, (64, 64), mode="bicubic")
+            # plot images
+            
+            self.images = images
+            self.low_res_bicubic = low_res_bicubic
+            self.decoded = decoded
+            
         return loss
+    
+    def _plot_image(self, images, low_res_bicubic, decoded):
+        plt.figure(figsize=(2, 2))
+        plt.style.use("default")
+        plt.imshow(
+            torch.cat([images[0, 0].cpu(), low_res_bicubic[0, 0].cpu(), decoded[0, 0].cpu()], dim=1),
+            vmin=0,
+            vmax=1,
+            cmap="gray",
+        )
+        plt.tight_layout()
+        plt.axis("off")
+        plt.show()
 
     def training_step(self, batch, batch_idx):
         loss = self._calculate_loss(batch, batch_idx)
         self.log("train_loss", loss, batch_size=16, prog_bar=True)
         return loss
-
         
     def validation_step(self, batch, batch_idx):
-        loss = self._calculate_loss(batch, batch_idx)
+        loss = self._calculate_loss(batch, batch_idx, plt_image=True)
         self.log("val_loss", loss, batch_size=16, prog_bar=True)
         return loss
+    
+    def on_validation_epoch_end(self):
+        self._plot_image(self.images, self.low_res_bicubic, self.decoded)
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.unet.parameters(), lr=5e-5)
@@ -414,6 +480,7 @@ checkpoint_callback = ModelCheckpoint(dirpath=root_dir, filename="best_metric_mo
 trainer = pl.Trainer(devices=1,
                      max_epochs=n_epochs,
                      check_val_every_n_epoch=val_interval,
+                     num_sanity_val_steps=0,
                      callbacks=checkpoint_callback,
                      default_root_dir=root_dir)
 
@@ -424,37 +491,43 @@ trainer.fit(d_net)
 # ### Plotting sampling example
 
 # %%
-# Sampling image during training
 num_samples = 3
-val_loader = d_net.val_dataloader()
-check_data = first(val_loader)
-images = check_data["image"]
-sampling_image = check_data["low_res_image"][:num_samples]
+def get_images_to_plot():
+    d_net.eval()
+    device = torch.device("cuda:0")
+    d_net.to(device)
 
-# %%
-latents = torch.randn((num_samples, 3, 16, 16)).to(images.device)
-low_res_noise = torch.randn((num_samples, 1, 16, 16)).to(images.device)
-noise_level = 10
-noise_level = torch.Tensor((noise_level,)).long().to(images.device)
-scheduler = d_net.scheduler
-noisy_low_res_image = scheduler.add_noise(original_samples=sampling_image, 
-                                          noise=low_res_noise,
-                                          timesteps=torch.Tensor((noise_level,)).long())
+    
+    val_loader = d_net.val_dataloader()
+    check_data = first(val_loader)
+    images = check_data["image"].to(d_net.device)
 
-scheduler.set_timesteps(num_inference_steps=1000)
-for t in tqdm(scheduler.timesteps, ncols=110):
-    with torch.no_grad():
+    sampling_image = check_data["low_res_image"][:num_samples].to(d_net.device)
+    latents = torch.randn((num_samples, 3, 16, 16)).to(d_net.device)
+    low_res_noise = torch.randn((num_samples, 1, 16, 16)).to(d_net.device)
+    noise_level = 10
+    noise_level = torch.Tensor((noise_level,)).long().to(d_net.device)
+    scheduler = d_net.scheduler
+    noisy_low_res_image = scheduler.add_noise(original_samples=sampling_image, 
+                                              noise=low_res_noise,
+                                              timesteps=torch.Tensor((noise_level,)).long())
+
+    scheduler.set_timesteps(num_inference_steps=1000)
+    for t in tqdm(scheduler.timesteps, ncols=110):
         with autocast(enabled=True):
-            latent_model_input = torch.cat([latents, noisy_low_res_image], dim=1)
-            noise_pred = d_net.forward(x=latent_model_input,
-                                       timesteps=torch.Tensor((t,)),
-                                       low_res_timesteps=noise_level)
+            with torch.no_grad():
+                latent_model_input = torch.cat([latents, noisy_low_res_image], dim=1)
+                noise_pred = d_net.forward(x=latent_model_input,
+                                           timesteps=torch.Tensor((t,)).to(d_net.device),
+                                           low_res_timesteps=noise_level)
+            # 2. compute previous image: x_t -> x_t-1
+            latents, _ = scheduler.step(noise_pred, t, latents)
 
-        # 2. compute previous image: x_t -> x_t-1
-        latents, _ = scheduler.step(noise_pred, t, latents)
+    with torch.no_grad():
+        decoded = ae_net.autoencoderkl.decode_stage_2_outputs(latents / scale_factor)
+    return sampling_image, images, decoded
 
-with torch.no_grad():
-    decoded = ae_net.autoencoderkl.decode_stage_2_outputs(latents / scale_factor)
+sampling_image, images, decoded = get_images_to_plot()
 
 # %%
 low_res_bicubic = nn.functional.interpolate(sampling_image, (64, 64), mode="bicubic")
@@ -467,7 +540,7 @@ for i in range(0, num_samples):
     axs[i, 0].axis("off")
     axs[i, 1].imshow(low_res_bicubic[i, 0].cpu(), vmin=0, vmax=1, cmap="gray")
     axs[i, 1].axis("off")
-    axs[i, 2].imshow(decoded[i, 0].cpu(), vmin=0, vmax=1, cmap="gray")
+    axs[i, 2].imshow(decoded[i, 0].cpu().detach().numpy(), vmin=0, vmax=1, cmap="gray")
     axs[i, 2].axis("off")
 plt.tight_layout()
 
