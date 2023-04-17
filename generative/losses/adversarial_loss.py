@@ -88,7 +88,7 @@ class PatchAdversarialLoss(_Loss):
         Returns:
         """
         filling_label = self.real_label if target_is_real else self.fake_label
-        label_tensor = torch.tensor(1).fill_(filling_label).type(input.type())
+        label_tensor = torch.tensor(1).fill_(filling_label).type(input.type()).to(input[0].device)
         label_tensor.requires_grad_(False)
         return label_tensor.expand_as(input)
 
@@ -101,7 +101,7 @@ class PatchAdversarialLoss(_Loss):
         Returns:
         """
 
-        zero_label_tensor = torch.tensor(0).type(input[0].type())
+        zero_label_tensor = torch.tensor(0).type(input[0].type()).to(input[0].device)
         zero_label_tensor.requires_grad_(False)
         return zero_label_tensor.expand_as(input)
 
