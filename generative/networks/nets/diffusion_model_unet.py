@@ -1702,6 +1702,9 @@ class DiffusionModelUNet(nn.Module):
                 "`num_channels`."
             )
 
+        if use_flash_attention and not has_xformers:
+            raise ValueError("use_flash_attention is True but xformers is not installed.")
+        
         if use_flash_attention is True and not torch.cuda.is_available():
             raise ValueError(
                 "torch.cuda.is_available() should be True but is False. Flash attention is only available for GPU."
