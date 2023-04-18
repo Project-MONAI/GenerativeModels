@@ -256,6 +256,8 @@ class AttentionBlock(nn.Module):
         residual = x
 
         batch = channel = height = width = depth = -1
+        if self.spatial_dims == 1:
+            batch, channel, height = x.shape
         if self.spatial_dims == 2:
             batch, channel, height, width = x.shape
         if self.spatial_dims == 3:
@@ -264,6 +266,8 @@ class AttentionBlock(nn.Module):
         # norm
         x = self.norm(x)
 
+        if self.spatial_dims == 1:
+            x = x.view(batch, channel*height)
         if self.spatial_dims == 2:
             x = x.view(batch, channel, height * width).transpose(1, 2)
         if self.spatial_dims == 3:
@@ -287,6 +291,8 @@ class AttentionBlock(nn.Module):
         x = self.reshape_batch_dim_to_heads(x)
         x = x.to(query.dtype)
 
+        if self.spatial_dims == 1:
+            x = x.transpose(-1, -2).reshape(batch, channel, height)
         if self.spatial_dims == 2:
             x = x.transpose(-1, -2).reshape(batch, channel, height, width)
         if self.spatial_dims == 3:

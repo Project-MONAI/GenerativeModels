@@ -314,6 +314,8 @@ class SpatialTransformer(nn.Module):
     def forward(self, x: torch.Tensor, context: torch.Tensor | None = None) -> torch.Tensor:
         # note: if no context is given, cross-attention defaults to self-attention
         batch = channel = height = width = depth = -1
+        if self.spatial_dims == 1:
+            batch, channel, height = x.shape
         if self.spatial_dims == 2:
             batch, channel, height, width = x.shape
         if self.spatial_dims == 3:
@@ -325,6 +327,8 @@ class SpatialTransformer(nn.Module):
 
         inner_dim = x.shape[1]
 
+        if self.spatial_dims == 1:
+            x = x.permute(0, 2, 1).reshape(batch, height * inner_dim)
         if self.spatial_dims == 2:
             x = x.permute(0, 2, 3, 1).reshape(batch, height * width, inner_dim)
         if self.spatial_dims == 3:
@@ -333,6 +337,8 @@ class SpatialTransformer(nn.Module):
         for block in self.transformer_blocks:
             x = block(x, context=context)
 
+        if self.spatial_dims == 1:
+            x = x.reshape(batch, height, inner_dim).permute(0, 2, 1)
         if self.spatial_dims == 2:
             x = x.reshape(batch, height, width, inner_dim).permute(0, 3, 1, 2)
         if self.spatial_dims == 3:
@@ -419,6 +425,8 @@ class AttentionBlock(nn.Module):
         residual = x
 
         batch = channel = height = width = depth = -1
+        if self.spatial_dims == 1:
+            batch, channel, height = x.shape
         if self.spatial_dims == 2:
             batch, channel, height, width = x.shape
         if self.spatial_dims == 3:
@@ -427,6 +435,8 @@ class AttentionBlock(nn.Module):
         # norm
         x = self.norm(x)
 
+        if self.spatial_dims == 1:
+            x = x.view(batch, channel*height)
         if self.spatial_dims == 2:
             x = x.view(batch, channel, height * width).transpose(1, 2)
         if self.spatial_dims == 3:
@@ -450,6 +460,8 @@ class AttentionBlock(nn.Module):
         x = self.reshape_batch_dim_to_heads(x)
         x = x.to(query.dtype)
 
+        if self.spatial_dims == 1:
+            x = x.transpose(-1, -2).reshape(batch, channel, height)
         if self.spatial_dims == 2:
             x = x.transpose(-1, -2).reshape(batch, channel, height, width)
         if self.spatial_dims == 3:
@@ -675,6 +687,8 @@ class ResnetBlock(nn.Module):
 
         h = self.conv1(h)
 
+        if self.spatial_dims == 1:
+            temb = self.time_emb_proj(self.nonlinearity(emb))[:, :, None]
         if self.spatial_dims == 2:
             temb = self.time_emb_proj(self.nonlinearity(emb))[:, :, None, None]
         else:
