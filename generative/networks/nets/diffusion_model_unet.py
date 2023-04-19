@@ -334,9 +334,9 @@ class SpatialTransformer(nn.Module):
             x = block(x, context=context)
 
         if self.spatial_dims == 2:
-            x = x.reshape(batch, height, width, inner_dim).permute(0, 3, 1, 2)
+            x = x.reshape(batch, height, width, inner_dim).permute(0, 3, 1, 2).contiguous()
         if self.spatial_dims == 3:
-            x = x.reshape(batch, height, width, depth, inner_dim).permute(0, 4, 1, 2, 3)
+            x = x.reshape(batch, height, width, depth, inner_dim).permute(0, 4, 1, 2, 3).contiguous()
 
         x = self.proj_out(x)
         return x + residual
