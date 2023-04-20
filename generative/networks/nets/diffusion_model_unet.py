@@ -334,9 +334,9 @@ class SpatialTransformer(nn.Module):
             x = block(x, context=context)
 
         if self.spatial_dims == 2:
-            x = x.reshape(batch, height, width, inner_dim).permute(0, 3, 1, 2)
+            x = x.reshape(batch, height, width, inner_dim).permute(0, 3, 1, 2).contiguous()
         if self.spatial_dims == 3:
-            x = x.reshape(batch, height, width, depth, inner_dim).permute(0, 4, 1, 2, 3)
+            x = x.reshape(batch, height, width, depth, inner_dim).permute(0, 4, 1, 2, 3).contiguous()
 
         x = self.proj_out(x)
         return x + residual
@@ -1701,6 +1701,9 @@ class DiffusionModelUNet(nn.Module):
                 "`num_res_blocks` should be a single integer or a tuple of integers with the same length as "
                 "`num_channels`."
             )
+
+        if use_flash_attention and not has_xformers:
+            raise ValueError("use_flash_attention is True but xformers is not installed.")
 
         if use_flash_attention is True and not torch.cuda.is_available():
             raise ValueError(
