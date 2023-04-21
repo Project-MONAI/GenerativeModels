@@ -14,11 +14,10 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import torch
-from monai.metrics.regression import RegressionMetric
-from monai.utils import MetricReduction
+from monai.metrics.metric import Metric
 
 
-class MMD(RegressionMetric):
+class MMDMetric(Metric):
     """
     Unbiased Maximum Mean Discrepancy (MMD) is a kernel-based method for measuring the similarity between two
     distributions. It is a non-negative metric where a smaller value indicates a closer match between the two
@@ -31,29 +30,15 @@ class MMD(RegressionMetric):
             filter, but it can be any function that takes a tensor as input and returns a tensor as output such as a
             feature extractor or an Identity function.
         y_pred_transform: Callable to transform the y_pred tensor before computing the metric.
-        reduction: define mode of reduction to the metrics, will only apply reduction on `not-nan` values, available
-            reduction modes: {``"none"``, ``"mean"``, ``"sum"``, ``"mean_batch"``, ``"sum_batch"``, ``"mean_channel"``,
-            `"sum_channel"``}, default to ``"mean"``. if "none", will not do reduction. This parameter is ignored due to
-             the mathematical formulation of MMD.
-        get_not_nans: whether to return the `not_nans` count, if True, aggregate() returns (metric, not_nans). Here
-            `not_nans` count the number of not nans for the metric, thus its shape equals to the shape of the metric.
-            This parameter is ignored due to the mathematical formulation of MMD.
-
     """
 
-    def __init__(
-        self,
-        y_transform: Callable | None = None,
-        y_pred_transform: Callable | None = None,
-        reduction: MetricReduction | str = MetricReduction.MEAN,
-        get_not_nans: bool = False,
-    ) -> None:
-        super().__init__(reduction=reduction, get_not_nans=get_not_nans)
+    def __init__(self, y_transform: Callable | None = None, y_pred_transform: Callable | None = None) -> None:
+        super().__init__()
 
         self.y_transform = y_transform
         self.y_pred_transform = y_pred_transform
 
-    def _compute_metric(self, y: torch.Tensor, y_pred: torch.Tensor) -> torch.Tensor:
+    def __call__(self, y: torch.Tensor, y_pred: torch.Tensor) -> torch.Tensor:
         """
         Args:
             y: first sample (e.g., the reference image). Its shape is (B,C,W,H) for 2D data and (B,C,W,H,D) for 3D.

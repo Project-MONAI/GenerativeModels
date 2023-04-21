@@ -17,7 +17,7 @@ import numpy as np
 import torch
 from parameterized import parameterized
 
-from generative.metrics import MMD
+from generative.metrics import MMDMetric
 
 TEST_CASES = [
     [
@@ -36,12 +36,13 @@ TEST_CASES = [
 class TestMMDMetric(unittest.TestCase):
     @parameterized.expand(TEST_CASES)
     def test_results(self, input_param, input_data, expected_val):
-        results = MMD(**input_param)._compute_metric(**input_data)
+        metric = MMDMetric(**input_param)
+        results = metric(**input_data)
         np.testing.assert_allclose(results.detach().cpu().numpy(), expected_val, rtol=1e-4)
 
     def test_if_inputs_different_shapes(self):
         with self.assertRaises(ValueError):
-            MMD()(torch.ones([3, 3, 144, 144]), torch.ones([3, 3, 145, 145]))
+            MMDMetric()(torch.ones([3, 3, 144, 144]), torch.ones([3, 3, 145, 145]))
 
 
 if __name__ == "__main__":
