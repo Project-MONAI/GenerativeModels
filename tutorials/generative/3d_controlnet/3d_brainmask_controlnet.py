@@ -54,8 +54,8 @@ set_determinism(35)
 
  # Arguments
 val_perc = 0.2
-batch_size = 8
-num_workers = 2
+batch_size = 4
+num_workers = 0
 input_shape = [160, 224, 160]
 path_to_bundle = ""
 lr = 0.00002
@@ -249,7 +249,7 @@ scheduler = DDIMScheduler(num_train_timesteps=1000,
                                beta_start=0.0015,
                                beta_end= 0.0205,
                                clip_sample=False,)
-scheduler.set_timesteps(1000)
+scheduler.set_timesteps(50)
 progress_bar = tqdm(scheduler.timesteps)
 
 # here we just check the trained diffusion model
@@ -312,24 +312,27 @@ for e in range(i_e, num_epochs):
     progress_bar.set_description(f"Epoch {e}")
     epoch_loss = 0.0
     for step, data in progress_bar:
-        input_conditioning = data['label'].to(device)
+        controlnet_conditioning = data['label'].to(device)
         input_image = data['image'].to(device)
         with torch.no_grad():
             # Obtain latent representation of the VAE
             latent = autoencoder.encode_stage_2_inputs(input_image) * scale_factor
-        # We concatenate gender, age, ventricular volume and brain volume as additional channels
-        input_mask = create_mask(data, list(latent.shape)).to(device)
-        latent = torch.cat([latent, input_mask], dim = 1, )
+
         # Sample time steps and add noise to the latent space representation
         timesteps = torch.randint(0, scheduler.num_train_timesteps,(latent.shape[0],), device=device).long()
         noise = torch.randn(list(latent.shape)).to(device)
         noisy_latents = scheduler.add_noise(original_samples=latent, noise=noise, timesteps=timesteps)
+
+        # concatenate gender, age, ventricular volume and brain volume as additional channels, now so that it is noise free
+        ddpm_conditioning = create_mask(data, list(latent.shape)).to(device)
+        noisy_latents = torch.cat([noisy_latents, ddpm_conditioning], dim = 1)
+
         # Optimise
         optimizer.zero_grad()
         down_block_res_samples, mid_block_res_sample = controlnet(
             noisy_latents,
             timesteps,
-            controlnet_cond = input_conditioning,
+            controlnet_cond = controlnet_conditioning,
             context = None,
         )
         cond = torch.cat([data['gender'].unsqueeze(0),
@@ -341,7 +344,7 @@ for e in range(i_e, num_epochs):
                                context=cond.to(device),
                                down_block_additional_residuals = down_block_res_samples,
                                mid_block_additional_residual = mid_block_res_sample)
-        loss = torch.nn.functional.l1_loss(prediction, noise[:, :3, ...])
+        loss = torch.nn.functional.l1_loss(prediction, noise)
         loss.backward()
         optimizer.step()
         epoch_loss += loss.item()
@@ -357,22 +360,26 @@ for e in range(i_e, num_epochs):
             with torch.no_grad():
                 diffusion = diffusion.eval()
                 controlnet = controlnet.eval()
-                input_conditioning = data['label'].to(device)
+                controlnet_conditioning = data['label'].to(device)
                 input_image = data['image'].to(device)
                 # Latent space representation of autoencoder
                 latent = autoencoder.encode_stage_2_inputs(input_image) * scale_factor
-                # We concatenate gender, age, ventricular volume and brain volume as additional channels
-                input_mask = create_mask(data, list(latent.shape)).to(device)
-                latent = torch.cat([latent, input_mask], dim=1, )
-                # Sample time step and optimise 
+                # Sample time step and add noise to the latent space representation
                 timesteps = torch.randint(0, scheduler.num_train_timesteps, (latent.shape[0],),
                                           device=device).long()
                 noise = torch.randn(list(latent.shape)).to(device)
                 noisy_latents = scheduler.add_noise(original_samples=latent, noise=noise, timesteps=timesteps)
+
+                # concatenate the conditions now, so that it is noise-free
+                ddpm_conditioning = create_mask(data, list(latent.shape)).to(device)
+                noisy_latents = torch.cat([noisy_latents, ddpm_conditioning], dim=1)
+
+
+                # forward through the controlnet
                 down_block_res_samples, mid_block_res_sample = controlnet(
                     noisy_latents,
                     timesteps,
-                    controlnet_cond=input_conditioning,
+                    controlnet_cond=controlnet_conditioning,
                     context=None,
                 )
                 cond = torch.cat([data['gender'].unsqueeze(0),
@@ -384,7 +391,7 @@ for e in range(i_e, num_epochs):
                                        context=cond.to(device),
                                        down_block_additional_residuals=down_block_res_samples,
                                        mid_block_additional_residual=mid_block_res_sample)
-                val_loss += torch.nn.functional.l1_loss(prediction, noise[:, :3, ...]).item()
+                val_loss += torch.nn.functional.l1_loss(prediction, noise).item()
 
                 if ind == sampling_step:
                     # If we need to sample
@@ -394,24 +401,24 @@ for e in range(i_e, num_epochs):
                     progress_bar_sampling.set_description("sampling...")
                     for t in progress_bar_sampling:
                         down_block_res_samples, mid_block_res_sample = controlnet(noise_pred,
-                                                                              timesteps,
-                                                                              controlnet_cond=input_conditioning)
+                                                                                  timesteps,
+                                                                                  controlnet_cond=controlnet_conditioning)
                         noise_pred = diffusion(
                             noise_pred,
                             timesteps=torch.Tensor((t,)).to(device),
                             context=cond.to(device),
                             down_block_additional_residuals=down_block_res_samples,
                             mid_block_additional_residual=mid_block_res_sample)
-                        noise_pred = torch.cat([noise_pred, input_mask], 1)
+                        noise_pred = torch.cat([noise_pred, ddpm_conditioning], 1)
                     decoded = autoencoder.decode_stage_2_outputs(noise_pred[:, :3, ...]).detach().cpu()
                     # Log image
                     # We make a 2 x 2 grid with: GT / Predicted / Mask
-                    input_conditioning = input_conditioning.detach().cpu().squeeze(1) # Remove channel
+                    controlnet_conditioning = controlnet_conditioning.detach().cpu().squeeze(1) # Remove channel
                     input_image = input_image.detach().cpu().squeeze(1) # Remove channel
-                    for b in range(input_conditioning.shape[0]):
+                    for b in range(controlnet_conditioning.shape[0]):
                         to_save = torch.cat([input_image[b, ...], decoded[b, 0,...]], 1)
-                        to_save = torch.cat([to_save, torch.cat([input_conditioning[b, ...],
-                                                                torch.zeros_like(input_conditioning[b, ...])],
+                        to_save = torch.cat([to_save, torch.cat([controlnet_conditioning[b, ...],
+                                                                 torch.zeros_like(controlnet_conditioning[b, ...])],
                                                                 1),
                                              ],0)
                         to_save = to_save.numpy()
