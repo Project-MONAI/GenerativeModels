@@ -244,13 +244,13 @@ import matplotlib.pyplot as plt
 conditioning = torch.tensor([[0.0, 0.1, 0.2, 0.4]]).to(device).unsqueeze(1)
 input_noise = torch.randn((1, 3, 20, 28, 20)).to(device)
 # use ddim for faster sampling
-scheduler = DDIMScheduler(num_train_timesteps=1000,
+ddim_scheduler = DDIMScheduler(num_train_timesteps=1000,
                                beta_schedule = 'scaled_linear',
                                beta_start=0.0015,
                                beta_end= 0.0205,
                                clip_sample=False,)
-scheduler.set_timesteps(50)
-progress_bar = tqdm(scheduler.timesteps)
+ddim_scheduler.set_timesteps(50)
+progress_bar = tqdm(ddim_scheduler.timesteps)
 
 # here we just check the trained diffusion model
 image = input_noise
@@ -263,7 +263,7 @@ for t in progress_bar:
             timesteps=torch.Tensor((t,)).to(input_noise.device).long(),
             context=conditioning,
         )
-        image, _ = scheduler.step(model_output, t, image)
+        image, _ = ddim_scheduler.step(model_output, t, image)
 with torch.no_grad():
     with autocast():
         sample = autoencoder.decode_stage_2_outputs(image)
@@ -279,7 +279,7 @@ image = input_noise
 cond_concat = conditioning.squeeze(1).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
 cond_concat = cond_concat.expand(list(cond_concat.shape[0:2]) + list(input_noise.shape[2:]))
 
-progress_bar = tqdm(scheduler.timesteps)
+progress_bar = tqdm(ddim_scheduler.timesteps)
 for t in progress_bar:
     with torch.no_grad():
         down_block_res_samples, mid_block_res_sample = controlnet(
@@ -295,7 +295,7 @@ for t in progress_bar:
             down_block_additional_residuals = down_block_res_samples,
             mid_block_additional_residual = mid_block_res_sample
         )
-        image, _ = scheduler.step(model_output, t, image)
+        image, _ = ddim_scheduler.step(model_output, t, image)
 with torch.no_grad():
     with autocast():
         sample2 = autoencoder.decode_stage_2_outputs(image)
@@ -395,28 +395,30 @@ for e in range(i_e, num_epochs):
 
                 if ind == sampling_step:
                     # If we need to sample
-                    noise = torch.randn(list(noisy_latents.shape))
-                    noise_pred = deepcopy(noise).to(device)
+                    noise = torch.randn(list(latent.shape))
+                    latent = deepcopy(noise).to(device)
                     progress_bar_sampling = tqdm(scheduler.timesteps, total=len(scheduler.timesteps), ncols=110)
                     progress_bar_sampling.set_description("sampling...")
                     for t in progress_bar_sampling:
-                        down_block_res_samples, mid_block_res_sample = controlnet(noise_pred,
+                        down_block_res_samples, mid_block_res_sample = controlnet(torch.cat((latent, ddpm_conditioning), dim=1),
                                                                                   timesteps,
                                                                                   controlnet_cond=controlnet_conditioning)
-                        noise_pred = diffusion(
-                            noise_pred,
+                        model_output = diffusion(
+                            torch.cat((latent, ddpm_conditioning), dim=1),
                             timesteps=torch.Tensor((t,)).to(device),
                             context=cond.to(device),
                             down_block_additional_residuals=down_block_res_samples,
                             mid_block_additional_residual=mid_block_res_sample)
-                        noise_pred = torch.cat([noise_pred, ddpm_conditioning], 1)
-                    decoded = autoencoder.decode_stage_2_outputs(noise_pred[:, :3, ...]).detach().cpu()
+                        latent, _ = scheduler.step(model_output, t, image)
+                    decoded_image = autoencoder.decode_stage_2_outputs(latent).detach().cpu()
+                    plt.subplot(1,2,1)
+                    plt.imshow(decoded_image.detach().cpu().squeeze(1)[0, ...], cmap='gray')
                     # Log image
                     # We make a 2 x 2 grid with: GT / Predicted / Mask
                     controlnet_conditioning = controlnet_conditioning.detach().cpu().squeeze(1) # Remove channel
                     input_image = input_image.detach().cpu().squeeze(1) # Remove channel
                     for b in range(controlnet_conditioning.shape[0]):
-                        to_save = torch.cat([input_image[b, ...], decoded[b, 0,...]], 1)
+                        to_save = torch.cat([input_image[b, ...], decoded_image[b, 0,...]], 1)
                         to_save = torch.cat([to_save, torch.cat([controlnet_conditioning[b, ...],
                                                                  torch.zeros_like(controlnet_conditioning[b, ...])],
                                                                 1),
