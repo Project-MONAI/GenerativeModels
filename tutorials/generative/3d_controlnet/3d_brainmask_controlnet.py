@@ -59,7 +59,7 @@ num_workers = 0
 input_shape = [160, 224, 160]
 path_to_bundle = ""
 lr = 0.00002
-validation_epochs = 5
+validation_epochs = 1
 saving_epochs = 1
 scale_factor = 1.0
 num_epochs = 100
@@ -335,10 +335,10 @@ for e in range(i_e, num_epochs):
             controlnet_cond = controlnet_conditioning,
             context = None,
         )
-        cond = torch.cat([data['gender'].unsqueeze(0),
-                          data['age'].unsqueeze(0),
-                          data['ventricular_vol'].unsqueeze(0),
-                          data['brain_vol'].unsqueeze(0)], dim = 1).unsqueeze(1)
+        cond = torch.cat([data['gender'].unsqueeze(1),
+                          data['age'].unsqueeze(1),
+                          data['ventricular_vol'].unsqueeze(1),
+                          data['brain_vol'].unsqueeze(1)], dim = 1).unsqueeze(1)
         prediction = diffusion(x=noisy_latents,
                                timesteps=timesteps,
                                context=cond.to(device),
@@ -382,10 +382,10 @@ for e in range(i_e, num_epochs):
                     controlnet_cond=controlnet_conditioning,
                     context=None,
                 )
-                cond = torch.cat([data['gender'].unsqueeze(0),
-                                  data['age'].unsqueeze(0),
-                                  data['ventricular_vol'].unsqueeze(0),
-                                  data['brain_vol'].unsqueeze(0)], dim=1).unsqueeze(1)
+                cond = torch.cat([data['gender'].unsqueeze(1),
+                                  data['age'].unsqueeze(1),
+                                  data['ventricular_vol'].unsqueeze(1),
+                                  data['brain_vol'].unsqueeze(1)], dim=1).unsqueeze(1)
                 prediction = diffusion(x=noisy_latents,
                                        timesteps=timesteps,
                                        context=cond.to(device),
