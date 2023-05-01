@@ -12,7 +12,11 @@ This model is trained from scratch using the Latent Diffusion Model architecture
 2D Chest X-ray conditioned on Radiological reports. The model is divided into two parts: an autoencoder with a
 KL-regularisation model that compresses data into a latent space and a diffusion model that learns to generate
 conditioned synthetic latent representations. This model is conditioned on Findings and Impressions from radiological
-reports.
+reports. The original repository can be found [here](https://github.com/Warvito/generative_chestxray)
+
+![](./figure_1.png) <br>
+<p align="center">
+Figure 1 - Synthetic images from the model. </p>
 
 ## **Data**
 The model was trained on brain data from 90,000 participants from the MIMIC dataset [2] [3]. We downsampled the

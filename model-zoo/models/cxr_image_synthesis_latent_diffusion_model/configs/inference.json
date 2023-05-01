@@ -40,8 +40,8 @@
             false,
             false
         ],
-        "with_encoder_nonlocal_attn": true,
-        "with_decoder_nonlocal_attn": true
+        "with_encoder_nonlocal_attn": false,
+        "with_decoder_nonlocal_attn": false
     },
     "load_autoencoder_path": "$@model_dir + '/autoencoder.pth'",
     "load_autoencoder": "$@autoencoder_def.load_state_dict(torch.load(@load_autoencoder_path))",

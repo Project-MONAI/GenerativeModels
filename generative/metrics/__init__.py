@@ -12,6 +12,6 @@
 from __future__ import annotations
 
 from .fid import FIDMetric
-from .mmd import MMD
+from .mmd import MMDMetric
 from .ms_ssim import MultiScaleSSIMMetric
 from .ssim import SSIMMetric

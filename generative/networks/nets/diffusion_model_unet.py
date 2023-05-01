@@ -334,9 +334,9 @@ class SpatialTransformer(nn.Module):
             x = block(x, context=context)
 
         if self.spatial_dims == 2:
-            x = x.reshape(batch, height, width, inner_dim).permute(0, 3, 1, 2)
+            x = x.reshape(batch, height, width, inner_dim).permute(0, 3, 1, 2).contiguous()
         if self.spatial_dims == 3:
-            x = x.reshape(batch, height, width, depth, inner_dim).permute(0, 4, 1, 2, 3)
+            x = x.reshape(batch, height, width, depth, inner_dim).permute(0, 4, 1, 2, 3).contiguous()
 
         x = self.proj_out(x)
         return x + residual
@@ -1702,6 +1702,9 @@ class DiffusionModelUNet(nn.Module):
                 "`num_channels`."
             )
 
+        if use_flash_attention and not has_xformers:
+            raise ValueError("use_flash_attention is True but xformers is not installed.")
+
         if use_flash_attention is True and not torch.cuda.is_available():
             raise ValueError(
                 "torch.cuda.is_available() should be True but is False. Flash attention is only available for GPU."
@@ -1840,6 +1843,8 @@ class DiffusionModelUNet(nn.Module):
         timesteps: torch.Tensor,
         context: torch.Tensor | None = None,
         class_labels: torch.Tensor | None = None,
+        down_block_additional_residuals: tuple[torch.Tensor] | None = None,
+        mid_block_additional_residual: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -1847,6 +1852,8 @@ class DiffusionModelUNet(nn.Module):
             timesteps: timestep tensor (N,).
             context: context tensor (N, 1, ContextDim).
             class_labels: context tensor (N, ).
+            down_block_additional_residuals: additional residual tensors for down blocks (N, C, FeatureMapsDims).
+            mid_block_additional_residual: additional residual tensor for mid block (N, C, FeatureMapsDims).
         """
         # 1. time
         t_emb = get_timestep_embedding(timesteps, self.block_out_channels[0])
@@ -1877,8 +1884,23 @@ class DiffusionModelUNet(nn.Module):
             for residual in res_samples:
                 down_block_res_samples.append(residual)
 
+        # Additional residual conections for Controlnets
+        if down_block_additional_residuals is not None:
+            new_down_block_res_samples = ()
+            for down_block_res_sample, down_block_additional_residual in zip(
+                down_block_res_samples, down_block_additional_residuals
+            ):
+                down_block_res_sample = down_block_res_sample + down_block_additional_residual
+                new_down_block_res_samples += (down_block_res_sample,)
+
+            down_block_res_samples = new_down_block_res_samples
+
         # 5. mid
         h = self.middle_block(hidden_states=h, temb=emb, context=context)
+
+        # Additional residual conections for Controlnets
+        if mid_block_additional_residual is not None:
+            h = h + mid_block_additional_residual
 
         # 6. up
         for upsample_block in self.up_blocks:
