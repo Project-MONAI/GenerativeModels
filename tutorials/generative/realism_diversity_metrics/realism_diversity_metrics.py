@@ -13,11 +13,13 @@
 
 # # Evaluate Realism and Diversity of the generated images
 
-# This notebook illustrates how to use the generative model package to compute:
-# - the realism of generated image using the s Frechet Inception Distance (FID) [1] and Maximum Mean Discrepancy (MMD) [2]
-# - the image diversity using the MS-SSIM [3] and SSIM [4]
+# This notebook illustrates how to use the generative model package to compute the most common metrics to evaluate the performance of a generative model. The metrics that we will analyse on this tutorial are:
 #
-# Note: We are using the RadImageNet [5] to compute the feature space necessary to compute the FID.
+# - Frechet Inception Distance (FID) [1] and Maximum Mean Discrepancy (MMD) [2], two metrics commonly used to assess the realism of generated image
+#
+# - the MS-SSIM [3] and SSIM [4] used to evaluate the image diversity
+#
+# Note: We are using the RadImageNet [5] to compute the feature space necessary to compute the FID. So we need to transfom the images in the same way they were transformed when the network was trained before computing the FID.
 #
 # [1] - Heusel et al., "Gans trained by a two time-scale update rule converge to a local nash equilibrium", https://arxiv.org/pdf/1706.08500.pdf
 #
@@ -27,7 +29,7 @@
 #
 # [4] - Wang et al., "Image quality assessment: from error visibility to structural similarity", https://ieeexplore.ieee.org/document/1284395
 #
-# [5] = Mei et al., "RadImageNet: An Open Radiologic Deep Learning Research Dataset for Effective Transfer Learning, https://pubs.rsna.org/doi/10.1148/ryai.210315
+# [5] - Mei et al., "RadImageNet: An Open Radiologic Deep Learning Research Dataset for Effective Transfer Learning, https://pubs.rsna.org/doi/10.1148/ryai.210315
 
 # ## Setup environment
 
@@ -37,7 +39,6 @@ import os
 import torch
 from pathlib import Path
 
-from tqdm import tqdm
 import matplotlib.pyplot as plt
 from monai.apps import MedNISTDataset
 from monai import transforms
@@ -48,7 +49,7 @@ from monai.networks.layers import Act
 from monai.config import print_config
 from monai.utils import set_determinism
 
-from generative.metrics import FIDMetric, MMD, MultiScaleSSIMMetric, SSIMMetric
+from generative.metrics import FIDMetric, MMDMetric, MultiScaleSSIMMetric, SSIMMetric
 from generative.networks.nets import DiffusionModelUNet, PatchDiscriminator, AutoencoderKL
 from generative.networks.schedulers import DDIMScheduler
 from generative.inferers import DiffusionInferer
@@ -107,13 +108,12 @@ def get_features(image):
 # If not specified a temporary directory will be used.
 
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
-#root_dir = tempfile.mkdtemp() if directory is None else directory
-root_dir = "/tmp/tmpzmzorzlg"
+root_dir = tempfile.mkdtemp() if directory is None else directory
 print(root_dir)
 
 # ## Set deterministic training for reproducibility
 
-set_determinism(0)
+set_determinism(5)
 
 # ## Define the models
 
@@ -165,20 +165,22 @@ unet = unet.to(device)
 
 # ## Load pre-trained model
 
+# Here we will use a pre-trained version of the DDPM downloaded from torch. However, users can also use a local model and evaluate its metrics if they want.
+
 use_pre_trained = True
 
 if use_pre_trained:
     unet = torch.hub.load("marksgraham/pretrained_generative_models:v0.2", model="ddpm_2d", verbose=True)
     unet = unet.to(device)
 else:
-    cwd = Path.cwd()
-    model_path = cwd / Path("tutorials/generative/2d_ldm/best_aeutoencoderkl.pth")
+    model_path = Path.cwd() / Path("tutorials/generative/2d_ldm/best_aeutoencoderkl.pth")
     autoencoderkl.load_state_dict(torch.load(str(model_path)))
-    cwd = Path.cwd()
-    model_path = cwd / Path("tutorials/generative/2d_ldm/best_unet.pth")
+    model_path = Path.cwd() / Path("tutorials/generative/2d_ldm/best_unet.pth")
     unet.load_state_dict(torch.load(str(model_path)))
 
-# ## Get the real images and syntethic data
+# ## Get the real images
+
+# Simialry to the 2D LDM tutorial here we will use the MedNISTDataset, which contains images from different body parts. For easiness, here we will use only the `Hand` class. The first part of the code will get the real images from the MedNISTDataset and apply some transformation to scale the intensity of the image. Because we are evaluating the performance of the trained network, we will only use the validation split.
 
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, seed=0)
 val_datalist = [{"image": item["image"]} for item in val_data.data if item["class_name"] == "Hand"]
@@ -190,89 +192,87 @@ val_transforms = transforms.Compose(
     ]
 )
 val_ds = Dataset(data=val_datalist, transform=val_transforms)
-val_loader = DataLoader(val_ds, batch_size=64, shuffle=True, num_workers=4)
+val_loader = DataLoader(val_ds, batch_size=180, shuffle=True, num_workers=4)
 
 # +
-# Get the real data
-real_images = []
+# Create some synthetic data for visualisation
+n_synthetic_images = 3
+noise = torch.randn((n_synthetic_images, 1, 64, 64))
+noise = noise.to(device)
+scheduler.set_timesteps(num_inference_steps=50)
+unet.eval()
 
-pbar = tqdm(enumerate(val_loader), total=len(val_loader))
-for step, x in pbar:
-    real_img = x["image"].to(device)
-    real_images.append(real_img)
-    pbar.update()
+with torch.no_grad():
+    syn_images, intermediates = inferer.sample(input_noise=noise, diffusion_model=unet,
+                                              scheduler=scheduler,save_intermediates=True,
+                                              intermediate_steps=100)
 
-real_images = torch.cat(real_images, axis=0)
+# Plot 3 examples from the synthetic data
+fig, ax = plt.subplots(nrows=1, ncols=3)
+for image_n in range(3):
+    ax[image_n].imshow(syn_images[image_n, 0, :, :].cpu(), cmap="gray")
+    ax[image_n].axis("off")
 # -
 
-# Use the model to generate synthetic images. This step will take about 9 mins.
+# ## Compute FID
 
-synth_images = []
+# The FID measures the distance between the feature vectors from the real images and those obtained from generated images. In order to compute the FID the images need to be passed into a pre-trained network to get the desired feature vectors. Although the FID is commonly computed using the Inception network, here, we used a pre-trained version of the RadImageNet to calculate the feature space. Lower FID scores indicate that the images are more similar, with a perfect score being 0 indicating that the two groups of images are identical.
+
+radnet = torch.hub.load("Warvito/radimagenet-models", model="radimagenet_resnet50", verbose=True)
+radnet.to(device)
+radnet.eval()
+
+# Here, we will load the real and generate synthetic images from noise and compute the FID of these two groups of images. Because we are generating the synthetic images on this code snippet the entire cell will take about 6 mins run and most of the this time is spent in generating the images. The loading bars show how long it will take to complete the image generation for each mini-batch.
+
+# +
+fid_scores = []
 unet.eval()
+
 for step, x in enumerate(val_loader):
+    # Get the real images
+    real_images = x["image"].to(device)
+
+    # Generate some synthetic images using the defined model
     n_synthetic_images = len(x['image'])
     noise = torch.randn((n_synthetic_images, 1, 64, 64))
     noise = noise.to(device)
     scheduler.set_timesteps(num_inference_steps=25)
 
     with torch.no_grad():
-        syn_image, intermediates = inferer.sample(input_noise=noise, diffusion_model=unet,
+        syn_images, intermediates = inferer.sample(input_noise=noise, diffusion_model=unet,
                                                   scheduler=scheduler,save_intermediates=True,
                                                   intermediate_steps=100)
-        synth_images.append(syn_image)
-synth_images = torch.cat(synth_images, axis=0)
+
+        # Get the features for the real data
+        real_eval_feats = get_features(real_images)
+
+        # Get the features for the synthetic data
+        synth_eval_feats = get_features(syn_images)
+
+        fid = FIDMetric()
+        fid_res = fid(synth_eval_feats.to(device), real_eval_feats.to(device))
+        fid_scores.append(fid_res)
+
+# -
+
+fid_scores = torch.stack(fid_scores)
+print(f"FID Score: {fid_scores.mean().item():.4f} +- {fid_scores.std().item():.4f}")
 
 # Plot 3 examples from the synthetic data
 fig, ax = plt.subplots(nrows=1, ncols=3)
 for image_n in range(3):
-    ax[image_n].imshow(syn_image[image_n, 0, :, :].cpu(), cmap="gray")
+    ax[image_n].imshow(syn_images[image_n, 0, :, :].cpu(), cmap="gray")
     ax[image_n].axis("off")
-
-# ## Compute FID
-
-# The FID measures the distance between the feature vectors from the real images and those obtained from generated images. In order to compute the FID the images need to be passed into a pre-trained network to get the desired feature vectors. Although the FID is commonly computed using the Inception network, here, we used a pre-trained version of the RadImageNet to calculate the feature space.
-
-radnet = torch.hub.load("Warvito/radimagenet-models", model="radimagenet_resnet50", verbose=True)
-radnet.to(device)
-radnet.eval()
-
-# +
-# Get the features for the real data
-real_eval_feats = get_features(real_images)
-
-# Get the features for the synthetic data
-synth_eval_feats = get_features(synth_images)
-# -
-
-synth_eval_feats.shape, real_eval_feats.shape
-
-fid = FIDMetric()
-fid_res = fid(synth_eval_feats.to(device), real_eval_feats.to(device))
-print(f"FID Score: {fid_res}")
 
 # # Compute MMD
 
-y = torch.ones([3, 3, 144, 144, 144])
-y_pred =  torch.ones([3, 3, 144, 144, 144])
-mmd = MMD()
-res = mmd(y, y_pred)
-
-y = torch.ones([3, 144, 144, 144])
-y_pred =  torch.ones([3, 144, 144, 144])
-mmd = MMD()
-res = mmd._compute_metric(y, y_pred)
-print(res)
-
-y = torch.ones([3, 3, 144, 144, 144])
-y_pred =  torch.ones([3, 3, 144, 144, 144])
-mmd = MMD()
-res = mmd(y, y_pred)
+# MMD (Maximum Mean Discrepancy) is a distance metric used to measure the similarity between two probability distributions. This metric maps the samples from each distribution to a high-dimensional feature space and calculates the distance between the mean of the features of each distribution. A smaller MMD value indicates a better match between the real and generated distributions. It is often used in combination with other evaluation metrics to assess the performance of a generative model.
 
 # +
 mmd_scores = []
 autoencoderkl.eval()
 
-mmd = MMD()
+mmd = MMDMetric()
 
 for step, x in list(enumerate(val_loader)):
     image = x["image"].to(device)
@@ -280,7 +280,7 @@ for step, x in list(enumerate(val_loader)):
     with torch.no_grad():
         image_recon = autoencoderkl.reconstruct(image)
 
-    mmd_scores.append(mmd._compute_metric(image, image_recon))
+    mmd_scores.append(mmd(image, image_recon))
 
 mmd_scores = torch.stack(mmd_scores)
 print(f"MS-SSIM score: {mmd_scores.mean().item():.4f} +- {mmd_scores.std().item():.4f}")
@@ -289,9 +289,11 @@ print(f"MS-SSIM score: {mmd_scores.mean().item():.4f} +- {mmd_scores.std().item(
 
 # # Compute MultiScaleSSIMMetric and SSIMMetric
 #
-# Both MS-SSIM and SSIM can be used as metric to evaluate the diversity
+# Both MS-SSIM and SSIM can be used as metric to evaluate the diversity.
 #
-# Compute the MS-SSIM and SSIM Meteric between the real images and those reconstructed by the AutoencoderKL.
+# SSIM measures the similarity between two images based on three components: luminance, contrast, and structure. In addition, MS-SSIM is an extension of SSIM that computes the structural similarity measure at multiple scales. Both metrics can assume values between 0 and 1, where 1 indicates perfect similarity between the images.
+#
+# In this section we will compute the MS-SSIM and SSIM Meteric between the real images and those reconstructed by the AutoencoderKL.
 
 # +
 ms_ssim_recon_scores = []
@@ -318,14 +320,30 @@ print(f"SSIM Metric: {ssim_recon_scores.mean():.7f} +- {ssim_recon_scores.std():
 
 # -
 
-# Compute the SSIM and MS-SSIM between synthetic and real images
+# Compute the SSIM and MS-SSIM between synthetic and real images. Note that here we are regenerating some synthetic images.
 
 # +
 ms_ssim_scores = []
 ssim_scores = []
+unet.eval()
 
-ms_ssim_scores.append(ms_ssim(real_images, synth_images))
-ssim_scores.append(ssim(real_images, synth_images))
+for step, x in enumerate(val_loader):
+    # Get the real images
+    real_images = x["image"].to(device)
+
+    # Generate some synthetic images using the defined model
+    n_synthetic_images = len(x['image'])
+    noise = torch.randn((n_synthetic_images, 1, 64, 64))
+    noise = noise.to(device)
+    scheduler.set_timesteps(num_inference_steps=25)
+
+    with torch.no_grad():
+        syn_images, intermediates = inferer.sample(input_noise=noise, diffusion_model=unet,
+                                                  scheduler=scheduler,save_intermediates=True,
+                                                  intermediate_steps=100)
+
+        ms_ssim_scores.append(ms_ssim(real_images, syn_images))
+        ssim_scores.append(ssim(real_images, syn_images))
 
 ms_ssim_scores = torch.cat(ms_ssim_scores, dim=0)
 ssim_scores = torch.cat(ssim_scores, dim=0)
@@ -333,5 +351,6 @@ ssim_scores = torch.cat(ssim_scores, dim=0)
 print(f"MS-SSIM Metric: {ms_ssim_scores.mean():.7f} +- {ms_ssim_scores.std():.7f}")
 print(f"SSIM Metric: {ssim_scores.mean():.7f} +- {ssim_scores.std():.7f}")
 # -
+
 
 
