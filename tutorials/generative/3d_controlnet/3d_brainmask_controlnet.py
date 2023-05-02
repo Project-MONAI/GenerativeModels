@@ -55,14 +55,14 @@ set_determinism(35)
  # Arguments
 val_perc = 0.2
 batch_size = 4
-num_workers = 0
+num_workers = 1
 input_shape = [160, 224, 160]
 path_to_bundle = ""
 lr = 0.00002
-validation_epochs = 1
+validation_epochs = 5
 saving_epochs = 1
 scale_factor = 1.0
-num_epochs = 100
+num_epochs = 300
 
 # ### 1. Setting up the temporary directory and the dataloading
 
@@ -344,14 +344,14 @@ for e in range(i_e, num_epochs):
                                context=cond.to(device),
                                down_block_additional_residuals = down_block_res_samples,
                                mid_block_additional_residual = mid_block_res_sample)
-        loss = torch.nn.functional.l1_loss(prediction, noise)
+        loss = torch.nn.functional.mse_loss(prediction, noise)
         loss.backward()
         optimizer.step()
         epoch_loss += loss.item()
         progress_bar.set_postfix({"loss": epoch_loss / (step + 1)})
 
     # If validation is requested in this epoch: 
-    if step % validation_epochs == 0:
+    if e % validation_epochs == 0:
         # Validation will consist on similar set-up than training: one denoising step > loss. 
         # In ONE occasion, we also perform a sampling. 
         sampling_step = np.random.randint(len(val_loader))
@@ -391,34 +391,42 @@ for e in range(i_e, num_epochs):
                                        context=cond.to(device),
                                        down_block_additional_residuals=down_block_res_samples,
                                        mid_block_additional_residual=mid_block_res_sample)
-                val_loss += torch.nn.functional.l1_loss(prediction, noise).item()
+                val_loss += torch.nn.functional.mse_loss(prediction, noise).item()
 
                 if ind == sampling_step:
                     # If we need to sample
-                    noise = torch.randn(list(latent.shape))
-                    latent = deepcopy(noise).to(device)
+                    noise = torch.randn(list(latent[0,None,...].shape))
+                    latent_sample = deepcopy(noise).to(device)
                     progress_bar_sampling = tqdm(scheduler.timesteps, total=len(scheduler.timesteps), ncols=110)
                     progress_bar_sampling.set_description("sampling...")
                     for t in progress_bar_sampling:
-                        down_block_res_samples, mid_block_res_sample = controlnet(torch.cat((latent, ddpm_conditioning), dim=1),
-                                                                                  timesteps,
-                                                                                  controlnet_cond=controlnet_conditioning)
+                        down_block_res_samples, mid_block_res_sample = controlnet(torch.cat((latent_sample, ddpm_conditioning[0,None,...]), dim=1),
+                                                                                  timesteps=torch.Tensor((t,)).to(device),
+                                                                                  controlnet_cond=controlnet_conditioning[0,None,...])
                         model_output = diffusion(
-                            torch.cat((latent, ddpm_conditioning), dim=1),
+                            torch.cat((latent_sample, ddpm_conditioning[0,None,...]), dim=1),
                             timesteps=torch.Tensor((t,)).to(device),
-                            context=cond.to(device),
+                            context=cond[0,None,...].to(device),
                             down_block_additional_residuals=down_block_res_samples,
                             mid_block_additional_residual=mid_block_res_sample)
-                        latent, _ = scheduler.step(model_output, t, image)
-                    decoded_image = autoencoder.decode_stage_2_outputs(latent).detach().cpu()
-                    plt.subplot(1,2,1)
-                    plt.imshow(decoded_image.detach().cpu().squeeze(1)[0, ...], cmap='gray')
+                        latent_sample, _ = scheduler.step(model_output, t, latent_sample)
+                    decoded_sample = autoencoder.decode_stage_2_outputs(latent_sample).detach().cpu()
+                    plt.subplot(1,3,1)
+                    plt.imshow(decoded_sample.detach().cpu()[0,0, :,:,80], cmap='gray')
+                    plt.subplot(1,3,2)
+                    plt.imshow(controlnet_conditioning.detach().cpu()[0,0, :,:,80], cmap='gray')
+                    plt.subplot(1,3,3)
+                    # plot decoded_sample with controlnet_conditioning overlaid with transparency
+                    plt.imshow(decoded_sample.detach().cpu()[0,0, :,:,80], cmap='gray')
+                    plt.imshow(controlnet_conditioning.detach().cpu()[0,0, :,:,80], cmap='jet', alpha=0.3)
+                    plt.savefig(os.path.join(root_dir, f"sample_{e}.png"))
+                    #plt.show()
                     # Log image
                     # We make a 2 x 2 grid with: GT / Predicted / Mask
                     controlnet_conditioning = controlnet_conditioning.detach().cpu().squeeze(1) # Remove channel
                     input_image = input_image.detach().cpu().squeeze(1) # Remove channel
-                    for b in range(controlnet_conditioning.shape[0]):
-                        to_save = torch.cat([input_image[b, ...], decoded_image[b, 0,...]], 1)
+                    for b in range(1):
+                        to_save = torch.cat([input_image[b, ...], decoded_sample[b, 0,...]], 1)
                         to_save = torch.cat([to_save, torch.cat([controlnet_conditioning[b, ...],
                                                                  torch.zeros_like(controlnet_conditioning[b, ...])],
                                                                 1),
