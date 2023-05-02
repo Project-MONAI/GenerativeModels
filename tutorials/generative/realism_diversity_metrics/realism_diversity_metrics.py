@@ -35,6 +35,7 @@
 
 # +
 import os
+import tempfile
 import shutil
 from itertools import combinations
 from pathlib import Path
@@ -60,6 +61,7 @@ print_config()
 # The transformations defined below are necessary in order to transform the input images in the same way that the images were
 # processed for the RadImageNet train.
 
+
 # +
 def subtract_mean(x: torch.Tensor) -> torch.Tensor:
     mean = [0.406, 0.456, 0.485]
@@ -68,11 +70,12 @@ def subtract_mean(x: torch.Tensor) -> torch.Tensor:
     x[:, 2, :, :] -= mean[2]
     return x
 
-def spatial_average(x: torch.Tensor, keepdim: bool=True) -> torch.Tensor:
+
+def spatial_average(x: torch.Tensor, keepdim: bool = True) -> torch.Tensor:
     return x.mean([2, 3], keepdim=keepdim)
 
-def get_features(image):
 
+def get_features(image):
     # If input has just 1 channel, repeat channel to have 3 channels
     if image.shape[1]:
         image = image.repeat(1, 3, 1, 1)
@@ -125,6 +128,7 @@ autoencoderkl = AutoencoderKL(
     attention_levels=(False, False, True),
 )
 autoencoderkl = autoencoderkl.to(device)
+autoencoderkl.eval()
 
 # +
 unet = DiffusionModelUNet(
@@ -134,9 +138,10 @@ unet = DiffusionModelUNet(
     num_res_blocks=(1, 1, 1),
     num_channels=(64, 128, 128),
     attention_levels=(False, True, True),
-    num_head_channels=128
+    num_head_channels=128,
 )
 unet = unet.to(device)
+unet.eval()
 
 scheduler = DDIMScheduler(num_train_timesteps=1000, beta_schedule="linear", beta_start=0.0015, beta_end=0.0195)
 
@@ -180,12 +185,9 @@ n_synthetic_images = 3
 noise = torch.randn((n_synthetic_images, 1, 64, 64))
 noise = noise.to(device)
 scheduler.set_timesteps(num_inference_steps=50)
-unet.eval()
 
 with torch.no_grad():
-    syn_images, intermediates = inferer.sample(input_noise=noise, diffusion_model=unet,
-                                              scheduler=scheduler,save_intermediates=True,
-                                              intermediate_steps=100)
+    syn_images = inferer.sample(input_noise=noise, diffusion_model=unet, scheduler=scheduler)
 
 # Plot 3 examples from the synthetic data
 fig, ax = plt.subplots(nrows=1, ncols=3)
@@ -207,22 +209,19 @@ radnet.eval()
 # +
 synth_features = []
 real_features = []
-unet.eval()
 
 for step, x in enumerate(val_loader):
     # Get the real images
     real_images = x["image"].to(device)
 
     # Generate some synthetic images using the defined model
-    n_synthetic_images = len(x['image'])
+    n_synthetic_images = len(x["image"])
     noise = torch.randn((n_synthetic_images, 1, 64, 64))
     noise = noise.to(device)
     scheduler.set_timesteps(num_inference_steps=25)
 
     with torch.no_grad():
-        syn_images = inferer.sample(input_noise=noise, diffusion_model=unet,
-                                                  scheduler=scheduler,save_intermediates=False,
-                                                  intermediate_steps=100)
+        syn_images = inferer.sample(input_noise=noise, diffusion_model=unet, scheduler=scheduler)
 
         # Get the features for the real data
         real_eval_feats = get_features(real_images)
@@ -231,7 +230,6 @@ for step, x in enumerate(val_loader):
         # Get the features for the synthetic data
         synth_eval_feats = get_features(syn_images)
         synth_features.append(synth_eval_feats)
-
 
 
 # +
@@ -258,7 +256,6 @@ for image_n in range(3):
 
 # +
 mmd_scores = []
-autoencoderkl.eval()
 
 mmd = MMDMetric()
 
@@ -290,7 +287,6 @@ print(f"MS-SSIM score: {mmd_scores.mean().item():.4f} +- {mmd_scores.std().item(
 # +
 ms_ssim_recon_scores = []
 ssim_recon_scores = []
-autoencoderkl.eval()
 
 ms_ssim = MultiScaleSSIMMetric(spatial_dims=2, data_range=1.0, kernel_size=4)
 ssim = SSIMMetric(spatial_dims=2, data_range=1.0, kernel_size=4)
@@ -316,7 +312,6 @@ print(f"SSIM Metric: {ssim_recon_scores.mean():.7f} +- {ssim_recon_scores.std():
 # +
 ms_ssim_scores = []
 ssim_scores = []
-unet.eval()
 
 # How many synthetic images we want to generate
 n_synthetic_images = 100
@@ -327,9 +322,7 @@ noise = noise.to(device)
 scheduler.set_timesteps(num_inference_steps=25)
 
 with torch.no_grad():
-    syn_images = inferer.sample(input_noise=noise, diffusion_model=unet,
-                                              scheduler=scheduler, save_intermediates=False,
-                                              intermediate_steps=100)
+    syn_images = inferer.sample(input_noise=noise, diffusion_model=unet, scheduler=scheduler)
 
     idx_pairs = list(combinations(range(n_synthetic_images), 2))
     for idx_a, idx_b in idx_pairs:
