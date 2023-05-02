@@ -19,7 +19,7 @@
 #
 # - the MS-SSIM [3] and SSIM [4] used to evaluate the image diversity
 #
-# Note: We are using the RadImageNet [5] to compute the feature space necessary to compute the FID. So we need to transfom the images in the same way they were transformed when the network was trained before computing the FID.
+# Note: We are using the RadImageNet [5] to compute the feature space necessary to compute the FID. So we need to transform the images in the same way they were transformed when the network was trained before computing the FID.
 #
 # [1] - Heusel et al., "Gans trained by a two time-scale update rule converge to a local nash equilibrium", https://arxiv.org/pdf/1706.08500.pdf
 #
@@ -34,25 +34,23 @@
 # ## Setup environment
 
 # +
-import torch
 import os
-import torch
+import shutil
+from itertools import combinations
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-from monai.apps import MedNISTDataset
+import torch
 from monai import transforms
-from monai.data import DataLoader, Dataset
-from monai.networks.layers import Act
-
-
+from monai.apps import MedNISTDataset
 from monai.config import print_config
+from monai.data import DataLoader, Dataset
 from monai.utils import set_determinism
 
-from generative.metrics import FIDMetric, MMDMetric, MultiScaleSSIMMetric, SSIMMetric
-from generative.networks.nets import DiffusionModelUNet, PatchDiscriminator, AutoencoderKL
-from generative.networks.schedulers import DDIMScheduler
 from generative.inferers import DiffusionInferer
+from generative.metrics import FIDMetric, MMDMetric, MultiScaleSSIMMetric, SSIMMetric
+from generative.networks.nets import AutoencoderKL, DiffusionModelUNet
+from generative.networks.schedulers import DDIMScheduler
 
 print_config()
 
@@ -60,7 +58,7 @@ print_config()
 # -
 
 # The transformations defined below are necessary in order to transform the input images in the same way that the images were
-# processed for the RadNet train.
+# processed for the RadImageNet train.
 
 # +
 def subtract_mean(x: torch.Tensor) -> torch.Tensor:
@@ -69,10 +67,6 @@ def subtract_mean(x: torch.Tensor) -> torch.Tensor:
     x[:, 1, :, :] -= mean[1]
     x[:, 2, :, :] -= mean[2]
     return x
-
-def normalize_tensor(x: torch.Tensor, eps: float=1e-10) -> torch.Tensor:
-    norm_factor = torch.sqrt(torch.sum(x**2, dim=1, keepdim=True))
-    return x / (norm_factor + eps)
 
 def spatial_average(x: torch.Tensor, keepdim: bool=True) -> torch.Tensor:
     return x.mean([2, 3], keepdim=keepdim)
@@ -142,25 +136,11 @@ unet = DiffusionModelUNet(
     attention_levels=(False, True, True),
     num_head_channels=128
 )
+unet = unet.to(device)
 
 scheduler = DDIMScheduler(num_train_timesteps=1000, beta_schedule="linear", beta_start=0.0015, beta_end=0.0195)
 
 inferer = DiffusionInferer(scheduler)
-
-discriminator = PatchDiscriminator(
-    spatial_dims=2,
-    num_layers_d=3,
-    num_channels=32,
-    in_channels=1,
-    out_channels=1,
-    kernel_size=4,
-    activation=(Act.LEAKYRELU, {"negative_slope": 0.2}),
-    norm="BATCH",
-    bias=False,
-    padding=1,
-)
-discriminator.to(device)
-unet = unet.to(device)
 # -
 
 # ## Load pre-trained model
@@ -180,7 +160,7 @@ else:
 
 # ## Get the real images
 
-# Simialry to the 2D LDM tutorial here we will use the MedNISTDataset, which contains images from different body parts. For easiness, here we will use only the `Hand` class. The first part of the code will get the real images from the MedNISTDataset and apply some transformation to scale the intensity of the image. Because we are evaluating the performance of the trained network, we will only use the validation split.
+# Similar to the 2D LDM tutorial, we will use the MedNISTDataset, which contains images from different body parts. For easiness, here we will use only the `Hand` class. The first part of the code will get the real images from the MedNISTDataset and apply some transformations to scale the intensity of the image. Because we are evaluating the performance of the trained network, we will only use the validation split.
 
 val_data = MedNISTDataset(root_dir=root_dir, section="validation", download=True, seed=0)
 val_datalist = [{"image": item["image"]} for item in val_data.data if item["class_name"] == "Hand"]
@@ -222,10 +202,11 @@ radnet = torch.hub.load("Warvito/radimagenet-models", model="radimagenet_resnet5
 radnet.to(device)
 radnet.eval()
 
-# Here, we will load the real and generate synthetic images from noise and compute the FID of these two groups of images. Because we are generating the synthetic images on this code snippet the entire cell will take about 6 mins run and most of the this time is spent in generating the images. The loading bars show how long it will take to complete the image generation for each mini-batch.
+# Here, we will load the real and generate synthetic images from noise and compute the FID of these two groups of images. Because we are generating the synthetic images on this code snippet the entire cell will take about 6 mins run and most of this time is spent in generating the images. The loading bars show how long it will take to complete the image generation for each mini-batch.
 
 # +
-fid_scores = []
+synth_features = []
+real_features = []
 unet.eval()
 
 for step, x in enumerate(val_loader):
@@ -239,24 +220,29 @@ for step, x in enumerate(val_loader):
     scheduler.set_timesteps(num_inference_steps=25)
 
     with torch.no_grad():
-        syn_images, intermediates = inferer.sample(input_noise=noise, diffusion_model=unet,
-                                                  scheduler=scheduler,save_intermediates=True,
+        syn_images = inferer.sample(input_noise=noise, diffusion_model=unet,
+                                                  scheduler=scheduler,save_intermediates=False,
                                                   intermediate_steps=100)
 
         # Get the features for the real data
         real_eval_feats = get_features(real_images)
+        real_features.append(real_eval_feats)
 
         # Get the features for the synthetic data
         synth_eval_feats = get_features(syn_images)
+        synth_features.append(synth_eval_feats)
 
-        fid = FIDMetric()
-        fid_res = fid(synth_eval_feats.to(device), real_eval_feats.to(device))
-        fid_scores.append(fid_res)
 
+
+# +
+synth_features = torch.vstack(synth_features)
+real_features = torch.vstack(real_features)
+
+fid = FIDMetric()
+fid_res = fid(synth_features, real_features)
+
+print(f"FID Score: {fid_res.item():.4f}")
 # -
-
-fid_scores = torch.stack(fid_scores)
-print(f"FID Score: {fid_scores.mean().item():.4f} +- {fid_scores.std().item():.4f}")
 
 # Plot 3 examples from the synthetic data
 fig, ax = plt.subplots(nrows=1, ncols=3)
@@ -266,6 +252,8 @@ for image_n in range(3):
 
 # # Compute MMD
 
+# Because the realism of the LDMs will depend on the realism of the autoencoder reconstructions, we will compute the MMD betweeen the original images and the reconstructed images to evaluate the performance of the autoencoder.
+#
 # MMD (Maximum Mean Discrepancy) is a distance metric used to measure the similarity between two probability distributions. This metric maps the samples from each distribution to a high-dimensional feature space and calculates the distance between the mean of the features of each distribution. A smaller MMD value indicates a better match between the real and generated distributions. It is often used in combination with other evaluation metrics to assess the performance of a generative model.
 
 # +
@@ -289,10 +277,14 @@ print(f"MS-SSIM score: {mmd_scores.mean().item():.4f} +- {mmd_scores.std().item(
 
 # # Compute MultiScaleSSIMMetric and SSIMMetric
 #
-# Both MS-SSIM and SSIM can be used as metric to evaluate the diversity.
-#
 # SSIM measures the similarity between two images based on three components: luminance, contrast, and structure. In addition, MS-SSIM is an extension of SSIM that computes the structural similarity measure at multiple scales. Both metrics can assume values between 0 and 1, where 1 indicates perfect similarity between the images.
 #
+# There are two ways to compute the MS-SSIM and SSIM, and in this notebook we will look at both ways:
+# 1. Use the reconstructions of the autoencoder and the real images. By using the metric this way we can assess the performance of the autoencoder.
+# 2. Compute the MS-SSIM and SSIM between pairs of synthetic images. This second way of computing the MS-SSIM can be used as a metric to evaluate the diversity of the synthetic images.
+#
+#
+
 # In this section we will compute the MS-SSIM and SSIM Meteric between the real images and those reconstructed by the AutoencoderKL.
 
 # +
@@ -317,40 +309,41 @@ ssim_recon_scores = torch.cat(ssim_recon_scores, dim=0)
 
 print(f"MS-SSIM Metric: {ms_ssim_recon_scores.mean():.7f} +- {ms_ssim_recon_scores.std():.7f}")
 print(f"SSIM Metric: {ssim_recon_scores.mean():.7f} +- {ssim_recon_scores.std():.7f}")
-
 # -
 
-# Compute the SSIM and MS-SSIM between synthetic and real images. Note that here we are regenerating some synthetic images.
+# Compute the SSIM and MS-SSIM between pairs of synthetic images, the results of the MS-SSIM and SSIM can be used to evaluate the diversity of the synthetic samples.
 
 # +
 ms_ssim_scores = []
 ssim_scores = []
 unet.eval()
 
-for step, x in enumerate(val_loader):
-    # Get the real images
-    real_images = x["image"].to(device)
+# How many synthetic images we want to generate
+n_synthetic_images = 100
 
-    # Generate some synthetic images using the defined model
-    n_synthetic_images = len(x['image'])
-    noise = torch.randn((n_synthetic_images, 1, 64, 64))
-    noise = noise.to(device)
-    scheduler.set_timesteps(num_inference_steps=25)
+# Generate some synthetic images using the defined model
+noise = torch.randn((n_synthetic_images, 1, 64, 64))
+noise = noise.to(device)
+scheduler.set_timesteps(num_inference_steps=25)
 
-    with torch.no_grad():
-        syn_images, intermediates = inferer.sample(input_noise=noise, diffusion_model=unet,
-                                                  scheduler=scheduler,save_intermediates=True,
-                                                  intermediate_steps=100)
+with torch.no_grad():
+    syn_images = inferer.sample(input_noise=noise, diffusion_model=unet,
+                                              scheduler=scheduler, save_intermediates=False,
+                                              intermediate_steps=100)
 
-        ms_ssim_scores.append(ms_ssim(real_images, syn_images))
-        ssim_scores.append(ssim(real_images, syn_images))
+    idx_pairs = list(combinations(range(n_synthetic_images), 2))
+    for idx_a, idx_b in idx_pairs:
+        ms_ssim_scores.append(ms_ssim(syn_images[[idx_a]], syn_images[[idx_b]]))
+        ssim_scores.append(ssim(syn_images[[idx_a]], syn_images[[idx_b]]))
+
 
 ms_ssim_scores = torch.cat(ms_ssim_scores, dim=0)
 ssim_scores = torch.cat(ssim_scores, dim=0)
 
-print(f"MS-SSIM Metric: {ms_ssim_scores.mean():.7f} +- {ms_ssim_scores.std():.7f}")
-print(f"SSIM Metric: {ssim_scores.mean():.7f} +- {ssim_scores.std():.7f}")
+print(f"MS-SSIM Metric: {ms_ssim_scores.mean():.4f} +- {ms_ssim_scores.std():.4f}")
+print(f"SSIM Metric: {ssim_scores.mean():.4f} +- {ssim_scores.std():.4f}")
 # -
+# # Clean-up data
 
-
-
+if directory is None:
+    shutil.rmtree(root_dir)
