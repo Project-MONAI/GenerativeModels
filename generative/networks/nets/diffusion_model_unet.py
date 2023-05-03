@@ -492,7 +492,8 @@ class Downsample(nn.Module):
     Args:
         spatial_dims: number of spatial dimensions.
         num_channels: number of input channels.
-        use_conv: if True uses Convolution instead of Pool average to perform downsampling.
+        use_conv: if True uses Convolution instead of Pool average to perform downsampling. In case that use_conv is
+            False, the number of output channels must be the same as the number of input channels.
         out_channels: number of output channels.
         padding: controls the amount of implicit zero-paddings on both sides for padding number of points
             for each dimension.
