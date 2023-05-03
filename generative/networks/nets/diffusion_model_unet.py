@@ -468,7 +468,7 @@ def get_timestep_embedding(timesteps: torch.Tensor, embedding_dim: int, max_peri
         embedding_dim: the dimension of the output.
         max_period: controls the minimum frequency of the embeddings.
     """
-    if len(timesteps.shape) != 1:
+    if timesteps.ndim != 1:
         raise ValueError("Timesteps should be a 1d-array")
 
     half_dim = embedding_dim // 2
