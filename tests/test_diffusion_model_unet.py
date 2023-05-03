@@ -241,16 +241,16 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
             self.assertEqual(result.shape, (1, 1, 16, 16))
 
     def test_timestep_with_wrong_shape(self):
+        net = DiffusionModelUNet(
+            spatial_dims=2,
+            in_channels=1,
+            out_channels=1,
+            num_res_blocks=1,
+            num_channels=(8, 8, 8),
+            attention_levels=(False, False, False),
+            norm_num_groups=8,
+        )
         with self.assertRaises(ValueError):
-            net = DiffusionModelUNet(
-                spatial_dims=2,
-                in_channels=1,
-                out_channels=1,
-                num_res_blocks=1,
-                num_channels=(8, 8, 8),
-                attention_levels=(False, False, False),
-                norm_num_groups=8,
-            )
             with eval_mode(net):
                 net.forward(torch.rand((1, 1, 16, 16)), torch.randint(0, 1000, (1, 1)).long())
 
