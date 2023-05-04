@@ -57,7 +57,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn.functional as F
-import sys
 from monai import transforms
 from monai.apps import DecathlonDataset
 from monai.config import print_config
