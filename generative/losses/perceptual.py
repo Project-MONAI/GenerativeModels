@@ -25,8 +25,8 @@ class PerceptualLoss(nn.Module):
     features as a perceptual metric." https://arxiv.org/abs/1801.03924 ; RadImagenet from Mei, et al. "RadImageNet: An
     Open Radiologic Deep Learning Research Dataset for Effective Transfer Learning"
     https://pubs.rsna.org/doi/full/10.1148/ryai.210315 ; MedicalNet from Chen et al. "Med3D: Transfer Learning for
-    3D Medical Image Analysis" https://arxiv.org/abs/1904.00625 and ResNet50 from Torchvision:
-    https://pytorch.org/vision/main/models/generated/torchvision.models.resnet50.html.
+    3D Medical Image Analysis" https://arxiv.org/abs/1904.00625 ;
+    and ResNet50 from Torchvision: https://pytorch.org/vision/main/models/generated/torchvision.models.resnet50.html .
 
     The fake 3D implementation is based on a 2.5D approach where we calculate the 2D perceptual on slices from the
     three axis.
