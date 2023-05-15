@@ -270,7 +270,7 @@ val_interval = 10
 
 
 # initialise the LightningModule
-ae_net = AutoEnconder()
+ae_net = AutoEncoder()
 
 # set up checkpoints
 
