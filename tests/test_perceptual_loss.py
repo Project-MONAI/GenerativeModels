@@ -14,9 +14,8 @@ from __future__ import annotations
 import unittest
 
 import torch
-from parameterized import parameterized
-
 from generative.losses import PerceptualLoss
+from parameterized import parameterized
 
 TEST_CASES = [
     [{"spatial_dims": 2, "network_type": "squeeze"}, (2, 1, 64, 64), (2, 1, 64, 64)],
@@ -34,6 +33,11 @@ TEST_CASES = [
     ],
     [
         {"spatial_dims": 3, "network_type": "medicalnet_resnet10_23datasets", "is_fake_3d": False},
+        (2, 1, 64, 64, 64),
+        (2, 1, 64, 64, 64),
+    ],
+    [
+        {"spatial_dims": 3, "network_type": "resnet50", "is_fake_3d": True, "pretrained": True, "fake_3d_ratio": 0.2},
         (2, 1, 64, 64, 64),
         (2, 1, 64, 64, 64),
     ],
