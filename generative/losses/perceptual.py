@@ -319,7 +319,8 @@ class TorchvisionModelPerceptualSimilarity(nn.Module):
         We expect that the input is normalised between [0, 1]. Given the preprocessing performed during the training at
         https://pytorch.org/vision/main/models/generated/torchvision.models.resnet50.html#torchvision.models.ResNet50_Weights,
         we make sure that the input and target have 3 channels, and then do Z-Score normalization.
-        The outputs are normalised across the channels, and we obtain the mean from the spatial dimensions (similar approach to the lpips package).
+        The outputs are normalised across the channels, and we obtain the mean from the spatial dimensions (similar
+        approach to the lpips package).
         """
         # If input has just 1 channel, repeat channel to have 3 channels
         if input.shape[1] == 1 and target.shape[1] == 1:
