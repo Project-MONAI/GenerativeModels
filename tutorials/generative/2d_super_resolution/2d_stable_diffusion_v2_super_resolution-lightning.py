@@ -157,7 +157,7 @@ def get_datasets():
 
 
 # %%
-class AutoEnconder(pl.LightningModule):
+class AutoEncoder(pl.LightningModule):
     def __init__(self):
         super().__init__()
         self.data_dir = root_dir
