@@ -311,7 +311,7 @@ def get_scale_factor():
     return scale_factor
 
 
-scale_factor = get_scaler_factor()
+scale_factor = get_scale_factor()
 
 
 # %% [markdown]
