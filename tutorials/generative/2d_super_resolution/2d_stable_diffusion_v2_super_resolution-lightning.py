@@ -298,7 +298,7 @@ trainer.fit(ae_net)
 
 
 # %%
-def get_scaler_factor():
+def get_scale_factor():
     ae_net.eval()
     device = torch.device("cuda:0")
     ae_net.to(device)
