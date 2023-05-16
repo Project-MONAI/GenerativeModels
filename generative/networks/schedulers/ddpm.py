@@ -93,7 +93,7 @@ class DDPMScheduler(Scheduler):
             raise ValueError("Argument `variance_type` must be a member of `DDPMVarianceType`")
 
         if prediction_type not in DDPMPredictionType.__members__.values():
-            raise ValueError("Argument `prediction_type` must be a member of `DDPMPRedictionType`")
+            raise ValueError("Argument `prediction_type` must be a member of `DDPMPredictionType`")
 
         self.clip_sample = clip_sample
         self.variance_type = variance_type
