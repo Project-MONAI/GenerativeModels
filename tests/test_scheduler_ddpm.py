@@ -19,17 +19,17 @@ from parameterized import parameterized
 from generative.networks.schedulers import DDPMScheduler
 
 TEST_2D_CASE = []
-for beta_schedule in ["linear", "scaled_linear"]:
+for beta_schedule in ["linear_beta", "scaled_linear_beta"]:
     for variance_type in ["fixed_small", "fixed_large"]:
         TEST_2D_CASE.append(
-            [{"beta_schedule": beta_schedule, "variance_type": variance_type}, (2, 6, 16, 16), (2, 6, 16, 16)]
+            [{"schedule": beta_schedule, "variance_type": variance_type}, (2, 6, 16, 16), (2, 6, 16, 16)]
         )
 
 TEST_3D_CASE = []
-for beta_schedule in ["linear", "scaled_linear"]:
+for beta_schedule in ["linear_beta", "scaled_linear_beta"]:
     for variance_type in ["fixed_small", "fixed_large"]:
         TEST_3D_CASE.append(
-            [{"beta_schedule": beta_schedule, "variance_type": variance_type}, (2, 6, 16, 16, 16), (2, 6, 16, 16, 16)]
+            [{"schedule": beta_schedule, "variance_type": variance_type}, (2, 6, 16, 16, 16), (2, 6, 16, 16, 16)]
         )
 
 TEST_CASES = TEST_2D_CASE + TEST_3D_CASE
@@ -54,6 +54,14 @@ class TestDDPMScheduler(unittest.TestCase):
         output_step = scheduler.step(model_output=model_output, timestep=500, sample=sample)
         self.assertEqual(output_step[0].shape, expected_shape)
         self.assertEqual(output_step[1].shape, expected_shape)
+
+    @parameterized.expand(TEST_CASES)
+    def test_get_velocity_shape(self, input_param, input_shape, expected_shape):
+        scheduler = DDPMScheduler(**input_param)
+        sample = torch.randn(input_shape)
+        timesteps = torch.randint(0, scheduler.num_train_timesteps, (input_shape[0],)).long()
+        velocity = scheduler.get_velocity(sample=sample, noise=sample, timesteps=timesteps)
+        self.assertEqual(velocity.shape, expected_shape)
 
     def test_step_learned(self):
         for variance_type in ["learned", "learned_range"]:

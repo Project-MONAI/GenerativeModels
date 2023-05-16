@@ -335,7 +335,6 @@ for epoch in range(n_epochs):
     progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=110)
     progress_bar.set_description(f"Epoch {epoch}")
     for step, batch in progress_bar:
-
         images = batch["image"].to(device)
 
         optimizer.zero_grad(set_to_none=True)
@@ -358,7 +357,6 @@ for epoch in range(n_epochs):
         val_loss = 0
         with torch.no_grad():
             for val_step, batch in enumerate(val_loader, start=1):
-
                 images = batch["image"].to(device)
 
                 logits, quantizations_target, _ = inferer(

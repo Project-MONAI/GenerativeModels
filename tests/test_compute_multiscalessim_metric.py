@@ -59,18 +59,22 @@ class TestMultiScaleSSIMMetric(unittest.TestCase):
         expected_value = 0.061796
         self.assertTrue(expected_value - result.item() < 0.000001)
 
-    def input_ill_input_shape(self):
-        with self.assertRaises(ValueError):
-            metric = MultiScaleSSIMMetric(spatial_dims=3, weights=[0.5, 0.5])
-            metric(torch.randn(1, 1, 64, 64), torch.randn(1, 1, 64, 64))
+    def input_ill_input_shape2d(self):
+        metric = MultiScaleSSIMMetric(spatial_dims=3, weights=[0.5, 0.5])
 
         with self.assertRaises(ValueError):
-            metric = MultiScaleSSIMMetric(spatial_dims=2, weights=[0.5, 0.5])
+            metric(torch.randn(1, 1, 64, 64), torch.randn(1, 1, 64, 64))
+
+    def input_ill_input_shape3d(self):
+        metric = MultiScaleSSIMMetric(spatial_dims=2, weights=[0.5, 0.5])
+
+        with self.assertRaises(ValueError):
             metric(torch.randn(1, 1, 64, 64, 64), torch.randn(1, 1, 64, 64, 64))
 
     def small_inputs(self):
+        metric = MultiScaleSSIMMetric(spatial_dims=2)
+
         with self.assertRaises(ValueError):
-            metric = MultiScaleSSIMMetric(spatial_dims=2)
             metric(torch.randn(1, 1, 16, 16, 16), torch.randn(1, 1, 16, 16, 16))
 
 

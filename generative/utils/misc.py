@@ -11,6 +11,16 @@
 
 from __future__ import annotations
 
-from .component_store import ComponentStore
-from .enums import AdversarialIterationEvents, AdversarialKeys
-from .misc import unsqueeze_left, unsqueeze_right
+from typing import TypeVar
+
+T = TypeVar("T")
+
+
+def unsqueeze_right(arr: T, ndim: int) -> T:
+    """Append 1-sized dimensions to `arr` to create a result with `ndim` dimensions."""
+    return arr[(...,) + (None,) * (ndim - arr.ndim)]
+
+
+def unsqueeze_left(arr: T, ndim: int) -> T:
+    """Preppend 1-sized dimensions to `arr` to create a result with `ndim` dimensions."""
+    return arr[(None,) * (ndim - arr.ndim)]

@@ -395,6 +395,7 @@ for i in progress_bar:  # go through the denoising process
 # %% [markdown]
 # ### Visualize anomaly map
 
+
 # %%
 def visualize(img):
     _min = img.min()

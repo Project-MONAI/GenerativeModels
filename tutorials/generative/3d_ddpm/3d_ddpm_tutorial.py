@@ -164,7 +164,7 @@ model.to(device)
 # Together with our U-net, we need to define the Noise Scheduler for the diffusion model. This scheduler is responsible for defining the amount of noise that should be added in each timestep `t` of the diffusion model's Markov chain. Besides that, it has the operations to perform the reverse process, which will remove the noise of the images (a.k.a. denoising process). In this case, we are using a `DDPMScheduler`. Here we are using 1000 timesteps and a `scaled_linear` profile for the beta values (proposed in [Rombach et al. "High-Resolution Image Synthesis with Latent Diffusion Models"](https://arxiv.org/abs/2112.10752)). This profile had better results than the `linear, proposed in the original DDPM's paper. In `beta_start` and `beta_end`, we define the limits for the beta values. These are important to determine how accentuated is the addition of noise in the image.
 
 # %%
-scheduler = DDPMScheduler(num_train_timesteps=1000, beta_schedule="scaled_linear", beta_start=0.0005, beta_end=0.0195)
+scheduler = DDPMScheduler(num_train_timesteps=1000, schedule="scaled_linear_beta", beta_start=0.0005, beta_end=0.0195)
 
 # %%
 plt.plot(scheduler.alphas_cumprod.cpu(), color=(2 / 255, 163 / 255, 163 / 255), linewidth=2)
@@ -310,7 +310,7 @@ plt.show()
 
 # %%
 scheduler_ddim = DDIMScheduler(
-    num_train_timesteps=1000, beta_schedule="scaled_linear", beta_start=0.0005, beta_end=0.0195, clip_sample=False
+    num_train_timesteps=1000, schedule="scaled_linear_beta", beta_start=0.0005, beta_end=0.0195, clip_sample=False
 )
 
 scheduler_ddim.set_timesteps(num_inference_steps=250)

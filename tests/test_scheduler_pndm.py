@@ -19,12 +19,12 @@ from parameterized import parameterized
 from generative.networks.schedulers import PNDMScheduler
 
 TEST_2D_CASE = []
-for beta_schedule in ["linear", "scaled_linear"]:
-    TEST_2D_CASE.append([{"beta_schedule": beta_schedule}, (2, 6, 16, 16), (2, 6, 16, 16)])
+for beta_schedule in ["linear_beta", "scaled_linear_beta"]:
+    TEST_2D_CASE.append([{"schedule": beta_schedule}, (2, 6, 16, 16), (2, 6, 16, 16)])
 
 TEST_3D_CASE = []
-for beta_schedule in ["linear", "scaled_linear"]:
-    TEST_3D_CASE.append([{"beta_schedule": beta_schedule}, (2, 6, 16, 16, 16), (2, 6, 16, 16, 16)])
+for beta_schedule in ["linear_beta", "scaled_linear_beta"]:
+    TEST_3D_CASE.append([{"schedule": beta_schedule}, (2, 6, 16, 16, 16), (2, 6, 16, 16, 16)])
 
 TEST_CASES = TEST_2D_CASE + TEST_3D_CASE
 

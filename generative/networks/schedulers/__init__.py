@@ -14,3 +14,4 @@ from __future__ import annotations
 from .ddim import DDIMScheduler
 from .ddpm import DDPMScheduler
 from .pndm import PNDMScheduler
+from .scheduler import NoiseSchedules, Scheduler
