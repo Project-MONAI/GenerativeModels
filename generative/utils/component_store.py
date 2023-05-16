@@ -10,10 +10,11 @@
 # limitations under the License.
 
 from __future__ import annotations
-from textwrap import dedent, indent
+
 from collections import namedtuple
 from keyword import iskeyword
-from typing import TypeVar, Callable, Any, Dict, Iterable
+from textwrap import dedent, indent
+from typing import Any, Callable, Dict, Iterable, TypeVar
 
 T = TypeVar("T")
 

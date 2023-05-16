@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import numpy as np
 import torch
-
 from monai.utils import StrEnum
 
 from generative.networks.schedulers import Scheduler
@@ -41,9 +40,10 @@ from generative.networks.schedulers import Scheduler
 
 class DDPMVarianceType(StrEnum):
     """
-    Valid names for DDPM Scheduler's `variance_type` argument. Options to clip the variance used when adding noise 
+    Valid names for DDPM Scheduler's `variance_type` argument. Options to clip the variance used when adding noise
     to the denoised sample.
     """
+
     FIXED_SMALL = "fixed_small"
     FIXED_LARGE = "fixed_large"
     LEARNED = "learned"
@@ -53,11 +53,12 @@ class DDPMVarianceType(StrEnum):
 class DDPMPredictionType(StrEnum):
     """
     Set of valid prediction type names for the DDPM scheduler's `prediction_type` argument.
-    
+
     epsilon: predicting the noise of the diffusion process
     sample: directly predicting the noisy sample
     v_prediction: velocity prediction, see section 2.4 https://imagen.research.google/video/paper.pdf
     """
+
     EPSILON = "epsilon"
     SAMPLE = "sample"
     V_PREDICTION = "v_prediction"

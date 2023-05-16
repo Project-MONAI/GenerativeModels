@@ -368,7 +368,6 @@ def dice_coeff(im1, im2, empty_score=1.0):
 
 # +
 for i in range(len(ensemble)):
-
     prediction = torch.where(ensemble[i] > 0.5, 1, 0).float()  # a binary mask is obtained via thresholding
     score = dice_coeff(
         prediction[0, 0].cpu(), inputlabel.cpu()

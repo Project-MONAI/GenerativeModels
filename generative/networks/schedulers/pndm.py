@@ -35,7 +35,6 @@ from typing import Any
 
 import numpy as np
 import torch
-
 from monai.utils import StrEnum
 
 from generative.networks.schedulers import Scheduler
@@ -44,10 +43,11 @@ from generative.networks.schedulers import Scheduler
 class PNDMPredictionType(StrEnum):
     """
     Set of valid prediction type names for the PNDM scheduler's `prediction_type` argument.
-    
+
     epsilon: predicting the noise of the diffusion process
     v_prediction: velocity prediction, see section 2.4 https://imagen.research.google/video/paper.pdf
     """
+
     EPSILON = "epsilon"
     V_PREDICTION = "v_prediction"
 

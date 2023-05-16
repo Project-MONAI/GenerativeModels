@@ -31,13 +31,14 @@
 
 
 from __future__ import annotations
+
 from typing import Callable
+
 import numpy as np
 import torch
 import torch.nn as nn
 
 from generative.utils import ComponentStore, unsqueeze_right
-
 
 NoiseSchedules = ComponentStore("NoiseSchedules", "Functions to generate noise schedules")
 

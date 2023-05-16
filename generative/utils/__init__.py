@@ -11,6 +11,6 @@
 
 from __future__ import annotations
 
-from .enums import AdversarialIterationEvents, AdversarialKeys
 from .component_store import ComponentStore
+from .enums import AdversarialIterationEvents, AdversarialKeys
 from .misc import *

@@ -9,7 +9,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .scheduler import Scheduler, NoiseSchedules
+from __future__ import annotations
+
 from .ddim import DDIMScheduler
 from .ddpm import DDPMScheduler
 from .pndm import PNDMScheduler
+from .scheduler import NoiseSchedules, Scheduler
