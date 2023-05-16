@@ -35,7 +35,7 @@ import numpy as np
 import torch
 from monai.utils import StrEnum
 
-from generative.networks.schedulers import Scheduler
+from .scheduler import Scheduler
 
 
 class DDIMPredictionType(StrEnum):
@@ -86,7 +86,7 @@ class DDIMScheduler(Scheduler):
         super().__init__(num_train_timesteps, schedule, **schedule_args)
 
         if prediction_type not in DDIMPredictionType.__members__.values():
-            raise ValueError(f"Argument `prediction_type` must be a member of DDIMPredictionType")
+            raise ValueError("Argument `prediction_type` must be a member of DDIMPredictionType")
 
         self.prediction_type = prediction_type
 

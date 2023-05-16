@@ -37,7 +37,7 @@ import numpy as np
 import torch
 from monai.utils import StrEnum
 
-from generative.networks.schedulers import Scheduler
+from .scheduler import Scheduler
 
 
 class PNDMPredictionType(StrEnum):
@@ -89,7 +89,7 @@ class PNDMScheduler(Scheduler):
         super().__init__(num_train_timesteps, schedule, **schedule_args)
 
         if prediction_type not in PNDMPredictionType.__members__.values():
-            raise ValueError(f"Argument `prediction_type` must be a member of PNDMPredictionType")
+            raise ValueError("Argument `prediction_type` must be a member of PNDMPredictionType")
 
         self.prediction_type = prediction_type
 

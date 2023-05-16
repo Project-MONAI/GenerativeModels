@@ -35,7 +35,7 @@ import numpy as np
 import torch
 from monai.utils import StrEnum
 
-from generative.networks.schedulers import Scheduler
+from .scheduler import Scheduler
 
 
 class DDPMVarianceType(StrEnum):
