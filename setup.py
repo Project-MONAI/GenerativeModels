@@ -14,7 +14,7 @@ from __future__ import annotations
 from setuptools import find_packages, setup
 
 setup(
-    name="generative",
+    name="monai-generative",
     packages=find_packages(exclude=[]),
     version="0.2.1",
     description="Installer to help to use the prototypes from MONAI generative models in other projects.",
