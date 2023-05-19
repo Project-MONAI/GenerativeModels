@@ -18,5 +18,5 @@ setup(
     packages=find_packages(exclude=[]),
     version="0.2.1",
     description="Installer to help to use the prototypes from MONAI generative models in other projects.",
-    install_requires=["monai-weekly==1.2.dev2304"],
+    install_requires=["monai>=1.2.0rc1"],
 )
