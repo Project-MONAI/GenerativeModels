@@ -86,7 +86,7 @@
         "beta_start": 0.0015,
         "beta_end": 0.0205,
         "num_train_timesteps": 1000,
-        "beta_schedule": "scaled_linear",
+        "schedule": "scaled_linear_beta",
         "prediction_type": "v_prediction",
         "clip_sample": false
     },
