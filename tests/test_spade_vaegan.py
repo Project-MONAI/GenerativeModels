@@ -90,7 +90,7 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
             self.assertEqual(list(out_i.shape), [1, 1, 64, 64])
 
     @parameterized.expand(CASE_3D)
-    def test_forward_2d(self, input_param):
+    def test_forward_3d(self, input_param):
         '''
         Check that forward method is called correctly and output shape matches.
         '''

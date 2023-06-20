@@ -15,10 +15,10 @@ from typing import Union, Sequence
 import numpy as np
 from monai.networks.blocks import Convolution
 from monai.networks.layers import Act
-from networks.blocks.spade_norm import SPADE
+from generative.networks.blocks.spade_norm import SPADE
 from monai.utils.enums import StrEnum
 import torch.nn.functional as F
-from losses.kld_loss import KLDLoss
+from generative.losses.kld_loss import KLDLoss
 
 class UpsamplingModes(StrEnum):
     bicubic = "bicubic"
