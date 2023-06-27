@@ -911,6 +911,7 @@ class CrossAttnDownBlock(nn.Module):
         cross_attention_dim: number of context dimensions to use.
         upcast_attention: if True, upcast attention operations to full precision.
         use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
+        dropout_cattn: if different from zero, this will be the dropout value for the cross-attention layers
     """
 
     def __init__(
@@ -930,6 +931,7 @@ class CrossAttnDownBlock(nn.Module):
         cross_attention_dim: int | None = None,
         upcast_attention: bool = False,
         use_flash_attention: bool = False,
+        dropout_cattn: float = 0.0
     ) -> None:
         super().__init__()
         self.resblock_updown = resblock_updown
@@ -962,6 +964,7 @@ class CrossAttnDownBlock(nn.Module):
                     cross_attention_dim=cross_attention_dim,
                     upcast_attention=upcast_attention,
                     use_flash_attention=use_flash_attention,
+                    dropout=dropout_cattn
                 )
             )
 
@@ -1100,6 +1103,7 @@ class CrossAttnMidBlock(nn.Module):
         cross_attention_dim: int | None = None,
         upcast_attention: bool = False,
         use_flash_attention: bool = False,
+        dropout_cattn: float = 0.0
     ) -> None:
         super().__init__()
         self.attention = None
@@ -1123,6 +1127,7 @@ class CrossAttnMidBlock(nn.Module):
             cross_attention_dim=cross_attention_dim,
             upcast_attention=upcast_attention,
             use_flash_attention=use_flash_attention,
+            dropout=dropout_cattn
         )
         self.resnet_2 = ResnetBlock(
             spatial_dims=spatial_dims,
@@ -1266,7 +1271,7 @@ class AttnUpBlock(nn.Module):
         add_upsample: bool = True,
         resblock_updown: bool = False,
         num_head_channels: int = 1,
-        use_flash_attention: bool = False,
+        use_flash_attention: bool = False
     ) -> None:
         super().__init__()
         self.resblock_updown = resblock_updown
@@ -1363,6 +1368,7 @@ class CrossAttnUpBlock(nn.Module):
         cross_attention_dim: number of context dimensions to use.
         upcast_attention: if True, upcast attention operations to full precision.
         use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
+        dropout_cattn: if different from zero, this will be the dropout value for the cross-attention layers
     """
 
     def __init__(
@@ -1382,6 +1388,7 @@ class CrossAttnUpBlock(nn.Module):
         cross_attention_dim: int | None = None,
         upcast_attention: bool = False,
         use_flash_attention: bool = False,
+        dropout_cattn: float = 0.0
     ) -> None:
         super().__init__()
         self.resblock_updown = resblock_updown
@@ -1415,6 +1422,7 @@ class CrossAttnUpBlock(nn.Module):
                     cross_attention_dim=cross_attention_dim,
                     upcast_attention=upcast_attention,
                     use_flash_attention=use_flash_attention,
+                    dropout=dropout_cattn
                 )
             )
 
@@ -1478,6 +1486,7 @@ def get_down_block(
     cross_attention_dim: int | None,
     upcast_attention: bool = False,
     use_flash_attention: bool = False,
+    dropout_cattn: float = 0.0
 ) -> nn.Module:
     if with_attn:
         return AttnDownBlock(
@@ -1509,6 +1518,7 @@ def get_down_block(
             cross_attention_dim=cross_attention_dim,
             upcast_attention=upcast_attention,
             use_flash_attention=use_flash_attention,
+            dropout_cattn=dropout_cattn
         )
     else:
         return DownBlock(
@@ -1536,6 +1546,7 @@ def get_mid_block(
     cross_attention_dim: int | None,
     upcast_attention: bool = False,
     use_flash_attention: bool = False,
+    dropout_cattn: float = 0.0
 ) -> nn.Module:
     if with_conditioning:
         return CrossAttnMidBlock(
@@ -1549,6 +1560,7 @@ def get_mid_block(
             cross_attention_dim=cross_attention_dim,
             upcast_attention=upcast_attention,
             use_flash_attention=use_flash_attention,
+            dropout_cattn=dropout_cattn
         )
     else:
         return AttnMidBlock(
@@ -1580,6 +1592,7 @@ def get_up_block(
     cross_attention_dim: int | None,
     upcast_attention: bool = False,
     use_flash_attention: bool = False,
+    dropout_cattn: float = 0.0
 ) -> nn.Module:
     if with_attn:
         return AttnUpBlock(
@@ -1613,6 +1626,7 @@ def get_up_block(
             cross_attention_dim=cross_attention_dim,
             upcast_attention=upcast_attention,
             use_flash_attention=use_flash_attention,
+            dropout_cattn=dropout_cattn
         )
     else:
         return UpBlock(
@@ -1653,6 +1667,7 @@ class DiffusionModelUNet(nn.Module):
         classes.
         upcast_attention: if True, upcast attention operations to full precision.
         use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
+        dropout_cattn: if different from zero, this will be the dropout value for the cross-attention layers
     """
 
     def __init__(
@@ -1673,6 +1688,7 @@ class DiffusionModelUNet(nn.Module):
         num_class_embeds: int | None = None,
         upcast_attention: bool = False,
         use_flash_attention: bool = False,
+        dropout_cattn: float = 0.0
     ) -> None:
         super().__init__()
         if with_conditioning is True and cross_attention_dim is None:
@@ -1683,6 +1699,10 @@ class DiffusionModelUNet(nn.Module):
         if cross_attention_dim is not None and with_conditioning is False:
             raise ValueError(
                 "DiffusionModelUNet expects with_conditioning=True when specifying the cross_attention_dim."
+            )
+        if dropout_cattn > 1.0 or dropout_cattn < 0.0:
+            raise ValueError(
+                "Dropout cannot be negative or >1.0!"
             )
 
         # All number of channels should be multiple of num_groups
@@ -1773,6 +1793,7 @@ class DiffusionModelUNet(nn.Module):
                 cross_attention_dim=cross_attention_dim,
                 upcast_attention=upcast_attention,
                 use_flash_attention=use_flash_attention,
+                dropout_cattn=dropout_cattn
             )
 
             self.down_blocks.append(down_block)
@@ -1790,6 +1811,7 @@ class DiffusionModelUNet(nn.Module):
             cross_attention_dim=cross_attention_dim,
             upcast_attention=upcast_attention,
             use_flash_attention=use_flash_attention,
+            dropout_cattn=dropout_cattn
         )
 
         # up
@@ -1824,6 +1846,7 @@ class DiffusionModelUNet(nn.Module):
                 cross_attention_dim=cross_attention_dim,
                 upcast_attention=upcast_attention,
                 use_flash_attention=use_flash_attention,
+                dropout_cattn=dropout_cattn
             )
 
             self.up_blocks.append(up_block)
