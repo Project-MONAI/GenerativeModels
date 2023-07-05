@@ -239,6 +239,8 @@ optimizer_D = torch.optim.Adam(discriminator.parameters(), lr = 0.0004)
 net = net.to(device)
 discriminator = discriminator.to(device)
 torch.autograd.set_detect_anomaly(True)
+losses = {'kld': [], 'perceptual': [], 'feature': [], 'generator': [], 'discriminator': []}
+losses_val = {'kld': [], 'perceptual': [], 'feature': [], 'generator': [], 'discriminator': []}
 for epoch in range(num_epochs):
     print("Epoch %d/%d" %(epoch, num_epochs))
     train_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=120)
@@ -324,7 +326,29 @@ for epoch in range(num_epochs):
                             })
             if step == 0 and epoch%10==0:
                 picture_results(label, image, out)
+    for key, val in losses_epoch.items():
+        losses[key].append(val / len(train_loader))
+    for key, val in losses_epoch_val.items():
+        losses_val[key].append(val / len(val_loader))
 
-# + pycharm={"name": "#%%"}
+
+# Plot losses
+colors = ['orangered', 'royalblue', 'hotpink', 'lime', 'goldenrod']
+plt.figure(figsize=(5,10))
+ind = 0
+for key, val in losses.items():
+    plt.subplot(len(losses.keys()),1,ind+1)
+    plt.plot(val, color = colors[ind], linestyle = '-')
+    plt.plot(losses_val[key], color = colors[ind], linestyle = '--')
+    plt.title(key)
+    plt.xlabel("Epochs")
+    ind+=1;
+plt.tight_layout()
+plt.show()
+
+# + [markdown] pycharm={"name": "#%%"}
+# **Conclusion**: from early on, the network shows the capability of discern between the different semantic layers. To achieve good image quality, more images and training time are needed (to avoid overfitting, seen in some loss plots of previous example), as well as thorough optimisation, such as establishing an adversarial schedule that makes sure that the discriminator and generator and the discriminator are trained only when their performance does not exceed a certain limit.
+#
+# -
 
 

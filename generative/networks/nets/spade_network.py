@@ -26,6 +26,17 @@ class UpsamplingModes(StrEnum):
     bilinear = "bilinear"
 
 class SPADE_ResNetBlock(nn.Module):
+    """
+    Creates a Residual Block with SPADE normalisation.
+    Args:
+        spatial_dims: number of spatial dimensions
+        in_channels: number of input channels
+        out_channels: number of output channels
+        label_nc: number of semantic channels that will be taken into account in SPADE normalisation blocks
+        spade_intermediate_channels: number of intermediate channels in the middle conv. layers in SPADE normalisation blocks
+        norm: base normalisation type used on top of SPADE
+        kernel_size: convolutional kernel size
+    """
 
     def __init__(self,
                  spatial_dims: int,
@@ -74,7 +85,6 @@ class SPADE_ResNetBlock(nn.Module):
                                 norm=norm)
 
     def forward(self, x, seg):
-
         x_s = self.shortcut(x, seg)
         dx = self.conv_0(self.activation(self.norm_0(x, seg)))
         dx = self.conv_1(self.activation(self.norm_1(dx, seg)))
@@ -89,7 +99,19 @@ class SPADE_ResNetBlock(nn.Module):
         return x_s
 
 class SPADE_Encoder(nn.Module):
-
+    """
+    Encoding branch of a VAE compatible with a SPADE-like generator
+    Args:
+        spatial_dims: number of spatial dimensions
+        in_channels: number of input channels
+        z_dim: latent space dimension of the VAE containing the image sytle information
+        num_channels: number of output after each downsampling block
+        input_shape: spatial input shape of the tensor, necessary to do the reshaping after the linear layers
+        of the autoencoder (HxWx[D])
+        kernel_size: convolutional kernel size
+        norm: normalisation layer type
+        act: activation type
+    """
     def __init__(self,
                  spatial_dims: int,
                  in_channels: int,
@@ -139,7 +161,6 @@ class SPADE_Encoder(nn.Module):
         return mu, logvar
 
     def encode(self, x):
-
         for block in self.blocks:
             x = block(x)
         x = x.view(x.size(0), -1)
@@ -154,7 +175,25 @@ class SPADE_Encoder(nn.Module):
         return eps.mul(std) + mu
 
 class SPADE_Decoder(nn.Module):
-
+    """
+    Decoder branch of a SPADE-like generator. It can be used independently, without an encoding branch,
+    behaving like a GAN, or coupled to a SPADE encoder.
+    Args:
+        label_nc: number of semantic labels
+        spatial_dims: number of spatial dimensions
+        out_channels: number of output channels
+        label_nc: number of semantic channels used for the SPADE normalisation blocks
+        input_shape: spatial input shape of the tensor, necessary to do the reshaping after the linear layers
+        num_channels: number of output after each downsampling block
+        z_dim: latent space dimension of the VAE containing the image sytle information (None if encoder is not used)
+        is_gan: whether the decoder is going to be coupled to an autoencoder or not (true: not, false: yes)
+        spade_intermediate_channels: number of channels in the intermediate layers of the SPADE normalisation blocks
+        norm: base normalisation type
+        act:  activation layer type
+        last_act: activation layer type for the last layer of the network (can differ from previous)
+        kernel_size: convolutional kernel size
+        upsampling_mode: upsampling mode (nearest, bilinear etc.)
+    """
     def __init__(self,
                  spatial_dims: int,
                  out_channels: int,
@@ -214,8 +253,6 @@ class SPADE_Decoder(nn.Module):
 
 
     def forward(self, seg, z: torch.Tensor = None):
-
-
         if self.is_gan:
             x = F.interpolate(seg, size=tuple(self.latent_spatial_shape))
             x = self.fc(x)
@@ -234,6 +271,26 @@ class SPADE_Decoder(nn.Module):
         return x
 
 class SPADE_Net(nn.Module):
+
+    """
+    SPADE Network, implemented based on the code by Park, T et al. in "Semantic Image Synthesis with Spatially-Adaptive Normalization"
+    (https://github.com/NVlabs/SPADE)
+    Args:
+        spatial_dims: number of spatial dimensions
+        in_channels: number of input channels
+        out_channels: number of output channels
+        label_nc: number of semantic channels used for the SPADE normalisation blocks
+        input_shape:  spatial input shape of the tensor, necessary to do the reshaping after the linear layers
+        num_channels: number of output after each downsampling block
+        z_dim: latent space dimension of the VAE containing the image sytle information (None if encoder is not used)
+        is_vae: whether the decoder is going to be coupled to an autoencoder (true) or not (false)
+        spade_intermediate_channels: number of channels in the intermediate layers of the SPADE normalisation blocks
+        norm: base normalisation type
+        act: activation layer type
+        last_act: activation layer type for the last layer of the network (can differ from previous)
+        kernel_size: convolutional kernel size
+        upsampling_mode: upsampling mode (nearest, bilinear etc.)
+    """
 
     def __init__(
             self,
@@ -297,7 +354,6 @@ class SPADE_Net(nn.Module):
         )
 
     def forward(self, seg: torch.Tensor, x: Union[torch.Tensor, None] = None):
-
         z = None
         if self.is_vae:
             z_mu, z_logvar = self.encoder(x)
