@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from typing import Sequence, Union
+from typing import Sequence
 
 import numpy as np
 import torch
@@ -58,7 +58,7 @@ class SPADE_ResNetBlock(nn.Module):
         out_channels: int,
         label_nc: int,
         spade_intermediate_channels: int = 128,
-        norm: Union[str, tuple] = "INSTANCE",
+        norm: str | tuple = "INSTANCE",
         kernel_size: int = 3,
     ):
 
@@ -152,8 +152,8 @@ class SPADE_Encoder(nn.Module):
         num_channels: Sequence[int],
         input_shape: Sequence[int],
         kernel_size: int = 3,
-        norm: Union[str, tuple] = "INSTANCE",
-        act: Union[str, tuple] = (Act.LEAKYRELU, {"negative_slope": 0.2}),
+        norm: str | tuple = "INSTANCE",
+        act: str | tuple = (Act.LEAKYRELU, {"negative_slope": 0.2}),
     ):
 
         super().__init__()
@@ -246,12 +246,12 @@ class SPADE_Decoder(nn.Module):
         label_nc: int,
         input_shape: Sequence[int],
         num_channels: Sequence[int],
-        z_dim: Union[int, None] = None,
+        z_dim: int | None = None,
         is_gan: bool = False,
         spade_intermediate_channels: int = 128,
-        norm: Union[str, tuple] = "INSTANCE",
-        act: Union[str, tuple, None] = (Act.LEAKYRELU, {"negative_slope": 0.2}),
-        last_act: Union[str, tuple, None] = (Act.LEAKYRELU, {"negative_slope": 0.2}),
+        norm: str | tuple = "INSTANCE",
+        act: str | tuple | None = (Act.LEAKYRELU, {"negative_slope": 0.2}),
+        last_act: str | tuple | None = (Act.LEAKYRELU, {"negative_slope": 0.2}),
         kernel_size: int = 3,
         upsampling_mode: str = UpsamplingModes.nearest.value,
     ):
@@ -352,12 +352,12 @@ class SPADE_Net(nn.Module):
         label_nc: int,
         input_shape: Sequence[int],
         num_channels: Sequence[int],
-        z_dim: Union[int, None] = None,
+        z_dim: int | None = None,
         is_vae: bool = True,
         spade_intermediate_channels: int = 128,
-        norm: Union[str, tuple] = "INSTANCE",
-        act: Union[str, tuple, None] = (Act.LEAKYRELU, {"negative_slope": 0.2}),
-        last_act: Union[str, tuple, None] = (Act.LEAKYRELU, {"negative_slope": 0.2}),
+        norm: str | tuple = "INSTANCE",
+        act: str | tuple | None = (Act.LEAKYRELU, {"negative_slope": 0.2}),
+        last_act: str | tuple | None = (Act.LEAKYRELU, {"negative_slope": 0.2}),
         kernel_size: int = 3,
         upsampling_mode: str = UpsamplingModes.nearest.value,
     ):
@@ -405,7 +405,7 @@ class SPADE_Net(nn.Module):
             upsampling_mode=upsampling_mode,
         )
 
-    def forward(self, seg: torch.Tensor, x: Union[torch.Tensor, None] = None):
+    def forward(self, seg: torch.Tensor, x: torch.Tensor | None = None):
         z = None
         if self.is_vae:
             z_mu, z_logvar = self.encoder(x)
@@ -419,6 +419,6 @@ class SPADE_Net(nn.Module):
 
         return self.encoder.encode(x)
 
-    def decode(self, seg: torch.Tensor, z: Union[torch.Tensor, None] = None):
+    def decode(self, seg: torch.Tensor, z: torch.Tensor | None = None):
 
         return self.decoder(seg, z)
