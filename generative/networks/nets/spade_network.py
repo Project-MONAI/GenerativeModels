@@ -21,9 +21,15 @@ from monai.networks.blocks import Convolution
 from monai.networks.layers import Act
 from monai.utils.enums import StrEnum
 
-from generative.losses.kld_loss import KLDLoss
 from generative.networks.blocks.spade_norm import SPADE
 
+class KLDLoss(nn.Module):
+    """
+    Computes the Kullback-Leibler divergence between a normal distribution with mean mu and variance logvar and
+     one with mean 0 and variance 1.
+    """
+    def forward(self, mu, logvar):
+        return -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
 
 class UpsamplingModes(StrEnum):
     bicubic = "bicubic"
