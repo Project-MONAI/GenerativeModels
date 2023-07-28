@@ -44,7 +44,7 @@ class DiffusionInferer(Inferer):
             noise: torch.Tensor,
             timesteps: torch.Tensor,
             condition: torch.Tensor | None = None,
-            mode: str = "crossattn"
+            mode: str = "crossattn",
     ) -> torch.Tensor:
         """
         Implements the forward pass for a supervised training iteration.
@@ -55,6 +55,7 @@ class DiffusionInferer(Inferer):
             noise: random noise, of the same shape as the input.
             timesteps: random timesteps.
             condition: Conditioning for network input.
+            mode: Conditioning mode for the network.
         """
         if mode not in ["crossattn", "concat"]:
             raise NotImplementedError(f"{mode} condition is not supported")
@@ -130,6 +131,7 @@ class DiffusionInferer(Inferer):
             scheduler: Callable[..., torch.Tensor] | None = None,
             save_intermediates: bool | None = False,
             conditioning: torch.Tensor | None = None,
+            mode: str = "crossattn",
             original_input_range: tuple | None = (0, 255),
             scaled_input_range: tuple | None = (0, 1),
             verbose: bool = True,
@@ -143,6 +145,7 @@ class DiffusionInferer(Inferer):
             scheduler: diffusion scheduler. If none provided will use the class attribute scheduler.
             save_intermediates: save the intermediate spatial KL maps
             conditioning: Conditioning for network input.
+            mode: Conditioning mode for the network.
             original_input_range: the [min,max] intensity range of the input data before any scaling was applied.
             scaled_input_range: the [min,max] intensity range of the input data after scaling.
             verbose: if true, prints the progression bar of the sampling process.
@@ -155,6 +158,8 @@ class DiffusionInferer(Inferer):
                 f"Likelihood computation is only compatible with DDPMScheduler,"
                 f" you are using {scheduler._get_name()}"
             )
+        if mode not in ["crossattn", "concat"]:
+            raise NotImplementedError(f"{mode} condition is not supported")
         if verbose and has_tqdm:
             progress_bar = tqdm(scheduler.timesteps)
         else:
@@ -165,7 +170,13 @@ class DiffusionInferer(Inferer):
         for t in progress_bar:
             timesteps = torch.full(inputs.shape[:1], t, device=inputs.device).long()
             noisy_image = self.scheduler.add_noise(original_samples=inputs, noise=noise, timesteps=timesteps)
-            model_output = diffusion_model(x=noisy_image, timesteps=timesteps, context=conditioning)
+            if mode == "concat":
+                noisy_image = torch.cat([noisy_image, conditioning], dim=1)
+                model_output = diffusion_model(
+                    noisy_image, timesteps=timesteps, context=None
+                )
+            else:
+                model_output = diffusion_model(x=noisy_image, timesteps=timesteps, context=conditioning)
             # get the model's predicted mean,  and variance if it is predicted
             if model_output.shape[1] == inputs.shape[1] * 2 and scheduler.variance_type in ["learned", "learned_range"]:
                 model_output, predicted_variance = torch.split(model_output, inputs.shape[1], dim=1)
@@ -321,6 +332,7 @@ class LatentDiffusionInferer(DiffusionInferer):
             noise: random noise, of the same shape as the latent representation.
             timesteps: random timesteps.
             condition: conditioning for network input.
+            mode: Conditioning mode for the network.
         """
         with torch.no_grad():
             latent = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
@@ -393,6 +405,7 @@ class LatentDiffusionInferer(DiffusionInferer):
             scheduler: Callable[..., torch.Tensor] | None = None,
             save_intermediates: bool | None = False,
             conditioning: torch.Tensor | None = None,
+            mode: str = "crossattn",
             original_input_range: tuple | None = (0, 255),
             scaled_input_range: tuple | None = (0, 1),
             verbose: bool = True,
@@ -409,6 +422,7 @@ class LatentDiffusionInferer(DiffusionInferer):
             scheduler: diffusion scheduler. If none provided will use the class attribute scheduler
             save_intermediates: save the intermediate spatial KL maps
             conditioning: Conditioning for network input.
+            mode: Conditioning mode for the network.
             original_input_range: the [min,max] intensity range of the input data before any scaling was applied.
             scaled_input_range: the [min,max] intensity range of the input data after scaling.
             verbose: if true, prints the progression bar of the sampling process.
@@ -428,6 +442,7 @@ class LatentDiffusionInferer(DiffusionInferer):
             scheduler=scheduler,
             save_intermediates=save_intermediates,
             conditioning=conditioning,
+            mode=mode,
             verbose=verbose,
         )
         if save_intermediates and resample_latent_likelihoods:
