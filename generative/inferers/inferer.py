@@ -229,11 +229,11 @@ class DiffusionInferer(Inferer):
             else:
                 # compute kl between two normals
                 kl = 0.5 * (
-                        -1.0
-                        + log_predicted_variance
-                        - log_posterior_variance
-                        + torch.exp(log_posterior_variance - log_predicted_variance)
-                        + ((posterior_mean - predicted_mean) ** 2) * torch.exp(-log_predicted_variance)
+                    -1.0
+                    + log_predicted_variance
+                    - log_posterior_variance
+                    + torch.exp(log_posterior_variance - log_predicted_variance)
+                    + ((posterior_mean - predicted_mean) ** 2) * torch.exp(-log_predicted_variance)
                 )
             total_kl += kl.view(kl.shape[0], -1).mean(axis=1)
             if save_intermediates:
@@ -251,8 +251,7 @@ class DiffusionInferer(Inferer):
         """
 
         return 0.5 * (
-                1.0 + torch.tanh(
-            torch.sqrt(torch.Tensor([2.0 / math.pi]).to(x.device)) * (x + 0.044715 * torch.pow(x, 3)))
+            1.0 + torch.tanh(torch.sqrt(torch.Tensor([2.0 / math.pi]).to(x.device)) * (x + 0.044715 * torch.pow(x, 3)))
         )
 
     def _get_decoder_log_likelihood(
@@ -277,7 +276,7 @@ class DiffusionInferer(Inferer):
         """
         assert inputs.shape == means.shape
         bin_width = (scaled_input_range[1] - scaled_input_range[0]) / (
-                original_input_range[1] - original_input_range[0]
+            original_input_range[1] - original_input_range[0]
         )
         centered_x = inputs - means
         inv_stdv = torch.exp(-log_scales)
