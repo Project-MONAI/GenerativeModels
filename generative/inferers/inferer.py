@@ -38,13 +38,13 @@ class DiffusionInferer(Inferer):
         self.scheduler = scheduler
 
     def __call__(
-            self,
-            inputs: torch.Tensor,
-            diffusion_model: Callable[..., torch.Tensor],
-            noise: torch.Tensor,
-            timesteps: torch.Tensor,
-            condition: torch.Tensor | None = None,
-            mode: str = "crossattn",
+        self,
+        inputs: torch.Tensor,
+        diffusion_model: Callable[..., torch.Tensor],
+        noise: torch.Tensor,
+        timesteps: torch.Tensor,
+        condition: torch.Tensor | None = None,
+        mode: str = "crossattn",
     ) -> torch.Tensor:
         """
         Implements the forward pass for a supervised training iteration.
@@ -70,15 +70,15 @@ class DiffusionInferer(Inferer):
 
     @torch.no_grad()
     def sample(
-            self,
-            input_noise: torch.Tensor,
-            diffusion_model: Callable[..., torch.Tensor],
-            scheduler: Callable[..., torch.Tensor] | None = None,
-            save_intermediates: bool | None = False,
-            intermediate_steps: int | None = 100,
-            conditioning: torch.Tensor | None = None,
-            mode: str = "crossattn",
-            verbose: bool = True,
+        self,
+        input_noise: torch.Tensor,
+        diffusion_model: Callable[..., torch.Tensor],
+        scheduler: Callable[..., torch.Tensor] | None = None,
+        save_intermediates: bool | None = False,
+        intermediate_steps: int | None = 100,
+        conditioning: torch.Tensor | None = None,
+        mode: str = "crossattn",
+        verbose: bool = True,
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Args:
@@ -106,9 +106,7 @@ class DiffusionInferer(Inferer):
             # 1. predict noise model_output
             if mode == "concat":
                 image = torch.cat([image, conditioning], dim=1)
-                model_output = diffusion_model(
-                    image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=None
-                )
+                model_output = diffusion_model(image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=None)
             else:
                 model_output = diffusion_model(
                     image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning
@@ -125,16 +123,16 @@ class DiffusionInferer(Inferer):
 
     @torch.no_grad()
     def get_likelihood(
-            self,
-            inputs: torch.Tensor,
-            diffusion_model: Callable[..., torch.Tensor],
-            scheduler: Callable[..., torch.Tensor] | None = None,
-            save_intermediates: bool | None = False,
-            conditioning: torch.Tensor | None = None,
-            mode: str = "crossattn",
-            original_input_range: tuple | None = (0, 255),
-            scaled_input_range: tuple | None = (0, 1),
-            verbose: bool = True,
+        self,
+        inputs: torch.Tensor,
+        diffusion_model: Callable[..., torch.Tensor],
+        scheduler: Callable[..., torch.Tensor] | None = None,
+        save_intermediates: bool | None = False,
+        conditioning: torch.Tensor | None = None,
+        mode: str = "crossattn",
+        original_input_range: tuple | None = (0, 255),
+        scaled_input_range: tuple | None = (0, 1),
+        verbose: bool = True,
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Computes the log-likelihoods for an input.
@@ -172,9 +170,7 @@ class DiffusionInferer(Inferer):
             noisy_image = self.scheduler.add_noise(original_samples=inputs, noise=noise, timesteps=timesteps)
             if mode == "concat":
                 noisy_image = torch.cat([noisy_image, conditioning], dim=1)
-                model_output = diffusion_model(
-                    noisy_image, timesteps=timesteps, context=None
-                )
+                model_output = diffusion_model(noisy_image, timesteps=timesteps, context=None)
             else:
                 model_output = diffusion_model(x=noisy_image, timesteps=timesteps, context=conditioning)
             # get the model's predicted mean,  and variance if it is predicted
@@ -196,7 +192,7 @@ class DiffusionInferer(Inferer):
             elif scheduler.prediction_type == "sample":
                 pred_original_sample = model_output
             elif scheduler.prediction_type == "v_prediction":
-                pred_original_sample = (alpha_prod_t ** 0.5) * noisy_image - (beta_prod_t ** 0.5) * model_output
+                pred_original_sample = (alpha_prod_t**0.5) * noisy_image - (beta_prod_t**0.5) * model_output
             # 3. Clip "predicted x_0"
             if scheduler.clip_sample:
                 pred_original_sample = torch.clamp(pred_original_sample, -1, 1)
@@ -255,12 +251,12 @@ class DiffusionInferer(Inferer):
         )
 
     def _get_decoder_log_likelihood(
-            self,
-            inputs: torch.Tensor,
-            means: torch.Tensor,
-            log_scales: torch.Tensor,
-            original_input_range: tuple | None = (0, 255),
-            scaled_input_range: tuple | None = (0, 1),
+        self,
+        inputs: torch.Tensor,
+        means: torch.Tensor,
+        log_scales: torch.Tensor,
+        original_input_range: tuple | None = (0, 255),
+        scaled_input_range: tuple | None = (0, 1),
     ) -> torch.Tensor:
         """
         Compute the log-likelihood of a Gaussian distribution discretizing to a
@@ -312,14 +308,14 @@ class LatentDiffusionInferer(DiffusionInferer):
         self.scale_factor = scale_factor
 
     def __call__(
-            self,
-            inputs: torch.Tensor,
-            autoencoder_model: Callable[..., torch.Tensor],
-            diffusion_model: Callable[..., torch.Tensor],
-            noise: torch.Tensor,
-            timesteps: torch.Tensor,
-            condition: torch.Tensor | None = None,
-            mode: str = "crossattn",
+        self,
+        inputs: torch.Tensor,
+        autoencoder_model: Callable[..., torch.Tensor],
+        diffusion_model: Callable[..., torch.Tensor],
+        noise: torch.Tensor,
+        timesteps: torch.Tensor,
+        condition: torch.Tensor | None = None,
+        mode: str = "crossattn",
     ) -> torch.Tensor:
         """
         Implements the forward pass for a supervised training iteration.
@@ -337,24 +333,28 @@ class LatentDiffusionInferer(DiffusionInferer):
             latent = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
 
         prediction = super().__call__(
-            inputs=latent, diffusion_model=diffusion_model, noise=noise, timesteps=timesteps, condition=condition,
-            mode=mode
+            inputs=latent,
+            diffusion_model=diffusion_model,
+            noise=noise,
+            timesteps=timesteps,
+            condition=condition,
+            mode=mode,
         )
 
         return prediction
 
     @torch.no_grad()
     def sample(
-            self,
-            input_noise: torch.Tensor,
-            autoencoder_model: Callable[..., torch.Tensor],
-            diffusion_model: Callable[..., torch.Tensor],
-            scheduler: Callable[..., torch.Tensor] | None = None,
-            save_intermediates: bool | None = False,
-            intermediate_steps: int | None = 100,
-            conditioning: torch.Tensor | None = None,
-            mode: str = "crossattn",
-            verbose: bool = True,
+        self,
+        input_noise: torch.Tensor,
+        autoencoder_model: Callable[..., torch.Tensor],
+        diffusion_model: Callable[..., torch.Tensor],
+        scheduler: Callable[..., torch.Tensor] | None = None,
+        save_intermediates: bool | None = False,
+        intermediate_steps: int | None = 100,
+        conditioning: torch.Tensor | None = None,
+        mode: str = "crossattn",
+        verbose: bool = True,
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Args:
@@ -397,19 +397,19 @@ class LatentDiffusionInferer(DiffusionInferer):
 
     @torch.no_grad()
     def get_likelihood(
-            self,
-            inputs: torch.Tensor,
-            autoencoder_model: Callable[..., torch.Tensor],
-            diffusion_model: Callable[..., torch.Tensor],
-            scheduler: Callable[..., torch.Tensor] | None = None,
-            save_intermediates: bool | None = False,
-            conditioning: torch.Tensor | None = None,
-            mode: str = "crossattn",
-            original_input_range: tuple | None = (0, 255),
-            scaled_input_range: tuple | None = (0, 1),
-            verbose: bool = True,
-            resample_latent_likelihoods: bool = False,
-            resample_interpolation_mode: str = "nearest",
+        self,
+        inputs: torch.Tensor,
+        autoencoder_model: Callable[..., torch.Tensor],
+        diffusion_model: Callable[..., torch.Tensor],
+        scheduler: Callable[..., torch.Tensor] | None = None,
+        save_intermediates: bool | None = False,
+        conditioning: torch.Tensor | None = None,
+        mode: str = "crossattn",
+        original_input_range: tuple | None = (0, 255),
+        scaled_input_range: tuple | None = (0, 1),
+        verbose: bool = True,
+        resample_latent_likelihoods: bool = False,
+        resample_interpolation_mode: str = "nearest",
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Computes the log-likelihoods of the latent representations of the input.
@@ -461,13 +461,13 @@ class VQVAETransformerInferer(Inferer):
         Inferer.__init__(self)
 
     def __call__(
-            self,
-            inputs: torch.Tensor,
-            vqvae_model: Callable[..., torch.Tensor],
-            transformer_model: Callable[..., torch.Tensor],
-            ordering: Callable[..., torch.Tensor],
-            condition: torch.Tensor | None = None,
-            return_latent: bool = False,
+        self,
+        inputs: torch.Tensor,
+        vqvae_model: Callable[..., torch.Tensor],
+        transformer_model: Callable[..., torch.Tensor],
+        ordering: Callable[..., torch.Tensor],
+        condition: torch.Tensor | None = None,
+        return_latent: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor, tuple]:
         """
         Implements the forward pass for a supervised training iteration.
@@ -503,24 +503,24 @@ class VQVAETransformerInferer(Inferer):
             start = torch.randint(low=0, high=seq_len + 1 - max_seq_len, size=(1,)).item()
         else:
             start = 0
-        prediction = transformer_model(x=latent[:, start: start + max_seq_len], context=condition)
+        prediction = transformer_model(x=latent[:, start : start + max_seq_len], context=condition)
         if return_latent:
-            return prediction, target[:, start: start + max_seq_len], latent_spatial_dim
+            return prediction, target[:, start : start + max_seq_len], latent_spatial_dim
         else:
             return prediction
 
     @torch.no_grad()
     def sample(
-            self,
-            latent_spatial_dim: Sequence[int, int, int] | Sequence[int, int],
-            starting_tokens: torch.Tensor,
-            vqvae_model: Callable[..., torch.Tensor],
-            transformer_model: Callable[..., torch.Tensor],
-            ordering: Callable[..., torch.Tensor],
-            conditioning: torch.Tensor | None = None,
-            temperature: float = 1.0,
-            top_k: int | None = None,
-            verbose: bool = True,
+        self,
+        latent_spatial_dim: Sequence[int, int, int] | Sequence[int, int],
+        starting_tokens: torch.Tensor,
+        vqvae_model: Callable[..., torch.Tensor],
+        transformer_model: Callable[..., torch.Tensor],
+        ordering: Callable[..., torch.Tensor],
+        conditioning: torch.Tensor | None = None,
+        temperature: float = 1.0,
+        top_k: int | None = None,
+        verbose: bool = True,
     ) -> torch.Tensor:
         """
         Sampling function for the VQVAE + Transformer model.
@@ -548,7 +548,7 @@ class VQVAETransformerInferer(Inferer):
             if latent_seq.size(1) <= transformer_model.max_seq_len:
                 idx_cond = latent_seq
             else:
-                idx_cond = latent_seq[:, -transformer_model.max_seq_len:]
+                idx_cond = latent_seq[:, -transformer_model.max_seq_len :]
 
             # forward the model to get the logits for the index in the sequence
             logits = transformer_model(x=idx_cond, context=conditioning)
@@ -575,15 +575,15 @@ class VQVAETransformerInferer(Inferer):
 
     @torch.no_grad()
     def get_likelihood(
-            self,
-            inputs: torch.Tensor,
-            vqvae_model: Callable[..., torch.Tensor],
-            transformer_model: Callable[..., torch.Tensor],
-            ordering: Callable[..., torch.Tensor],
-            condition: torch.Tensor | None = None,
-            resample_latent_likelihoods: bool = False,
-            resample_interpolation_mode: str = "nearest",
-            verbose: bool = False,
+        self,
+        inputs: torch.Tensor,
+        vqvae_model: Callable[..., torch.Tensor],
+        transformer_model: Callable[..., torch.Tensor],
+        ordering: Callable[..., torch.Tensor],
+        condition: torch.Tensor | None = None,
+        resample_latent_likelihoods: bool = False,
+        resample_interpolation_mode: str = "nearest",
+        verbose: bool = False,
     ) -> torch.Tensor:
         """
         Computes the log-likelihoods of the latent representations of the input.
@@ -634,7 +634,7 @@ class VQVAETransformerInferer(Inferer):
                 progress_bar = iter(range(transformer_model.max_seq_len, seq_len))
 
             for i in progress_bar:
-                idx_cond = latent[:, i + 1 - transformer_model.max_seq_len: i + 1]
+                idx_cond = latent[:, i + 1 - transformer_model.max_seq_len : i + 1]
                 # forward the model to get the logits for the index in the sequence
                 logits = transformer_model(x=idx_cond, context=condition)
                 # pluck the logits at the final step
