@@ -22,50 +22,53 @@ __all__ = ["SpatialRescaler"]
 
 class SpatialRescaler(nn.Module):
     """
-        SpatialRescaler based on https://github.com/CompVis/latent-diffusion/blob/main/ldm/modules/encoders/modules.py
+    SpatialRescaler based on https://github.com/CompVis/latent-diffusion/blob/main/ldm/modules/encoders/modules.py
 
-        Args:
-            n_stages: number of interpolation stages.
-            method: algorithm used for sampling.
-            multiplier: multiplier for spatial size. If scale_factor is a tuple,
-                its length has to match the number of spatial dimensions.
-            in_channels: number of input channels.
-            out_channels: number of output channels.
-            bias: whether to have a bias term.
+    Args:
+        n_stages: number of interpolation stages.
+        method: algorithm used for sampling.
+        multiplier: multiplier for spatial size. If scale_factor is a tuple,
+            its length has to match the number of spatial dimensions.
+        in_channels: number of input channels.
+        out_channels: number of output channels.
+        bias: whether to have a bias term.
     """
 
-    def __init__(self,
-                 spatial_dims: int = 2,
-                 n_stages: int = 1,
-                 method: str = 'bilinear',
-                 multiplier: float = 0.5,
-                 in_channels: int = 3,
-                 out_channels: int = None,
-                 bias: bool = False):
+    def __init__(
+        self,
+        spatial_dims: int = 2,
+        n_stages: int = 1,
+        method: str = "bilinear",
+        multiplier: float = 0.5,
+        in_channels: int = 3,
+        out_channels: int = None,
+        bias: bool = False,
+    ):
         super().__init__()
         self.n_stages = n_stages
         assert self.n_stages >= 0
-        assert method in ['nearest', 'linear', 'bilinear', 'trilinear', 'bicubic', 'area']
+        assert method in ["nearest", "linear", "bilinear", "trilinear", "bicubic", "area"]
         self.multiplier = multiplier
         self.interpolator = partial(torch.nn.functional.interpolate, mode=method)
         self.remap_output = out_channels is not None
         if self.remap_output:
-            print(f'Spatial Rescaler mapping from {in_channels} to {out_channels} channels after resizing.')
+            print(f"Spatial Rescaler mapping from {in_channels} to {out_channels} channels before resizing.")
             self.channel_mapper = Convolution(
                 spatial_dims=spatial_dims,
                 in_channels=in_channels,
                 out_channels=out_channels,
                 kernel_size=1,
                 conv_only=True,
-                bias=bias
+                bias=bias,
             )
 
     def forward(self, x):
+        if self.remap_output:
+            x = self.channel_mapper(x)
+
         for stage in range(self.n_stages):
             x = self.interpolator(x, scale_factor=self.multiplier)
 
-        if self.remap_output:
-            x = self.channel_mapper(x)
         return x
 
     def encode(self, x):
