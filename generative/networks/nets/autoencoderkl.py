@@ -59,7 +59,7 @@ class Upsample(nn.Module):
                 kernel_size=3,
                 padding=1,
                 conv_only=True,
-                is_transposed=True
+                is_transposed=True,
             )
         else:
             self.conv = Convolution(
@@ -137,7 +137,7 @@ class ResBlock(nn.Module):
     """
 
     def __init__(
-            self, spatial_dims: int, in_channels: int, norm_num_groups: int, norm_eps: float, out_channels: int
+        self, spatial_dims: int, in_channels: int, norm_num_groups: int, norm_eps: float, out_channels: int
     ) -> None:
         super().__init__()
         self.in_channels = in_channels
@@ -208,13 +208,13 @@ class AttentionBlock(nn.Module):
     """
 
     def __init__(
-            self,
-            spatial_dims: int,
-            num_channels: int,
-            num_head_channels: int | None = None,
-            norm_num_groups: int = 32,
-            norm_eps: float = 1e-6,
-            use_flash_attention: bool = False,
+        self,
+        spatial_dims: int,
+        num_channels: int,
+        num_head_channels: int | None = None,
+        norm_num_groups: int = 32,
+        norm_eps: float = 1e-6,
+        use_flash_attention: bool = False,
     ) -> None:
         super().__init__()
         self.use_flash_attention = use_flash_attention
@@ -249,7 +249,7 @@ class AttentionBlock(nn.Module):
         return x
 
     def _memory_efficient_attention_xformers(
-            self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
+        self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
     ) -> torch.Tensor:
         query = query.contiguous()
         key = key.contiguous()
@@ -330,17 +330,17 @@ class Encoder(nn.Module):
     """
 
     def __init__(
-            self,
-            spatial_dims: int,
-            in_channels: int,
-            num_channels: Sequence[int],
-            out_channels: int,
-            num_res_blocks: Sequence[int],
-            norm_num_groups: int,
-            norm_eps: float,
-            attention_levels: Sequence[bool],
-            with_nonlocal_attn: bool = True,
-            use_flash_attention: bool = False,
+        self,
+        spatial_dims: int,
+        in_channels: int,
+        num_channels: Sequence[int],
+        out_channels: int,
+        num_res_blocks: Sequence[int],
+        norm_num_groups: int,
+        norm_eps: float,
+        attention_levels: Sequence[bool],
+        with_nonlocal_attn: bool = True,
+        use_flash_attention: bool = False,
     ) -> None:
         super().__init__()
         self.spatial_dims = spatial_dims
@@ -471,18 +471,18 @@ class Decoder(nn.Module):
     """
 
     def __init__(
-            self,
-            spatial_dims: int,
-            num_channels: Sequence[int],
-            in_channels: int,
-            out_channels: int,
-            num_res_blocks: Sequence[int],
-            norm_num_groups: int,
-            norm_eps: float,
-            attention_levels: Sequence[bool],
-            with_nonlocal_attn: bool = True,
-            use_flash_attention: bool = False,
-            use_convtranspose: bool = False,
+        self,
+        spatial_dims: int,
+        num_channels: Sequence[int],
+        in_channels: int,
+        out_channels: int,
+        num_res_blocks: Sequence[int],
+        norm_num_groups: int,
+        norm_eps: float,
+        attention_levels: Sequence[bool],
+        with_nonlocal_attn: bool = True,
+        use_flash_attention: bool = False,
+        use_convtranspose: bool = False,
     ) -> None:
         super().__init__()
         self.spatial_dims = spatial_dims
@@ -573,7 +573,8 @@ class Decoder(nn.Module):
 
             if not is_final_block:
                 blocks.append(
-                    Upsample(spatial_dims=spatial_dims, in_channels=block_in_ch, use_convtranspose=use_convtranspose))
+                    Upsample(spatial_dims=spatial_dims, in_channels=block_in_ch, use_convtranspose=use_convtranspose)
+                )
 
         blocks.append(nn.GroupNorm(num_groups=norm_num_groups, num_channels=block_in_ch, eps=norm_eps, affine=True))
         blocks.append(
@@ -620,21 +621,21 @@ class AutoencoderKL(nn.Module):
     """
 
     def __init__(
-            self,
-            spatial_dims: int,
-            in_channels: int = 1,
-            out_channels: int = 1,
-            num_res_blocks: Sequence[int] | int = (2, 2, 2, 2),
-            num_channels: Sequence[int] = (32, 64, 64, 64),
-            attention_levels: Sequence[bool] = (False, False, True, True),
-            latent_channels: int = 3,
-            norm_num_groups: int = 32,
-            norm_eps: float = 1e-6,
-            with_encoder_nonlocal_attn: bool = True,
-            with_decoder_nonlocal_attn: bool = True,
-            use_flash_attention: bool = False,
-            use_checkpointing: bool = False,
-            use_convtranspose: bool = False,
+        self,
+        spatial_dims: int,
+        in_channels: int = 1,
+        out_channels: int = 1,
+        num_res_blocks: Sequence[int] | int = (2, 2, 2, 2),
+        num_channels: Sequence[int] = (32, 64, 64, 64),
+        attention_levels: Sequence[bool] = (False, False, True, True),
+        latent_channels: int = 3,
+        norm_num_groups: int = 32,
+        norm_eps: float = 1e-6,
+        with_encoder_nonlocal_attn: bool = True,
+        with_decoder_nonlocal_attn: bool = True,
+        use_flash_attention: bool = False,
+        use_checkpointing: bool = False,
+        use_convtranspose: bool = False,
     ) -> None:
         super().__init__()
 
