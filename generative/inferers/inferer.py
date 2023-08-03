@@ -105,8 +105,10 @@ class DiffusionInferer(Inferer):
         for t in progress_bar:
             # 1. predict noise model_output
             if mode == "concat":
-                image = torch.cat([image, conditioning], dim=1)
-                model_output = diffusion_model(image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=None)
+                model_input = torch.cat([image, conditioning], dim=1)
+                model_output = diffusion_model(
+                    model_input, timesteps=torch.Tensor((t,)).to(input_noise.device), context=None
+                )
             else:
                 model_output = diffusion_model(
                     image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning
