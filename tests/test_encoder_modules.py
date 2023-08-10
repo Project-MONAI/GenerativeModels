@@ -72,7 +72,7 @@ CASES = [
 ]
 
 
-class TestAutoEncoderKL(unittest.TestCase):
+class TestSpatialRescaler(unittest.TestCase):
     @parameterized.expand(CASES)
     def test_shape(self, input_param, input_shape, expected_shape):
         module = SpatialRescaler(**input_param).to(device)
