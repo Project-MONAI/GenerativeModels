@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from functools import partial
 
 import torch
@@ -25,7 +26,9 @@ class SpatialRescaler(nn.Module):
     SpatialRescaler based on https://github.com/CompVis/latent-diffusion/blob/main/ldm/modules/encoders/modules.py
 
     Args:
+        spatial_dims: number of spatial dimensions.
         n_stages: number of interpolation stages.
+        size: output spatial size (int or Tuple[int] or Tuple[int, int] or Tuple[int, int, int]).
         method: algorithm used for sampling.
         multiplier: multiplier for spatial size. If scale_factor is a tuple,
             its length has to match the number of spatial dimensions.
@@ -38,8 +41,9 @@ class SpatialRescaler(nn.Module):
         self,
         spatial_dims: int = 2,
         n_stages: int = 1,
+        size: Sequence[int] | int | None = None,
         method: str = "bilinear",
-        multiplier: float = 0.5,
+        multiplier: float | None = None,
         in_channels: int = 3,
         out_channels: int = None,
         bias: bool = False,
@@ -48,8 +52,12 @@ class SpatialRescaler(nn.Module):
         self.n_stages = n_stages
         assert self.n_stages >= 0
         assert method in ["nearest", "linear", "bilinear", "trilinear", "bicubic", "area"]
+        if size is not None and n_stages != 1:
+            raise ValueError("when size is not None, n_stages should be 1.")
+        if size is not None and multiplier is not None:
+            raise ValueError("only one of size or scale_factor should be defined.")
         self.multiplier = multiplier
-        self.interpolator = partial(torch.nn.functional.interpolate, mode=method)
+        self.interpolator = partial(torch.nn.functional.interpolate, mode=method, size=size)
         self.remap_output = out_channels is not None
         if self.remap_output:
             print(f"Spatial Rescaler mapping from {in_channels} to {out_channels} channels before resizing.")
@@ -62,7 +70,7 @@ class SpatialRescaler(nn.Module):
                 bias=bias,
             )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.remap_output:
             x = self.channel_mapper(x)
 
@@ -71,5 +79,5 @@ class SpatialRescaler(nn.Module):
 
         return x
 
-    def encode(self, x):
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
         return self(x)
