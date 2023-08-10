@@ -297,6 +297,7 @@ class VQVAE(nn.Module):
         dropout: dropout ratio.
         output_act: activation type and arguments for the output.
         ddp_sync: whether to synchronize the codebook across processes.
+        use_checkpointing if True, use activation checkpointing to save memory.
     """
 
     def __init__(
@@ -321,6 +322,7 @@ class VQVAE(nn.Module):
         act: tuple | str | None = Act.RELU,
         output_act: tuple | str | None = None,
         ddp_sync: bool = True,
+        use_checkpointing: bool = False,
     ):
         super().__init__()
 
@@ -330,6 +332,7 @@ class VQVAE(nn.Module):
         self.num_channels = num_channels
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
+        self.use_checkpointing = use_checkpointing
 
         if isinstance(num_res_channels, int):
             num_res_channels = ensure_tuple_rep(num_res_channels, len(num_channels))
@@ -412,14 +415,20 @@ class VQVAE(nn.Module):
         )
 
     def encode(self, images: torch.Tensor) -> torch.Tensor:
-        return self.encoder(images)
+        if self.use_checkpointing:
+            return torch.utils.checkpoint.checkpoint(self.encoder, images, use_reentrant=False)
+        else:
+            return self.encoder(images)
 
     def quantize(self, encodings: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         x_loss, x = self.quantizer(encodings)
         return x, x_loss
 
     def decode(self, quantizations: torch.Tensor) -> torch.Tensor:
-        return self.decoder(quantizations)
+        if self.use_checkpointing:
+            return torch.utils.checkpoint.checkpoint(self.decoder, quantizations, use_reentrant=False)
+        else:
+            return self.decoder(quantizations)
 
     def index_quantize(self, images: torch.Tensor) -> torch.Tensor:
         return self.quantizer.quantize(self.encode(images=images))
@@ -434,7 +443,7 @@ class VQVAE(nn.Module):
         return reconstruction, quantization_losses
 
     def encode_stage_2_inputs(self, x: torch.Tensor) -> torch.Tensor:
-        z = self.encoder(x)
+        z = self.encode(x)
         e, _ = self.quantize(z)
         return e
 

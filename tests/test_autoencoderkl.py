@@ -147,6 +147,7 @@ class TestAutoEncoderKL(unittest.TestCase):
     def test_shape_with_convtranspose_and_checkpointing(
         self, input_param, input_shape, expected_shape, expected_latent_shape
     ):
+        input_param = input_param.copy()
         input_param.update({"use_checkpointing": True, "use_convtranspose": True})
         net = AutoencoderKL(**input_param).to(device)
         with eval_mode(net):
@@ -209,6 +210,7 @@ class TestAutoEncoderKL(unittest.TestCase):
 
     def test_shape_reconstruction_with_convtranspose_and_checkpointing(self):
         input_param, input_shape, expected_shape, _ = CASES[0]
+        input_param = input_param.copy()
         input_param.update({"use_checkpointing": True, "use_convtranspose": True})
         net = AutoencoderKL(**input_param).to(device)
         with eval_mode(net):
@@ -225,6 +227,7 @@ class TestAutoEncoderKL(unittest.TestCase):
 
     def test_shape_encode_with_convtranspose_and_checkpointing(self):
         input_param, input_shape, _, expected_latent_shape = CASES[0]
+        input_param = input_param.copy()
         input_param.update({"use_checkpointing": True, "use_convtranspose": True})
         net = AutoencoderKL(**input_param).to(device)
         with eval_mode(net):
@@ -243,6 +246,7 @@ class TestAutoEncoderKL(unittest.TestCase):
 
     def test_shape_sampling_convtranspose_and_checkpointing(self):
         input_param, _, _, expected_latent_shape = CASES[0]
+        input_param = input_param.copy()
         input_param.update({"use_checkpointing": True, "use_convtranspose": True})
         net = AutoencoderKL(**input_param).to(device)
         with eval_mode(net):
@@ -260,6 +264,7 @@ class TestAutoEncoderKL(unittest.TestCase):
 
     def test_shape_decode_convtranspose_and_checkpointing(self):
         input_param, expected_input_shape, _, latent_shape = CASES[0]
+        input_param = input_param.copy()
         input_param.update({"use_checkpointing": True, "use_convtranspose": True})
         net = AutoencoderKL(**input_param).to(device)
         with eval_mode(net):
