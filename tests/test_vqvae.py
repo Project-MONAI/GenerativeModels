@@ -18,7 +18,6 @@ from monai.networks import eval_mode
 from parameterized import parameterized
 
 from generative.networks.nets.vqvae import VQVAE
-from tests.utils import test_script_save
 
 TEST_CASES = [
     [
@@ -113,22 +112,36 @@ class TestVQVAE(unittest.TestCase):
 
         self.assertEqual(result.shape, expected_shape)
 
-    def test_script(self):
-        net = VQVAE(
-            spatial_dims=2,
-            in_channels=1,
-            out_channels=1,
-            downsample_parameters=((2, 4, 1, 1),) * 2,
-            upsample_parameters=((2, 4, 1, 1, 0),) * 2,
-            num_res_layers=1,
-            num_channels=(8, 8),
-            num_res_channels=(8, 8),
-            num_embeddings=16,
-            embedding_dim=8,
-            ddp_sync=False,
-        )
-        test_data = torch.randn(1, 1, 16, 16)
-        test_script_save(net, test_data)
+    @parameterized.expand(TEST_CASES)
+    def test_shape_with_checkpoint(self, input_param, input_shape, expected_shape):
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        input_param = input_param.copy()
+        input_param.update({"use_checkpointing": True})
+
+        net = VQVAE(**input_param).to(device)
+
+        with eval_mode(net):
+            result, _ = net(torch.randn(input_shape).to(device))
+
+        self.assertEqual(result.shape, expected_shape)
+
+    # Removed this test case since TorchScript currently does not support activation checkpoint.
+    # def test_script(self):
+    #     net = VQVAE(
+    #         spatial_dims=2,
+    #         in_channels=1,
+    #         out_channels=1,
+    #         downsample_parameters=((2, 4, 1, 1),) * 2,
+    #         upsample_parameters=((2, 4, 1, 1, 0),) * 2,
+    #         num_res_layers=1,
+    #         num_channels=(8, 8),
+    #         num_res_channels=(8, 8),
+    #         num_embeddings=16,
+    #         embedding_dim=8,
+    #         ddp_sync=False,
+    #     )
+    #     test_data = torch.randn(1, 1, 16, 16)
+    #     test_script_save(net, test_data)
 
     def test_num_channels_not_same_size_of_num_res_channels(self):
         with self.assertRaises(ValueError):
