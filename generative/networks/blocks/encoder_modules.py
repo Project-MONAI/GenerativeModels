@@ -55,7 +55,7 @@ class SpatialRescaler(nn.Module):
         if size is not None and n_stages != 1:
             raise ValueError("when size is not None, n_stages should be 1.")
         if size is not None and multiplier is not None:
-            raise ValueError("only one of size or scale_factor should be defined.")
+            raise ValueError("only one of size or multiplier should be defined.")
         self.multiplier = multiplier
         self.interpolator = partial(torch.nn.functional.interpolate, mode=method, size=size)
         self.remap_output = out_channels is not None
