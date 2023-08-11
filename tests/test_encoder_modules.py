@@ -70,6 +70,18 @@ CASES = [
         (1, 2, 8, 8, 8),
     ],
     [
+        {
+            "spatial_dims": 3,
+            "n_stages": 1,
+            "method": "trilinear",
+            "multiplier": (0.25, 0.5, 0.75),
+            "in_channels": 3,
+            "out_channels": 2,
+        },
+        (1, 3, 20, 20, 20),
+        (1, 2, 5, 10, 15),
+    ],
+    [
         {"spatial_dims": 2, "n_stages": 1, "size": (8, 8), "method": "bilinear", "in_channels": 3, "out_channels": 2},
         (1, 3, 16, 16),
         (1, 2, 8, 8),

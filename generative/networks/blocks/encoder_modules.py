@@ -30,8 +30,8 @@ class SpatialRescaler(nn.Module):
         n_stages: number of interpolation stages.
         size: output spatial size (int or Tuple[int] or Tuple[int, int] or Tuple[int, int, int]).
         method: algorithm used for sampling.
-        multiplier: multiplier for spatial size. If scale_factor is a tuple,
-            its length has to match the number of spatial dimensions.
+        multiplier: multiplier for spatial size. If `multiplier` is a sequence,
+            its length has to match the number of spatial dimensions; `input.dim() - 2`.
         in_channels: number of input channels.
         out_channels: number of output channels.
         bias: whether to have a bias term.
@@ -43,7 +43,7 @@ class SpatialRescaler(nn.Module):
         n_stages: int = 1,
         size: Sequence[int] | int | None = None,
         method: str = "bilinear",
-        multiplier: float | None = None,
+        multiplier: Sequence[float] | float | None = None,
         in_channels: int = 3,
         out_channels: int = None,
         bias: bool = False,
