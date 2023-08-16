@@ -44,6 +44,10 @@ For guidance on making a contribution to MONAI, see the [contributing guidelines
 ## Community
 Join the conversation on Twitter [@ProjectMONAI](https://twitter.com/ProjectMONAI) or join our [Slack channel](https://forms.gle/QTxJq3hFictp31UM9).
 
+# Citation
+
+If you use MONAI Generative in your research, please cite us! The citation can be exported from [the paper](https://arxiv.org/abs/2307.15208).
+
 ## Links
 - Website: https://monai.io/
 - Code: https://github.com/Project-MONAI/GenerativeModels
