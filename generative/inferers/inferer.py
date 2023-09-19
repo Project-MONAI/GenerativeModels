@@ -19,6 +19,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from monai.inferers import Inferer
 from monai.utils import optional_import
+from monai.transforms import SpatialPad, CenterSpatialCrop
 
 tqdm, has_tqdm = optional_import("tqdm", name="tqdm")
 
@@ -303,11 +304,26 @@ class LatentDiffusionInferer(DiffusionInferer):
         scheduler: a scheduler to be used in combination with `unet` to denoise the encoded image latents.
         scale_factor: scale factor to multiply the values of the latent representation before processing it by the
             second stage.
+        ldm_latent_shape: desired SPATIAL latent space shape. Used if there is a difference in output VAE latent shape
+        and LDM shape.
+        vae_latent_shape: VAE SPATIAL latent space shape. Used if there is a difference in output VAE latent shape and
+        LDM shape.
     """
 
-    def __init__(self, scheduler: nn.Module, scale_factor: float = 1.0) -> None:
+    def __init__(self, scheduler: nn.Module, scale_factor: float = 1.0,
+                 ldm_latent_shape: list | None = None,
+                 vae_latent_shape: list | None = None) -> None:
+
         super().__init__(scheduler=scheduler)
         self.scale_factor = scale_factor
+        if (ldm_latent_shape is None) ^ (vae_latent_shape is None):
+            raise ValueError("If ldm_latent_shape is None, vae_latent_shape must be None"
+                             "and vice versa.")
+        self.ldm_latent_shape = ldm_latent_shape
+        self.vae_latent_shape = vae_latent_shape
+        if self.ldm_latent_shape is not None:
+            self.padder = SpatialPad(spatial_size=[-1,]+self.ldm_latent_shape)
+            self.cropper = CenterSpatialCrop(roi_size=[-1,]+self.vae_latent_shape)
 
     def __call__(
         self,
@@ -333,6 +349,9 @@ class LatentDiffusionInferer(DiffusionInferer):
         """
         with torch.no_grad():
             latent = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
+
+        if self.ldm_latent_shape is not None:
+            latent = self.padder(latent)
 
         prediction = super().__call__(
             inputs=latent,
@@ -386,6 +405,10 @@ class LatentDiffusionInferer(DiffusionInferer):
         else:
             latent = outputs
 
+        if self.ldm_latent_shape is not None:
+            latent = self.cropper(latent)
+            latent_intermediates = [self.cropper(l) for l in latent_intermediates]
+
         image = autoencoder_model.decode_stage_2_outputs(latent / self.scale_factor)
 
         if save_intermediates:
@@ -437,6 +460,10 @@ class LatentDiffusionInferer(DiffusionInferer):
                 f"resample_interpolation mode should be either nearest, bilinear, or trilinear, got {resample_interpolation_mode}"
             )
         latents = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
+
+        if self.ldm_latent_shape is not None:
+            latents = self.padder(latents)
+
         outputs = super().get_likelihood(
             inputs=latents,
             diffusion_model=diffusion_model,
