@@ -44,6 +44,7 @@ class DiffusionInferer(Inferer):
         noise: torch.Tensor,
         timesteps: torch.Tensor,
         condition: torch.Tensor | None = None,
+        seg: torch.Tensor | None = None
     ) -> torch.Tensor:
         """
         Implements the forward pass for a supervised training iteration.
@@ -54,9 +55,10 @@ class DiffusionInferer(Inferer):
             noise: random noise, of the same shape as the input.
             timesteps: random timesteps.
             condition: Conditioning for network input.
+            seg: if self.is_spade is True (for SPADE-like AE or SPADE-like DM)
         """
         noisy_image = self.scheduler.add_noise(original_samples=inputs, noise=noise, timesteps=timesteps)
-        prediction = diffusion_model(x=noisy_image, timesteps=timesteps, context=condition)
+        prediction = diffusion_model(x=noisy_image, timesteps=timesteps, context=condition, seg=seg)
 
         return prediction
 
@@ -70,6 +72,7 @@ class DiffusionInferer(Inferer):
         intermediate_steps: int | None = 100,
         conditioning: torch.Tensor | None = None,
         verbose: bool = True,
+        seg: torch.Tensor | None = None
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Args:
@@ -80,6 +83,7 @@ class DiffusionInferer(Inferer):
             intermediate_steps: if save_intermediates is True, saves every n steps
             conditioning: Conditioning for network input.
             verbose: if true, prints the progression bar of the sampling process.
+            seg: if self.is_spade is True (for SPADE-like AE or SPADE-like DM)
         """
         if not scheduler:
             scheduler = self.scheduler
@@ -92,7 +96,8 @@ class DiffusionInferer(Inferer):
         for t in progress_bar:
             # 1. predict noise model_output
             model_output = diffusion_model(
-                image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning
+                image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning,
+                seg = seg
             )
 
             # 2. compute previous image: x_t -> x_t-1
@@ -115,6 +120,7 @@ class DiffusionInferer(Inferer):
         original_input_range: tuple | None = (0, 255),
         scaled_input_range: tuple | None = (0, 1),
         verbose: bool = True,
+        seg: torch.Tensor | None = None
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Computes the log-likelihoods for an input.
@@ -128,6 +134,7 @@ class DiffusionInferer(Inferer):
             original_input_range: the [min,max] intensity range of the input data before any scaling was applied.
             scaled_input_range: the [min,max] intensity range of the input data after scaling.
             verbose: if true, prints the progression bar of the sampling process.
+            seg: if self.is_spade is True (for SPADE-like AE or SPADE-like DM)
         """
 
         if not scheduler:
@@ -147,7 +154,7 @@ class DiffusionInferer(Inferer):
         for t in progress_bar:
             timesteps = torch.full(inputs.shape[:1], t, device=inputs.device).long()
             noisy_image = self.scheduler.add_noise(original_samples=inputs, noise=noise, timesteps=timesteps)
-            model_output = diffusion_model(x=noisy_image, timesteps=timesteps, context=conditioning)
+            model_output = diffusion_model(x=noisy_image, timesteps=timesteps, context=conditioning, seg = seg)
             # get the model's predicted mean,  and variance if it is predicted
             if model_output.shape[1] == inputs.shape[1] * 2 and scheduler.variance_type in ["learned", "learned_range"]:
                 model_output, predicted_variance = torch.split(model_output, inputs.shape[1], dim=1)
@@ -278,9 +285,11 @@ class LatentDiffusionInferer(DiffusionInferer):
             second stage.
     """
 
-    def __init__(self, scheduler: nn.Module, scale_factor: float = 1.0) -> None:
+    def __init__(self, scheduler: nn.Module, scale_factor: float = 1.0,
+                 is_spade_ae: bool = False, is_spade_dm: bool = False) -> None:
         super().__init__(scheduler=scheduler)
         self.scale_factor = scale_factor
+        self.is_spade_ae = is_spade_ae
 
     def __call__(
         self,
@@ -290,6 +299,7 @@ class LatentDiffusionInferer(DiffusionInferer):
         noise: torch.Tensor,
         timesteps: torch.Tensor,
         condition: torch.Tensor | None = None,
+        seg: torch.Tensor | None = None
     ) -> torch.Tensor:
         """
         Implements the forward pass for a supervised training iteration.
@@ -301,14 +311,15 @@ class LatentDiffusionInferer(DiffusionInferer):
             noise: random noise, of the same shape as the latent representation.
             timesteps: random timesteps.
             condition: conditioning for network input.
+            seg: if self.is_spade is True (for SPADE-like AE or SPADE-like DM)
         """
         with torch.no_grad():
             latent = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
 
         prediction = super().__call__(
-            inputs=latent, diffusion_model=diffusion_model, noise=noise, timesteps=timesteps, condition=condition
+            inputs=latent, diffusion_model=diffusion_model, noise=noise, timesteps=timesteps, condition=condition,
+            seg = seg,
         )
-
         return prediction
 
     @torch.no_grad()
@@ -322,6 +333,7 @@ class LatentDiffusionInferer(DiffusionInferer):
         intermediate_steps: int | None = 100,
         conditioning: torch.Tensor | None = None,
         verbose: bool = True,
+        seg: torch.Tensor | None = None
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Args:
@@ -333,6 +345,7 @@ class LatentDiffusionInferer(DiffusionInferer):
             intermediate_steps: if save_intermediates is True, saves every n steps
             conditioning: Conditioning for network input.
             verbose: if true, prints the progression bar of the sampling process.
+            seg: if self.is_spade is True (for SPADE-like AE or SPADE-like DM)
         """
         outputs = super().sample(
             input_noise=input_noise,
@@ -342,6 +355,7 @@ class LatentDiffusionInferer(DiffusionInferer):
             intermediate_steps=intermediate_steps,
             conditioning=conditioning,
             verbose=verbose,
+            seg = seg
         )
 
         if save_intermediates:
@@ -349,12 +363,19 @@ class LatentDiffusionInferer(DiffusionInferer):
         else:
             latent = outputs
 
-        image = autoencoder_model.decode_stage_2_outputs(latent / self.scale_factor)
+        if self.is_spade_ae:
+            image = autoencoder_model.decode_stage_2_outputs(latent / self.scale_factor, seg = seg)
+        else:
+            image = autoencoder_model.decode_stage_2_outputs(latent / self.scale_factor)
 
         if save_intermediates:
             intermediates = []
             for latent_intermediate in latent_intermediates:
-                intermediates.append(autoencoder_model.decode_stage_2_outputs(latent_intermediate / self.scale_factor))
+                if self.is_spade_ae:
+                    intermediates.append(autoencoder_model.decode_stage_2_outputs(latent_intermediate / self.scale_factor), seg = seg)
+                else:
+                    intermediates.append(
+                        autoencoder_model.decode_stage_2_outputs(latent_intermediate / self.scale_factor))
             return image, intermediates
 
         else:
@@ -374,6 +395,8 @@ class LatentDiffusionInferer(DiffusionInferer):
         verbose: bool = True,
         resample_latent_likelihoods: bool = False,
         resample_interpolation_mode: str = "nearest",
+        seg: torch.Tensor | None = None
+
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Computes the log-likelihoods of the latent representations of the input.
@@ -392,6 +415,7 @@ class LatentDiffusionInferer(DiffusionInferer):
                 dimension as the input images.
             resample_interpolation_mode: if use resample_latent_likelihoods, select interpolation 'nearest', 'bilinear',
                 or 'trilinear;
+            seg: if self.is_spade is True (for SPADE-like AE or SPADE-like DM)
         """
         if resample_latent_likelihoods and resample_interpolation_mode not in ("nearest", "bilinear", "trilinear"):
             raise ValueError(
@@ -405,6 +429,7 @@ class LatentDiffusionInferer(DiffusionInferer):
             save_intermediates=save_intermediates,
             conditioning=conditioning,
             verbose=verbose,
+            seg=seg
         )
         if save_intermediates and resample_latent_likelihoods:
             intermediates = outputs[1]
@@ -429,7 +454,7 @@ class VQVAETransformerInferer(Inferer):
         transformer_model: Callable[..., torch.Tensor],
         ordering: Callable[..., torch.Tensor],
         condition: torch.Tensor | None = None,
-        return_latent: bool = False,
+        return_latent: bool = False
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor, tuple]:
         """
         Implements the forward pass for a supervised training iteration.

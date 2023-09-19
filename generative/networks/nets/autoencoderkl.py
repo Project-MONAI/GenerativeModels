@@ -20,7 +20,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from monai.networks.blocks import Convolution
 from monai.utils import ensure_tuple_rep
-
+from generative.networks.blocks.spade_norm import SPADE
 # To install xformers, use pip install xformers==0.0.16rc401
 if importlib.util.find_spec("xformers") is not None:
     import xformers
@@ -117,16 +117,31 @@ class ResBlock(nn.Module):
             channels is divisible by this number.
         norm_eps: epsilon for the normalisation.
         out_channels: number of output channels.
+        spade_norm: whether SPADE normalisation is being used in this block
+        label_nc: number of semantic channels for SPADE normalisation
+        spade_intermediate_channels: number of intermediate channels for SPADE block layer
     """
 
     def __init__(
-        self, spatial_dims: int, in_channels: int, norm_num_groups: int, norm_eps: float, out_channels: int
+        self, spatial_dims: int, in_channels: int, norm_num_groups: int, norm_eps: float, out_channels: int,
+        spade_norm: bool = False, label_nc: int | None = None, spade_intermediate_channels: int = 128,
     ) -> None:
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = in_channels if out_channels is None else out_channels
+        self.spade_norm = spade_norm
 
-        self.norm1 = nn.GroupNorm(num_groups=norm_num_groups, num_channels=in_channels, eps=norm_eps, affine=True)
+        if spade_norm:
+            if label_nc is None:
+                raise ValueError("Parameter spade_norm is active, but the number of semantic channels is "
+                                 "None; either deactivate SPADE or populate field label_nc. ")
+            self.norm1 = SPADE(label_nc=label_nc, norm_nc=in_channels,
+                               norm="GROUP", norm_params={"num_groups": norm_num_groups,
+                                                                   "affine": False},
+                               hidden_channels=spade_intermediate_channels,
+                               kernel_size=3, spatial_dims=spatial_dims)
+        else:
+            self.norm1 = nn.GroupNorm(num_groups=norm_num_groups, num_channels=in_channels, eps=norm_eps, affine=True)
         self.conv1 = Convolution(
             spatial_dims=spatial_dims,
             in_channels=self.in_channels,
@@ -136,7 +151,14 @@ class ResBlock(nn.Module):
             padding=1,
             conv_only=True,
         )
-        self.norm2 = nn.GroupNorm(num_groups=norm_num_groups, num_channels=out_channels, eps=norm_eps, affine=True)
+        if spade_norm:
+            self.norm2 = SPADE(label_nc=label_nc, norm_nc=out_channels,
+                               norm="GROUP", norm_params={"num_groups": norm_num_groups,
+                                                                   "affine": False},
+                               hidden_channels=spade_intermediate_channels,
+                               kernel_size=3, spatial_dims=spatial_dims)
+        else:
+            self.norm2 = nn.GroupNorm(num_groups=norm_num_groups, num_channels=out_channels, eps=norm_eps, affine=True)
         self.conv2 = Convolution(
             spatial_dims=spatial_dims,
             in_channels=self.out_channels,
@@ -160,13 +182,18 @@ class ResBlock(nn.Module):
         else:
             self.nin_shortcut = nn.Identity()
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, seg: torch.Tensor= None) -> torch.Tensor:
         h = x
-        h = self.norm1(h)
+        if self.spade_norm:
+            h = self.norm1(h, seg)
+        else:
+            h = self.norm1(h)
         h = F.silu(h)
         h = self.conv1(h)
-
-        h = self.norm2(h)
+        if self.spade_norm:
+            h = self.norm2(h, seg)
+        else:
+            h = self.norm2(h)
         h = F.silu(h)
         h = self.conv2(h)
 
@@ -450,6 +477,9 @@ class Decoder(nn.Module):
         attention_levels: indicate which level from num_channels contain an attention block.
         with_nonlocal_attn: if True use non-local attention block.
         use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
+        spade_norm: whether SPADE normalisation is being used in this block.
+        label_nc: number of semantic channels for SPADE normalisation.
+        spade_intermediate_channels: number of intermediate channels for SPADE block layer.
     """
 
     def __init__(
@@ -464,6 +494,9 @@ class Decoder(nn.Module):
         attention_levels: Sequence[bool],
         with_nonlocal_attn: bool = True,
         use_flash_attention: bool = False,
+        spade_norm: bool = False,
+        label_nc: int | None = None,
+        spade_intermediate_channels: int = None
     ) -> None:
         super().__init__()
         self.spatial_dims = spatial_dims
@@ -474,6 +507,10 @@ class Decoder(nn.Module):
         self.norm_num_groups = norm_num_groups
         self.norm_eps = norm_eps
         self.attention_levels = attention_levels
+        self.spade_norm = spade_norm
+        if self.spade_norm and label_nc is None:
+            raise ValueError("Parameter spade_norm is active, but the number of semantic channels is "
+                             "None; either deactivate SPADE or populate field label_nc.")
 
         reversed_block_out_channels = list(reversed(num_channels))
 
@@ -500,6 +537,9 @@ class Decoder(nn.Module):
                     norm_num_groups=norm_num_groups,
                     norm_eps=norm_eps,
                     out_channels=reversed_block_out_channels[0],
+                    spade_norm=self.spade_norm,
+                    label_nc=label_nc,
+                    spade_intermediate_channels=spade_intermediate_channels
                 )
             )
             blocks.append(
@@ -518,6 +558,9 @@ class Decoder(nn.Module):
                     norm_num_groups=norm_num_groups,
                     norm_eps=norm_eps,
                     out_channels=reversed_block_out_channels[0],
+                    spade_norm=self.spade_norm,
+                    label_nc=label_nc,
+                    spade_intermediate_channels=spade_intermediate_channels
                 )
             )
 
@@ -537,6 +580,9 @@ class Decoder(nn.Module):
                         norm_num_groups=norm_num_groups,
                         norm_eps=norm_eps,
                         out_channels=block_out_ch,
+                        spade_norm=self.spade_norm,
+                        label_nc=label_nc,
+                        spade_intermediate_channels=spade_intermediate_channels
                     )
                 )
                 block_in_ch = block_out_ch
@@ -570,9 +616,12 @@ class Decoder(nn.Module):
 
         self.blocks = nn.ModuleList(blocks)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, seg: torch.Tensor = None) -> torch.Tensor:
         for block in self.blocks:
-            x = block(x)
+            if self.spade_norm and isinstance(block, ResBlock):
+                x = block(x, seg)
+            else:
+                x = block(x)
         return x
 
 
@@ -595,6 +644,9 @@ class AutoencoderKL(nn.Module):
         with_encoder_nonlocal_attn: if True use non-local attention block in the encoder.
         with_decoder_nonlocal_attn: if True use non-local attention block in the decoder.
         use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
+        spade_norm: whether SPADE normalisation is being used in this block.
+        label_nc: number of semantic channels for SPADE normalisation.
+        spade_intermediate_channels: number of intermediate channels for SPADE block layer.
     """
 
     def __init__(
@@ -611,6 +663,9 @@ class AutoencoderKL(nn.Module):
         with_encoder_nonlocal_attn: bool = True,
         with_decoder_nonlocal_attn: bool = True,
         use_flash_attention: bool = False,
+        spade_norm: bool = False,
+        label_nc: int | None = None,
+        spade_intermediate_channels: int = 128
     ) -> None:
         super().__init__()
 
@@ -635,6 +690,7 @@ class AutoencoderKL(nn.Module):
                 "torch.cuda.is_available() should be True but is False. Flash attention is only available for GPU."
             )
 
+        self.spade_norm = spade_norm
         self.encoder = Encoder(
             spatial_dims=spatial_dims,
             in_channels=in_channels,
@@ -658,6 +714,9 @@ class AutoencoderKL(nn.Module):
             attention_levels=attention_levels,
             with_nonlocal_attn=with_decoder_nonlocal_attn,
             use_flash_attention=use_flash_attention,
+            spade_norm = spade_norm,
+            label_nc = label_nc,
+            spade_intermediate_channels = spade_intermediate_channels
         )
         self.quant_conv_mu = Convolution(
             spatial_dims=spatial_dims,
@@ -722,38 +781,47 @@ class AutoencoderKL(nn.Module):
         z_vae = z_mu + eps * z_sigma
         return z_vae
 
-    def reconstruct(self, x: torch.Tensor) -> torch.Tensor:
+    def reconstruct(self, x: torch.Tensor, seg: torch.Tensor = None) -> torch.Tensor:
         """
         Encodes and decodes an input image.
 
         Args:
             x: BxCx[SPATIAL DIMENSIONS] tensor.
-
+            seg: Bx[LABEL_NC]x[SPATIAL DIMENSIONS] tensor of segmentations for SPADE norm.
         Returns:
             reconstructed image, of the same shape as input
         """
         z_mu, _ = self.encode(x)
-        reconstruction = self.decode(z_mu)
+        if self.spade_norm:
+            reconstruction = self.decode(z_mu, seg)
+        else:
+            reconstruction = self.decode(z_mu)
         return reconstruction
 
-    def decode(self, z: torch.Tensor) -> torch.Tensor:
+    def decode(self, z: torch.Tensor, seg: torch.Tensor = None) -> torch.Tensor:
         """
         Based on a latent space sample, forwards it through the Decoder.
 
         Args:
             z: Bx[Z_CHANNELS]x[LATENT SPACE SHAPE]
-
+            seg: Bx[LABEL_NC]x[SPATIAL DIMENSIONS] tensor of segmentations for SPADE norm.
         Returns:
             decoded image tensor
         """
         z = self.post_quant_conv(z)
-        dec = self.decoder(z)
+        if self.spade_norm:
+            dec = self.decoder(z, seg)
+        else:
+            dec = self.decoder(z)
         return dec
 
-    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor, seg: torch.Tensor = None) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         z_mu, z_sigma = self.encode(x)
         z = self.sampling(z_mu, z_sigma)
-        reconstruction = self.decode(z)
+        if self.spade_norm:
+            reconstruction = self.decode(z, seg)
+        else:
+            reconstruction = self.decode(z)
         return reconstruction, z_mu, z_sigma
 
     def encode_stage_2_inputs(self, x: torch.Tensor) -> torch.Tensor:
@@ -761,6 +829,9 @@ class AutoencoderKL(nn.Module):
         z = self.sampling(z_mu, z_sigma)
         return z
 
-    def decode_stage_2_outputs(self, z: torch.Tensor) -> torch.Tensor:
-        image = self.decode(z)
+    def decode_stage_2_outputs(self, z: torch.Tensor, seg: torch.Tensor = None) -> torch.Tensor:
+        if self.spade_norm:
+            image = self.decode(z, seg)
+        else:
+            image = self.decode(z)
         return image

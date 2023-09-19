@@ -34,13 +34,13 @@ from __future__ import annotations
 import importlib.util
 import math
 from collections.abc import Sequence
-
 import torch
 import torch.nn.functional as F
 from monai.networks.blocks import Convolution, MLPBlock
 from monai.networks.layers.factories import Pool
 from monai.utils import ensure_tuple_rep
 from torch import nn
+from generative.networks.blocks.spade_norm import SPADE
 
 # To install xformers, use pip install xformers==0.0.16rc401
 if importlib.util.find_spec("xformers") is not None:
@@ -599,6 +599,9 @@ class ResnetBlock(nn.Module):
         down: if True, performs downsampling.
         norm_num_groups: number of groups for the group normalization.
         norm_eps: epsilon for the group normalization.
+        spade_norm: whether SPADE normalisation is being used in this block
+        label_nc: number of semantic channels for SPADE normalisation
+        spade_intermediate_channels: number of intermediate channels for SPADE block layer
     """
 
     def __init__(
@@ -611,6 +614,9 @@ class ResnetBlock(nn.Module):
         down: bool = False,
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
+        spade_norm: bool = False,
+        label_nc: int | None = None,
+        spade_intermediate_channels: int = 128
     ) -> None:
         super().__init__()
         self.spatial_dims = spatial_dims
@@ -619,8 +625,20 @@ class ResnetBlock(nn.Module):
         self.out_channels = out_channels or in_channels
         self.up = up
         self.down = down
-
-        self.norm1 = nn.GroupNorm(num_groups=norm_num_groups, num_channels=in_channels, eps=norm_eps, affine=True)
+        self.spade_norm = spade_norm
+        if self.spade_norm:
+            if label_nc is None:
+                raise ValueError("Parameter spade_norm is active, but the number of semantic channels is "
+                                 "None; either deactivate SPADE or populate field label_nc. ")
+            self.norm1 = SPADE(label_nc=label_nc, norm_nc=in_channels,
+                               norm="GROUP", norm_params={"num_groups": norm_num_groups,
+                                                                   "affine": False,
+                                                                   "eps": norm_eps,
+                                                                   "affine": True},
+                               hidden_channels=spade_intermediate_channels,
+                               kernel_size=3, spatial_dims=spatial_dims)
+        else:
+            self.norm1 = nn.GroupNorm(num_groups=norm_num_groups, num_channels=in_channels, eps=norm_eps, affine=True)
         self.nonlinearity = nn.SiLU()
         self.conv1 = Convolution(
             spatial_dims=spatial_dims,
@@ -640,7 +658,20 @@ class ResnetBlock(nn.Module):
 
         self.time_emb_proj = nn.Linear(temb_channels, self.out_channels)
 
-        self.norm2 = nn.GroupNorm(num_groups=norm_num_groups, num_channels=self.out_channels, eps=norm_eps, affine=True)
+        if spade_norm:
+            if label_nc is None:
+                raise ValueError("Parameter spade_norm is active, but the number of semantic channels is "
+                                 "None; either deactivate SPADE or populate field label_nc. ")
+            self.norm2 = SPADE(label_nc=label_nc, norm_nc=self.out_channels,
+                               norm="GROUP", norm_params={"num_groups": norm_num_groups,
+                                                                   "affine": False,
+                                                                   "eps": norm_eps,
+                                                                   "affine": True},
+                               hidden_channels=spade_intermediate_channels,
+                               kernel_size=3, spatial_dims=spatial_dims)
+        else:
+            self.norm2 = nn.GroupNorm(num_groups=norm_num_groups, num_channels=self.out_channels, eps=norm_eps, affine=True)
+
         self.conv2 = zero_module(
             Convolution(
                 spatial_dims=spatial_dims,
@@ -666,9 +697,12 @@ class ResnetBlock(nn.Module):
                 conv_only=True,
             )
 
-    def forward(self, x: torch.Tensor, emb: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, emb: torch.Tensor , seg: torch.Tensor= None) -> torch.Tensor:
         h = x
-        h = self.norm1(h)
+        if self.spade_norm:
+            h = self.norm1(h, seg)
+        else:
+            h = self.norm1(h)
         h = self.nonlinearity(h)
 
         if self.upsample is not None:
@@ -689,7 +723,10 @@ class ResnetBlock(nn.Module):
             temb = self.time_emb_proj(self.nonlinearity(emb))[:, :, None, None, None]
         h = h + temb
 
-        h = self.norm2(h)
+        if self.spade_norm:
+            h = self.norm2(h, seg)
+        else:
+            h = self.norm2(h)
         h = self.nonlinearity(h)
         h = self.conv2(h)
 
@@ -725,6 +762,7 @@ class DownBlock(nn.Module):
         add_downsample: bool = True,
         resblock_updown: bool = False,
         downsample_padding: int = 1,
+
     ) -> None:
         super().__init__()
         self.resblock_updown = resblock_updown
@@ -1158,6 +1196,9 @@ class UpBlock(nn.Module):
         norm_eps: epsilon for the group normalization.
         add_upsample: if True add downsample block.
         resblock_updown: if True use residual blocks for upsampling.
+        spade_norm: whether SPADE normalisation is being used in this block.
+        label_nc: number of semantic channels for SPADE normalisation.
+        spade_intermediate_channels: number of intermediate channels for SPADE block layer.
     """
 
     def __init__(
@@ -1172,9 +1213,13 @@ class UpBlock(nn.Module):
         norm_eps: float = 1e-6,
         add_upsample: bool = True,
         resblock_updown: bool = False,
+        spade_norm: bool = False,
+        label_nc: int | None = None,
+        spade_intermediate_channels: int = 128
     ) -> None:
         super().__init__()
         self.resblock_updown = resblock_updown
+        self.spade_norm = spade_norm
         resnets = []
 
         for i in range(num_res_blocks):
@@ -1189,6 +1234,9 @@ class UpBlock(nn.Module):
                     temb_channels=temb_channels,
                     norm_num_groups=norm_num_groups,
                     norm_eps=norm_eps,
+                    spade_norm = spade_norm,
+                    label_nc=label_nc,
+                    spade_intermediate_channels=spade_intermediate_channels
                 )
             )
 
@@ -1218,6 +1266,7 @@ class UpBlock(nn.Module):
         res_hidden_states_list: list[torch.Tensor],
         temb: torch.Tensor,
         context: torch.Tensor | None = None,
+        seg: torch.Tensor | None = None
     ) -> torch.Tensor:
         del context
         for resnet in self.resnets:
@@ -1225,8 +1274,10 @@ class UpBlock(nn.Module):
             res_hidden_states = res_hidden_states_list[-1]
             res_hidden_states_list = res_hidden_states_list[:-1]
             hidden_states = torch.cat([hidden_states, res_hidden_states], dim=1)
-
-            hidden_states = resnet(hidden_states, temb)
+            if resnet.spade_norm and self.spade_norm:
+                hidden_states = resnet(hidden_states, temb, seg)
+            else:
+                hidden_states = resnet(hidden_states, temb)
 
         if self.upsampler is not None:
             hidden_states = self.upsampler(hidden_states, temb)
@@ -1251,6 +1302,9 @@ class AttnUpBlock(nn.Module):
         resblock_updown: if True use residual blocks for upsampling.
         num_head_channels: number of channels in each attention head.
         use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
+        spade_norm: whether SPADE normalisation is being used in this block
+        label_nc: number of semantic channels for SPADE normalisation
+        spade_intermediate_channels: number of intermediate channels for SPADE block layer
     """
 
     def __init__(
@@ -1267,10 +1321,14 @@ class AttnUpBlock(nn.Module):
         resblock_updown: bool = False,
         num_head_channels: int = 1,
         use_flash_attention: bool = False,
+        spade_norm: bool = False,
+        label_nc: int | None = None,
+        spade_intermediate_channels: int = 128
+
     ) -> None:
         super().__init__()
         self.resblock_updown = resblock_updown
-
+        self.spade_norm = spade_norm
         resnets = []
         attentions = []
 
@@ -1286,6 +1344,9 @@ class AttnUpBlock(nn.Module):
                     temb_channels=temb_channels,
                     norm_num_groups=norm_num_groups,
                     norm_eps=norm_eps,
+                    spade_norm = spade_norm,
+                    label_nc = label_nc,
+                    spade_intermediate_channels = spade_intermediate_channels
                 )
             )
             attentions.append(
@@ -1326,6 +1387,7 @@ class AttnUpBlock(nn.Module):
         res_hidden_states_list: list[torch.Tensor],
         temb: torch.Tensor,
         context: torch.Tensor | None = None,
+        seg: torch.Tensor | None = None
     ) -> torch.Tensor:
         del context
         for resnet, attn in zip(self.resnets, self.attentions):
@@ -1333,8 +1395,10 @@ class AttnUpBlock(nn.Module):
             res_hidden_states = res_hidden_states_list[-1]
             res_hidden_states_list = res_hidden_states_list[:-1]
             hidden_states = torch.cat([hidden_states, res_hidden_states], dim=1)
-
-            hidden_states = resnet(hidden_states, temb)
+            if resnet.spade_norm and self.spade_norm:
+                hidden_states = resnet(hidden_states, temb, seg)
+            else:
+                hidden_states = resnet(hidden_states, temb)
             hidden_states = attn(hidden_states)
 
         if self.upsampler is not None:
@@ -1363,6 +1427,9 @@ class CrossAttnUpBlock(nn.Module):
         cross_attention_dim: number of context dimensions to use.
         upcast_attention: if True, upcast attention operations to full precision.
         use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
+        spade_norm: whether SPADE normalisation is being used in this block.
+        label_nc: number of semantic channels for SPADE normalisation.
+        spade_intermediate_channels: number of intermediate channels for SPADE block layer.
     """
 
     def __init__(
@@ -1382,10 +1449,13 @@ class CrossAttnUpBlock(nn.Module):
         cross_attention_dim: int | None = None,
         upcast_attention: bool = False,
         use_flash_attention: bool = False,
+        spade_norm: bool = False,
+        label_nc: int | None = None,
+        spade_intermediate_channels: int = 128
     ) -> None:
         super().__init__()
         self.resblock_updown = resblock_updown
-
+        self.spade_norm = spade_norm
         resnets = []
         attentions = []
 
@@ -1401,6 +1471,9 @@ class CrossAttnUpBlock(nn.Module):
                     temb_channels=temb_channels,
                     norm_num_groups=norm_num_groups,
                     norm_eps=norm_eps,
+                    spade_norm = spade_norm,
+                    label_nc = label_nc,
+                    spade_intermediate_channels = spade_intermediate_channels
                 )
             )
             attentions.append(
@@ -1445,14 +1518,17 @@ class CrossAttnUpBlock(nn.Module):
         res_hidden_states_list: list[torch.Tensor],
         temb: torch.Tensor,
         context: torch.Tensor | None = None,
+        seg: torch.Tensor | None = None,
     ) -> torch.Tensor:
         for resnet, attn in zip(self.resnets, self.attentions):
             # pop res hidden states
             res_hidden_states = res_hidden_states_list[-1]
             res_hidden_states_list = res_hidden_states_list[:-1]
             hidden_states = torch.cat([hidden_states, res_hidden_states], dim=1)
-
-            hidden_states = resnet(hidden_states, temb)
+            if resnet.spade_norm and self.spade_norm:
+                hidden_states = resnet(hidden_states, temb, seg)
+            else:
+                hidden_states = resnet(hidden_states, temb)
             hidden_states = attn(hidden_states, context=context)
 
         if self.upsampler is not None:
@@ -1580,6 +1656,9 @@ def get_up_block(
     cross_attention_dim: int | None,
     upcast_attention: bool = False,
     use_flash_attention: bool = False,
+    spade_norm: bool = False,
+    label_nc: int | None = None,
+    spade_intermediate_channels: int = 128
 ) -> nn.Module:
     if with_attn:
         return AttnUpBlock(
@@ -1595,6 +1674,9 @@ def get_up_block(
             resblock_updown=resblock_updown,
             num_head_channels=num_head_channels,
             use_flash_attention=use_flash_attention,
+            spade_norm=spade_norm,
+            label_nc=label_nc,
+            spade_intermediate_channels=spade_intermediate_channels
         )
     elif with_cross_attn:
         return CrossAttnUpBlock(
@@ -1613,6 +1695,9 @@ def get_up_block(
             cross_attention_dim=cross_attention_dim,
             upcast_attention=upcast_attention,
             use_flash_attention=use_flash_attention,
+            spade_norm=spade_norm,
+            label_nc=label_nc,
+            spade_intermediate_channels=spade_intermediate_channels
         )
     else:
         return UpBlock(
@@ -1626,6 +1711,9 @@ def get_up_block(
             norm_eps=norm_eps,
             add_upsample=add_upsample,
             resblock_updown=resblock_updown,
+            spade_norm = spade_norm,
+            label_nc = label_nc,
+            spade_intermediate_channels=spade_intermediate_channels
         )
 
 
@@ -1653,6 +1741,9 @@ class DiffusionModelUNet(nn.Module):
         classes.
         upcast_attention: if True, upcast attention operations to full precision.
         use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
+        spade_norm: whether SPADE normalisation is being used in this block
+        label_nc: number of semantic channels for SPADE normalisation
+        spade_intermediate_channels: number of intermediate channels for SPADE block layer
     """
 
     def __init__(
@@ -1673,6 +1764,9 @@ class DiffusionModelUNet(nn.Module):
         num_class_embeds: int | None = None,
         upcast_attention: bool = False,
         use_flash_attention: bool = False,
+        spade_norm: bool = False,
+        label_nc: int | None = None,
+        spade_intermediate_channels: int = 128
     ) -> None:
         super().__init__()
         if with_conditioning is True and cross_attention_dim is None:
@@ -1725,6 +1819,7 @@ class DiffusionModelUNet(nn.Module):
         self.attention_levels = attention_levels
         self.num_head_channels = num_head_channels
         self.with_conditioning = with_conditioning
+        self.spade_norm = spade_norm
 
         # input
         self.conv_in = Convolution(
@@ -1824,6 +1919,9 @@ class DiffusionModelUNet(nn.Module):
                 cross_attention_dim=cross_attention_dim,
                 upcast_attention=upcast_attention,
                 use_flash_attention=use_flash_attention,
+                spade_norm = spade_norm,
+                label_nc = label_nc,
+                spade_intermediate_channels = spade_intermediate_channels
             )
 
             self.up_blocks.append(up_block)
@@ -1853,6 +1951,7 @@ class DiffusionModelUNet(nn.Module):
         class_labels: torch.Tensor | None = None,
         down_block_additional_residuals: tuple[torch.Tensor] | None = None,
         mid_block_additional_residual: torch.Tensor | None = None,
+        seg: torch.Tensor | None = None
     ) -> torch.Tensor:
         """
         Args:
@@ -1862,6 +1961,7 @@ class DiffusionModelUNet(nn.Module):
             class_labels: context tensor (N, ).
             down_block_additional_residuals: additional residual tensors for down blocks (N, C, FeatureMapsDims).
             mid_block_additional_residual: additional residual tensor for mid block (N, C, FeatureMapsDims).
+            seg: Bx[LABEL_NC]x[SPATIAL DIMENSIONS] tensor of segmentations for SPADE norm.
         """
         # 1. time
         t_emb = get_timestep_embedding(timesteps, self.block_out_channels[0])
@@ -1914,7 +2014,11 @@ class DiffusionModelUNet(nn.Module):
         for upsample_block in self.up_blocks:
             res_samples = down_block_res_samples[-len(upsample_block.resnets) :]
             down_block_res_samples = down_block_res_samples[: -len(upsample_block.resnets)]
-            h = upsample_block(hidden_states=h, res_hidden_states_list=res_samples, temb=emb, context=context)
+            if self.spade_norm:
+                h = upsample_block(hidden_states=h, res_hidden_states_list=res_samples, temb=emb, context=context,
+                                   seg = seg)
+            else:
+                h = upsample_block(hidden_states=h, res_hidden_states_list=res_samples, temb=emb, context=context)
 
         # 7. output block
         h = self.out(h)
