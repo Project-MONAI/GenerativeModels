@@ -432,10 +432,10 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         noise = torch.randn(latent_shape).to(device)
         scheduler = DDPMScheduler(num_train_timesteps=10)
         # We infer the VAE shape
-        vae_latent_shape = [i//(2**(len(autoencoder_params['num_channels'])-1)) for i in input_shape[2:]]
+        autoencoder_latent_shape = [i//(2**(len(autoencoder_params['num_channels'])-1)) for i in input_shape[2:]]
         inferer = LatentDiffusionInferer(scheduler=scheduler, scale_factor=1.0,
                                          ldm_latent_shape=list(latent_shape[2:]),
-                                         vae_latent_shape=vae_latent_shape)
+                                         autoencoder_latent_shape=autoencoder_latent_shape)
         scheduler.set_timesteps(num_inference_steps=10)
 
         timesteps = torch.randint(0, scheduler.num_train_timesteps, (input_shape[0],), device=input.device).long()

@@ -23,7 +23,6 @@ from monai.transforms import SpatialPad, CenterSpatialCrop
 
 tqdm, has_tqdm = optional_import("tqdm", name="tqdm")
 
-
 class DiffusionInferer(Inferer):
     """
     DiffusionInferer takes a trained diffusion model and a scheduler and can be used to perform a signal forward pass
@@ -294,7 +293,6 @@ class DiffusionInferer(Inferer):
         assert log_probs.shape == inputs.shape
         return log_probs
 
-
 class LatentDiffusionInferer(DiffusionInferer):
     """
     LatentDiffusionInferer takes a stage 1 model (VQVAE or AutoencoderKL), diffusion model, and a scheduler, and can
@@ -304,26 +302,24 @@ class LatentDiffusionInferer(DiffusionInferer):
         scheduler: a scheduler to be used in combination with `unet` to denoise the encoded image latents.
         scale_factor: scale factor to multiply the values of the latent representation before processing it by the
             second stage.
-        ldm_latent_shape: desired SPATIAL latent space shape. Used if there is a difference in output VAE latent shape
-        and LDM shape.
-        vae_latent_shape: VAE SPATIAL latent space shape. Used if there is a difference in output VAE latent shape and
-        LDM shape.
+        ldm_latent_shape: desired spatial latent space shape. Used if there is a difference in the autoencoder model's latent shape.
+        autoencoder_latent_shape:  autoencoder_latent_shape: autoencoder spatial latent space shape. Used if there is a difference between the autoencoder's latent shape and the DM shape.
     """
 
     def __init__(self, scheduler: nn.Module, scale_factor: float = 1.0,
                  ldm_latent_shape: list | None = None,
-                 vae_latent_shape: list | None = None) -> None:
+                 autoencoder_latent_shape: list | None = None) -> None:
 
         super().__init__(scheduler=scheduler)
         self.scale_factor = scale_factor
-        if (ldm_latent_shape is None) ^ (vae_latent_shape is None):
-            raise ValueError("If ldm_latent_shape is None, vae_latent_shape must be None"
+        if (ldm_latent_shape is None) ^ (autoencoder_latent_shape is None):
+            raise ValueError("If ldm_latent_shape is None, autoencoder_latent_shape must be None"
                              "and vice versa.")
         self.ldm_latent_shape = ldm_latent_shape
-        self.vae_latent_shape = vae_latent_shape
+        self.autoencoder_latent_shape = autoencoder_latent_shape
         if self.ldm_latent_shape is not None:
-            self.padder = SpatialPad(spatial_size=[-1,]+self.ldm_latent_shape)
-            self.cropper = CenterSpatialCrop(roi_size=[-1,]+self.vae_latent_shape)
+            self.ldm_resizer = SpatialPad(spatial_size=[-1,]+self.ldm_latent_shape)
+            self.autoencoder_resizer = CenterSpatialCrop(roi_size=[-1,]+self.autoencoder_latent_shape)
 
     def __call__(
         self,
@@ -351,7 +347,7 @@ class LatentDiffusionInferer(DiffusionInferer):
             latent = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
 
         if self.ldm_latent_shape is not None:
-            latent = self.padder(latent)
+            latent = self.ldm_resizer(latent)
 
         prediction = super().__call__(
             inputs=latent,
@@ -406,8 +402,8 @@ class LatentDiffusionInferer(DiffusionInferer):
             latent = outputs
 
         if self.ldm_latent_shape is not None:
-            latent = self.cropper(latent)
-            latent_intermediates = [self.cropper(l) for l in latent_intermediates]
+            latent = self.autoencoder_resizer(latent)
+            latent_intermediates = [self.autoencoder_resizer(l) for l in latent_intermediates]
 
         image = autoencoder_model.decode_stage_2_outputs(latent / self.scale_factor)
 
@@ -462,7 +458,7 @@ class LatentDiffusionInferer(DiffusionInferer):
         latents = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
 
         if self.ldm_latent_shape is not None:
-            latents = self.padder(latents)
+            latents = self.ldm_resizer(latents)
 
         outputs = super().get_likelihood(
             inputs=latents,
@@ -479,7 +475,6 @@ class LatentDiffusionInferer(DiffusionInferer):
             intermediates = [resizer(x) for x in intermediates]
             outputs = (outputs[0], intermediates)
         return outputs
-
 
 class VQVAETransformerInferer(Inferer):
     """
