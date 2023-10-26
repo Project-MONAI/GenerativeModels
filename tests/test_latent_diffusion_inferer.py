@@ -103,6 +103,89 @@ TEST_CASES = [
         (1, 3, 4, 4, 4),
     ],
 ]
+TEST_CASES_DIFF_SHAPES = [
+    [
+        "AutoencoderKL",
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_channels": (4, 4),
+            "latent_channels": 3,
+            "attention_levels": [False, False],
+            "num_res_blocks": 1,
+            "with_encoder_nonlocal_attn": False,
+            "with_decoder_nonlocal_attn": False,
+            "norm_num_groups": 4,
+        },
+        {
+            "spatial_dims": 2,
+            "in_channels": 3,
+            "out_channels": 3,
+            "num_channels": [4, 4],
+            "norm_num_groups": 4,
+            "attention_levels": [False, False],
+            "num_res_blocks": 1,
+            "num_head_channels": 4,
+        },
+        (1, 1, 12, 12),
+        (1, 3, 8, 8),
+    ],
+    [
+        "VQVAE",
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_channels": [4, 4],
+            "num_res_layers": 1,
+            "num_res_channels": [4, 4],
+            "downsample_parameters": ((2, 4, 1, 1), (2, 4, 1, 1)),
+            "upsample_parameters": ((2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
+            "num_embeddings": 16,
+            "embedding_dim": 3,
+        },
+        {
+            "spatial_dims": 2,
+            "in_channels": 3,
+            "out_channels": 3,
+            "num_channels": [8, 8],
+            "norm_num_groups": 8,
+            "attention_levels": [False, False],
+            "num_res_blocks": 1,
+            "num_head_channels": 8,
+        },
+        (1, 1, 12, 12),
+        (1, 3, 8, 8),
+    ],
+    [
+        "VQVAE",
+        {
+            "spatial_dims": 3,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_channels": [4, 4],
+            "num_res_layers": 1,
+            "num_res_channels": [4, 4],
+            "downsample_parameters": ((2, 4, 1, 1), (2, 4, 1, 1)),
+            "upsample_parameters": ((2, 4, 1, 1, 0), (2, 4, 1, 1, 0)),
+            "num_embeddings": 16,
+            "embedding_dim": 3,
+        },
+        {
+            "spatial_dims": 3,
+            "in_channels": 3,
+            "out_channels": 3,
+            "num_channels": [8, 8],
+            "norm_num_groups": 8,
+            "attention_levels": [False, False],
+            "num_res_blocks": 1,
+            "num_head_channels": 8,
+        },
+        (1, 1, 12, 12, 12),
+        (1, 3, 8, 8, 8),
+    ],
+]
 
 
 class TestDiffusionSamplingInferer(unittest.TestCase):
@@ -325,6 +408,40 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         )
         self.assertEqual(sample.shape, input_shape)
 
+    @parameterized.expand(TEST_CASES_DIFF_SHAPES)
+    def test_sample_shape_different_latents(self,
+                                            model_type,
+                                            autoencoder_params,
+                                            stage_2_params,
+                                            input_shape,
+                                            latent_shape
+                                            ):
+        if model_type == "AutoencoderKL":
+            stage_1 = AutoencoderKL(**autoencoder_params)
+        if model_type == "VQVAE":
+            stage_1 = VQVAE(**autoencoder_params)
+        stage_2 = DiffusionModelUNet(**stage_2_params)
 
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        stage_1.to(device)
+        stage_2.to(device)
+        stage_1.eval()
+        stage_2.eval()
+
+        input = torch.randn(input_shape).to(device)
+        noise = torch.randn(latent_shape).to(device)
+        scheduler = DDPMScheduler(num_train_timesteps=10)
+        # We infer the VAE shape
+        autoencoder_latent_shape = [i//(2**(len(autoencoder_params['num_channels'])-1)) for i in input_shape[2:]]
+        inferer = LatentDiffusionInferer(scheduler=scheduler, scale_factor=1.0,
+                                         ldm_latent_shape=list(latent_shape[2:]),
+                                         autoencoder_latent_shape=autoencoder_latent_shape)
+        scheduler.set_timesteps(num_inference_steps=10)
+
+        timesteps = torch.randint(0, scheduler.num_train_timesteps, (input_shape[0],), device=input.device).long()
+        prediction = inferer(
+            inputs=input, autoencoder_model=stage_1, diffusion_model=stage_2, noise=noise, timesteps=timesteps
+        )
+        self.assertEqual(prediction.shape, latent_shape)
 if __name__ == "__main__":
     unittest.main()
