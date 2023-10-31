@@ -23,13 +23,16 @@ from monai.utils.enums import StrEnum
 
 from generative.networks.blocks.spade_norm import SPADE
 
+
 class KLDLoss(nn.Module):
     """
     Computes the Kullback-Leibler divergence between a normal distribution with mean mu and variance logvar and
      one with mean 0 and variance 1.
     """
+
     def forward(self, mu, logvar):
         return -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+
 
 class UpsamplingModes(StrEnum):
     bicubic = "bicubic"
@@ -37,7 +40,7 @@ class UpsamplingModes(StrEnum):
     bilinear = "bilinear"
 
 
-class SPADE_ResNetBlock(nn.Module):
+class SPADEResNetBlock(nn.Module):
     """
     Creates a Residual Block with SPADE normalisation.
 
@@ -61,7 +64,6 @@ class SPADE_ResNetBlock(nn.Module):
         norm: str | tuple = "INSTANCE",
         kernel_size: int = 3,
     ):
-
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -128,7 +130,7 @@ class SPADE_ResNetBlock(nn.Module):
         return x_s
 
 
-class SPADE_Encoder(nn.Module):
+class SPADEEncoder(nn.Module):
     """
     Encoding branch of a VAE compatible with a SPADE-like generator
 
@@ -155,7 +157,6 @@ class SPADE_Encoder(nn.Module):
         norm: str | tuple = "INSTANCE",
         act: str | tuple = (Act.LEAKYRELU, {"negative_slope": 0.2}),
     ):
-
         super().__init__()
         self.in_channels = in_channels
         self.z_dim = z_dim
@@ -172,7 +173,7 @@ class SPADE_Encoder(nn.Module):
         self.latent_spatial_shape = [s_ // (2 ** len(self.num_channels)) for s_ in self.input_shape]
         blocks = []
         ch_init = self.in_channels
-        for ch_ind, ch_value in enumerate(num_channels):
+        for _, ch_value in enumerate(num_channels):
             blocks.append(
                 Convolution(
                     spatial_dims=spatial_dims,
@@ -211,13 +212,12 @@ class SPADE_Encoder(nn.Module):
         return self.reparameterize(mu, logvar)
 
     def reparameterize(self, mu, logvar):
-
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return eps.mul(std) + mu
 
 
-class SPADE_Decoder(nn.Module):
+class SPADEDecoder(nn.Module):
     """
     Decoder branch of a SPADE-like generator. It can be used independently, without an encoding branch,
     behaving like a GAN, or coupled to a SPADE encoder.
@@ -255,7 +255,6 @@ class SPADE_Decoder(nn.Module):
         kernel_size: int = 3,
         upsampling_mode: str = UpsamplingModes.nearest.value,
     ):
-
         super().__init__()
         self.is_gan = is_gan
         self.out_channels = out_channels
@@ -281,7 +280,7 @@ class SPADE_Decoder(nn.Module):
         self.upsampling = torch.nn.Upsample(scale_factor=2, mode=upsampling_mode)
         for ch_ind, ch_value in enumerate(num_channels[:-1]):
             blocks.append(
-                SPADE_ResNetBlock(
+                SPADEResNetBlock(
                     spatial_dims=spatial_dims,
                     in_channels=ch_value,
                     out_channels=num_channels[ch_ind + 1],
@@ -321,10 +320,11 @@ class SPADE_Decoder(nn.Module):
         return x
 
 
-class SPADE_Net(nn.Module):
+class SPADENet(nn.Module):
 
     """
-    SPADE Network, implemented based on the code by Park, T et al. in "Semantic Image Synthesis with Spatially-Adaptive Normalization"
+    SPADE Network, implemented based on the code by Park, T et al. in
+    "Semantic Image Synthesis with Spatially-Adaptive Normalization"
     (https://github.com/NVlabs/SPADE)
 
     Args:
@@ -361,7 +361,6 @@ class SPADE_Net(nn.Module):
         kernel_size: int = 3,
         upsampling_mode: str = UpsamplingModes.nearest.value,
     ):
-
         super().__init__()
         self.is_vae = is_vae
         if self.is_vae and z_dim is None:
@@ -375,7 +374,7 @@ class SPADE_Net(nn.Module):
         self.kld_loss = KLDLoss()
 
         if self.is_vae:
-            self.encoder = SPADE_Encoder(
+            self.encoder = SPADEEncoder(
                 spatial_dims=spatial_dims,
                 in_channels=in_channels,
                 z_dim=z_dim,
@@ -389,7 +388,7 @@ class SPADE_Net(nn.Module):
         decoder_channels = num_channels
         decoder_channels.reverse()
 
-        self.decoder = SPADE_Decoder(
+        self.decoder = SPADEDecoder(
             spatial_dims=spatial_dims,
             out_channels=out_channels,
             label_nc=label_nc,
@@ -416,9 +415,7 @@ class SPADE_Net(nn.Module):
             return (self.decoder(seg, z),)
 
     def encode(self, x: torch.Tensor):
-
         return self.encoder.encode(x)
 
     def decode(self, seg: torch.Tensor, z: torch.Tensor | None = None):
-
         return self.decoder(seg, z)
