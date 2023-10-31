@@ -24,7 +24,7 @@ import torch
 from monai.data import create_test_image_2d
 from monai.handlers import CheckpointSaver, StatsHandler, TensorBoardStatsHandler
 from monai.networks.nets import AutoEncoder, Discriminator
-from monai.transforms import AsChannelFirstd, Compose, LoadImaged, RandFlipd, ScaleIntensityd
+from monai.transforms import Compose, EnsureChannelFirstd, LoadImaged, RandFlipd, ScaleIntensityd
 from monai.utils import CommonKeys, set_determinism
 
 from generative.engines import AdversarialTrainer
@@ -44,7 +44,7 @@ def run_training_test(root_dir, device="cuda:0"):
     train_transforms = Compose(
         [
             LoadImaged(keys=[CommonKeys.IMAGE, CommonKeys.LABEL]),
-            AsChannelFirstd(keys=[CommonKeys.IMAGE, CommonKeys.LABEL]),
+            EnsureChannelFirstd(keys=[CommonKeys.IMAGE, CommonKeys.LABEL], channel_dim=2),
             ScaleIntensityd(keys=[CommonKeys.IMAGE]),
             RandFlipd(keys=[CommonKeys.IMAGE, CommonKeys.LABEL], prob=0.5),
         ]
