@@ -55,7 +55,15 @@ import torch.nn.functional as F
 from monai.apps import DecathlonDataset
 from monai.config import print_config
 from monai.data import DataLoader
-from monai.transforms import EnsureChannelFirstd, CenterSpatialCropd, Compose, Lambdad, LoadImaged, Resized, ScaleIntensityd
+from monai.transforms import (
+    EnsureChannelFirstd,
+    CenterSpatialCropd,
+    Compose,
+    Lambdad,
+    LoadImaged,
+    Resized,
+    ScaleIntensityd,
+)
 from monai.utils import set_determinism
 from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
@@ -105,7 +113,7 @@ data_transform = Compose(
     [
         LoadImaged(keys=["image"]),
         Lambdad(keys="image", func=lambda x: x[:, :, :, 1]),
-        EnsureChannelFirstd(keys=["image"], channel_dim='no_channel'),
+        EnsureChannelFirstd(keys=["image"], channel_dim="no_channel"),
         ScaleIntensityd(keys=["image"]),
         CenterSpatialCropd(keys=["image"], roi_size=[160, 200, 155]),
         Resized(keys=["image"], spatial_size=(32, 40, 32)),

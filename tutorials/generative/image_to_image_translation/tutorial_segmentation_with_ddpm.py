@@ -105,7 +105,7 @@ train_transforms = transforms.Compose(
         transforms.LoadImaged(keys=["image", "label"]),
         transforms.EnsureChannelFirstd(keys=["image", "label"]),
         transforms.Lambdad(keys=["image"], func=lambda x: x[channel, :, :, :]),
-        transforms.AddChanneld(keys=["image"]),
+        transforms.EnsureChannelFirstd(keys=["image"], channel_dim="no_channel"),
         transforms.EnsureTyped(keys=["image", "label"]),
         transforms.Orientationd(keys=["image", "label"], axcodes="RAS"),
         transforms.Spacingd(keys=["image", "label"], pixdim=(3.0, 3.0, 2.0), mode=("bilinear", "nearest")),
