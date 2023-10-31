@@ -124,7 +124,7 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
         We input an input shape that isn't divisible by 2**(n downstream steps)
         """
         with self.assertRaises(ValueError):
-            net = SPADE_Net(1, 1, 8, [16, 16], [16, 32, 64, 128], 16, True)
+            _ = SPADE_Net(1, 1, 8, [16, 16], [16, 32, 64, 128], 16, True)
 
 
 if __name__ == "__main__":

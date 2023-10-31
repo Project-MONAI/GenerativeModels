@@ -74,7 +74,7 @@ class SpatialRescaler(nn.Module):
         if self.remap_output:
             x = self.channel_mapper(x)
 
-        for stage in range(self.n_stages):
+        for _ in range(self.n_stages):
             x = self.interpolator(x, scale_factor=self.multiplier)
 
         return x
