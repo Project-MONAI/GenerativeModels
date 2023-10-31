@@ -39,11 +39,12 @@ class SPADE(nn.Module):
         spatial_dims: int = 2,
         hidden_channels: int = 64,
         norm: str | tuple = "INSTANCE",
-        norm_params: dict = {},
+        norm_params: dict | None = None,
     ) -> None:
-
         super().__init__()
 
+        if norm_params is None:
+            norm_params = {}
         if len(norm_params) != 0:
             norm = (norm, norm_params)
         self.param_free_norm = ADN(
