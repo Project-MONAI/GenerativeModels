@@ -1,9 +1,0 @@
-large_files:
-  - path: "models/autoencoder.pth"
-    url: "https://drive.google.com/uc?export=download&id=1CZHwxHJWybOsDavipD0EorDPOo_mzNeX"
-    hash_val: ""
-    hash_type: ""
-  - path: "models/diffusion_model.pth"
-    url: "https://drive.google.com/uc?export=download&id=1XO-ak93ZuOcGTCpgRtqgIeZq3dG5ExN6"
-    hash_val: ""
-    hash_type: ""
