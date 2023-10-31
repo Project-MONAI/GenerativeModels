@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.14.4
+#       jupytext_version: 1.14.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -104,7 +104,7 @@ train_transforms = transforms.Compose(
         transforms.LoadImaged(keys=["image", "label"]),
         transforms.EnsureChannelFirstd(keys=["image", "label"]),
         transforms.Lambdad(keys=["image"], func=lambda x: x[channel, :, :, :]),
-        transforms.AddChanneld(keys=["image"]),
+        transforms.EnsureChannelFirstd(keys=["image"], channel_dim="no_channel"),
         transforms.EnsureTyped(keys=["image", "label"]),
         transforms.Orientationd(keys=["image", "label"], axcodes="RAS"),
         transforms.Spacingd(keys=["image", "label"], pixdim=(3.0, 3.0, 2.0), mode=("bilinear", "nearest")),

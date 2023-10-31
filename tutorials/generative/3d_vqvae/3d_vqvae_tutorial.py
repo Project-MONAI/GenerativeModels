@@ -76,7 +76,7 @@ train_transform = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),
         transforms.Lambdad(keys="image", func=lambda x: x[:, :, :, 1]),
-        transforms.AddChanneld(keys=["image"]),
+        transforms.EnsureChannelFirstd(keys=["image"], channel_dim="no_channel"),
         transforms.ScaleIntensityd(keys=["image"]),
         transforms.CenterSpatialCropd(keys=["image"], roi_size=[176, 224, 155]),
         transforms.Resized(keys=["image"], spatial_size=(32, 48, 32)),
@@ -87,7 +87,7 @@ val_transform = transforms.Compose(
     [
         transforms.LoadImaged(keys=["image"]),
         transforms.Lambdad(keys="image", func=lambda x: x[:, :, :, 1]),
-        transforms.AddChanneld(keys=["image"]),
+        transforms.EnsureChannelFirstd(keys=["image"], channel_dim="no_channel"),
         transforms.ScaleIntensityd(keys=["image"]),
         transforms.CenterSpatialCropd(keys=["image"], roi_size=[176, 224, 155]),
         transforms.Resized(keys=["image"], spatial_size=(32, 48, 32)),

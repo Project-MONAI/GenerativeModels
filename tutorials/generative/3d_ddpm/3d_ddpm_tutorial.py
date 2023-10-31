@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.14.4
+#       jupytext_version: 1.14.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -55,7 +55,15 @@ import torch.nn.functional as F
 from monai.apps import DecathlonDataset
 from monai.config import print_config
 from monai.data import DataLoader
-from monai.transforms import AddChanneld, CenterSpatialCropd, Compose, Lambdad, LoadImaged, Resized, ScaleIntensityd
+from monai.transforms import (
+    EnsureChannelFirstd,
+    CenterSpatialCropd,
+    Compose,
+    Lambdad,
+    LoadImaged,
+    Resized,
+    ScaleIntensityd,
+)
 from monai.utils import set_determinism
 from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
@@ -93,7 +101,7 @@ set_determinism(42)
 #
 # 1. `LoadImaged`:  Loads the brain images from files.
 # 2. `Lambdad`: Choose channel 1 of the image, which is the T1-weighted image.
-# 3. `AddChanneld`: Add the channel dimension of the input data.
+# 3. `EnsureChannelFirstd`: Add the channel dimension of the input data.
 # 4. `ScaleIntensityd`: Apply a min-max scaling in the intensity values of each image to be in the `[0, 1]` range.
 # 5. `CenterSpatialCropd`: Crop the background of the images using a roi of size `[160, 200, 155]`.
 # 6. `Resized`: Resize the images to a volume with size `[32, 40, 32]`.
@@ -105,7 +113,7 @@ data_transform = Compose(
     [
         LoadImaged(keys=["image"]),
         Lambdad(keys="image", func=lambda x: x[:, :, :, 1]),
-        AddChanneld(keys=["image"]),
+        EnsureChannelFirstd(keys=["image"], channel_dim="no_channel"),
         ScaleIntensityd(keys=["image"]),
         CenterSpatialCropd(keys=["image"], roi_size=[160, 200, 155]),
         Resized(keys=["image"], spatial_size=(32, 40, 32)),
