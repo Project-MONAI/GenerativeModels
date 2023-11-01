@@ -585,7 +585,7 @@ class TestDiffusionModelUNet3D(unittest.TestCase):
 
     @parameterized.expand(DROPOUT_OK)
     def test_right_dropout(self, input_param):
-        net = DiffusionModelUNet(**input_param)
+        _ = DiffusionModelUNet(**input_param)
 
 
 
