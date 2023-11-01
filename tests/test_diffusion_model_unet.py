@@ -231,6 +231,59 @@ COND_CASES_2D = [
     ],
 ]
 
+DROPOUT_OK = [
+    [
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_res_blocks": 1,
+            "num_channels": (8, 8, 8),
+            "attention_levels": (False, False, True),
+            "num_head_channels": 4,
+            "norm_num_groups": 8,
+            "with_conditioning": True,
+            "transformer_num_layers": 1,
+            "cross_attention_dim": 3,
+            "dropout_cattn": 0.25
+        }
+    ],
+    [
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_res_blocks": 1,
+            "num_channels": (8, 8, 8),
+            "attention_levels": (False, False, True),
+            "num_head_channels": 4,
+            "norm_num_groups": 8,
+            "with_conditioning": True,
+            "transformer_num_layers": 1,
+            "cross_attention_dim": 3
+        }
+    ],
+]
+
+DROPOUT_WRONG = [
+    [
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_res_blocks": 1,
+            "num_channels": (8, 8, 8),
+            "attention_levels": (False, False, True),
+            "num_head_channels": 4,
+            "norm_num_groups": 8,
+            "with_conditioning": True,
+            "transformer_num_layers": 1,
+            "cross_attention_dim": 3,
+            "dropout_cattn": 3.0
+        }
+    ],
+]
+
 
 class TestDiffusionModelUNet2D(unittest.TestCase):
     @parameterized.expand(UNCOND_CASES_2D)
@@ -523,6 +576,17 @@ class TestDiffusionModelUNet3D(unittest.TestCase):
         test_script_save(
             net, torch.rand((1, 1, 16, 16, 16)), torch.randint(0, 1000, (1,)).long(), torch.rand((1, 1, 3))
         )
+
+    # Test dropout specification for cross-attention blocks
+    @parameterized.expand(DROPOUT_WRONG)
+    def test_wrong_dropout(self, input_param):
+        with self.assertRaises(ValueError):
+            net = DiffusionModelUNet(**input_param)
+
+    @parameterized.expand(DROPOUT_OK)
+    def test_right_dropout(self, input_param):
+        net = DiffusionModelUNet(**input_param)
+
 
 
 if __name__ == "__main__":
