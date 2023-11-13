@@ -42,8 +42,8 @@ from generative.losses import PatchAdversarialLoss, PerceptualLoss
 import numpy as np
 import monai
 import torch.nn.functional as F
-from generative.networks.nets.autoencoderkl import AutoencoderKL
-from generative.networks.nets.diffusion_model_unet import DiffusionModelUNet
+from generative.networks.nets import SPADEAutoencoderKL
+from generative.networks.nets import SPADEDiffusionModelUNet
 from generative.losses.adversarial_loss import PatchAdversarialLoss
 from generative.networks.nets import PatchDiscriminator
 from torch.cuda.amp import GradScaler, autocast
@@ -191,17 +191,16 @@ def picture_results(input_label, input_image, output_image):
 # - Autoencoder, incorporating SPADE normalisation in the decoder blocks
 # - Diffusion model, operating in the latent space, and incorporating SPADE normalisation in the decoding branch
 
-autoencoder = AutoencoderKL(spatial_dims = 2, in_channels = 1, out_channels = 1,
+autoencoder = SPADEAutoencoderKL(spatial_dims = 2, in_channels = 1, out_channels = 1,
                            num_res_blocks = (2,2,2,2), num_channels = (8, 16, 32, 64),
                            attention_levels = [False, False, False, False],
-                           latent_channels = 8, spade_norm = True, norm_num_groups = 8,
-                           label_nc = 6
+                           latent_channels = 8, norm_num_groups = 8, label_nc = 6
                            )
 
-diffusion = DiffusionModelUNet(spatial_dims = 2, in_channels = 8, out_channels = 8,
+diffusion = SPADEDiffusionModelUNet(spatial_dims = 2, in_channels = 8, out_channels = 8,
                               num_res_blocks = (2,2,2,2), num_channels = (16, 32, 64, 128),
                               attention_levels = (False, False, True, True), norm_num_groups = 16,
-                              with_conditioning = False, spade_norm = True, label_nc = 6)
+                              with_conditioning = False, label_nc = 6)
 
 
 # To train the autoencoder, we are using **a Patch-GAN-based adversarial loss**, a **perceptual loss** and a basic **L1 loss** between input and output.
@@ -353,7 +352,7 @@ torch.cuda.empty_cache()
 
 scheduler = DDPMScheduler(num_train_timesteps=1000, schedule="linear_beta", beta_start=0.0015, beta_end=0.0195)
 optimizer = torch.optim.Adam(diffusion.parameters(), lr=1e-4)
-inferer = LatentDiffusionInferer(scheduler, scale_factor=1.0, is_spade_ae = True)
+inferer = LatentDiffusionInferer(scheduler, scale_factor=1.0)
 
 # +
 diffusion = diffusion.to(device)
