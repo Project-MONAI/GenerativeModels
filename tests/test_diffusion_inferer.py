@@ -17,7 +17,7 @@ import torch
 from parameterized import parameterized
 
 from generative.inferers import DiffusionInferer
-from generative.networks.nets import DiffusionModelUNet
+from generative.networks.nets import DiffusionModelUNet, SPADEDiffusionModelUNet
 from generative.networks.schedulers import DDIMScheduler, DDPMScheduler
 
 TEST_CASES = [
@@ -160,6 +160,32 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         cdf_approx = inferer._approx_standard_normal_cdf(x)
         cdf_true = norm.cdf(x)
         torch.testing.assert_allclose(cdf_approx, cdf_true, atol=1e-3, rtol=1e-5)
+
+    def test_ddpm_sampler_SPADE(self):
+        model = SPADEDiffusionModelUNet(
+            spatial_dims = 2,
+            label_nc = 3,
+            in_channels =  1,
+            out_channels =  1,
+            num_channels = [8],
+            norm_num_groups = 8,
+            attention_levels = [True],
+            num_res_blocks = 1,
+            num_head_channels = 8,
+        )
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        model.to(device)
+        model.eval()
+        noise = torch.randn((2, 1, 8, 8)).to(device)
+        input_seg = torch.randn((2, 3, 8, 8)).to(device)
+        scheduler = DDPMScheduler(num_train_timesteps=1000)
+        inferer = DiffusionInferer(scheduler=scheduler)
+        scheduler.set_timesteps(num_inference_steps=10)
+        sample, intermediates = inferer.sample(
+            input_noise=noise, diffusion_model=model, scheduler=scheduler, save_intermediates=True, intermediate_steps=1,
+            seg = input_seg
+        )
+        self.assertEqual(len(intermediates), 10)
 
 
 if __name__ == "__main__":
