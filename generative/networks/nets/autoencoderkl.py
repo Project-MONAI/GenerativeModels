@@ -20,6 +20,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from monai.networks.blocks import Convolution
 from monai.utils import ensure_tuple_rep
+
 # To install xformers, use pip install xformers==0.0.16rc401
 if importlib.util.find_spec("xformers") is not None:
     import xformers
@@ -44,21 +45,38 @@ class Upsample(nn.Module):
     Args:
         spatial_dims: number of spatial dimensions (1D, 2D, 3D).
         in_channels: number of input channels to the layer.
+        use_convtranspose: if True, use ConvTranspose to upsample feature maps in decoder.
     """
 
-    def __init__(self, spatial_dims: int, in_channels: int) -> None:
+    def __init__(self, spatial_dims: int, in_channels: int, use_convtranspose: bool) -> None:
         super().__init__()
-        self.conv = Convolution(
-            spatial_dims=spatial_dims,
-            in_channels=in_channels,
-            out_channels=in_channels,
-            strides=1,
-            kernel_size=3,
-            padding=1,
-            conv_only=True,
-        )
+        if use_convtranspose:
+            self.conv = Convolution(
+                spatial_dims=spatial_dims,
+                in_channels=in_channels,
+                out_channels=in_channels,
+                strides=2,
+                kernel_size=3,
+                padding=1,
+                conv_only=True,
+                is_transposed=True,
+            )
+        else:
+            self.conv = Convolution(
+                spatial_dims=spatial_dims,
+                in_channels=in_channels,
+                out_channels=in_channels,
+                strides=1,
+                kernel_size=3,
+                padding=1,
+                conv_only=True,
+            )
+        self.use_convtranspose = use_convtranspose
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.use_convtranspose:
+            return self.conv(x)
+
         # Cast to float32 to as 'upsample_nearest2d_out_frame' op does not support bfloat16
         # https://github.com/pytorch/pytorch/issues/86679
         dtype = x.dtype
@@ -119,11 +137,12 @@ class ResBlock(nn.Module):
     """
 
     def __init__(
-        self, spatial_dims: int, in_channels: int, norm_num_groups: int, norm_eps: float, out_channels: int,
+        self, spatial_dims: int, in_channels: int, norm_num_groups: int, norm_eps: float, out_channels: int
     ) -> None:
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = in_channels if out_channels is None else out_channels
+
         self.norm1 = nn.GroupNorm(num_groups=norm_num_groups, num_channels=in_channels, eps=norm_eps, affine=True)
         self.conv1 = Convolution(
             spatial_dims=spatial_dims,
@@ -163,6 +182,7 @@ class ResBlock(nn.Module):
         h = self.norm1(h)
         h = F.silu(h)
         h = self.conv1(h)
+
         h = self.norm2(h)
         h = F.silu(h)
         h = self.conv2(h)
@@ -447,6 +467,7 @@ class Decoder(nn.Module):
         attention_levels: indicate which level from num_channels contain an attention block.
         with_nonlocal_attn: if True use non-local attention block.
         use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
+        use_convtranspose: if True, use ConvTranspose to upsample feature maps in decoder.
     """
 
     def __init__(
@@ -460,7 +481,8 @@ class Decoder(nn.Module):
         norm_eps: float,
         attention_levels: Sequence[bool],
         with_nonlocal_attn: bool = True,
-        use_flash_attention: bool = False
+        use_flash_attention: bool = False,
+        use_convtranspose: bool = False,
     ) -> None:
         super().__init__()
         self.spatial_dims = spatial_dims
@@ -533,7 +555,7 @@ class Decoder(nn.Module):
                         in_channels=block_in_ch,
                         norm_num_groups=norm_num_groups,
                         norm_eps=norm_eps,
-                        out_channels=block_out_ch
+                        out_channels=block_out_ch,
                     )
                 )
                 block_in_ch = block_out_ch
@@ -550,7 +572,9 @@ class Decoder(nn.Module):
                     )
 
             if not is_final_block:
-                blocks.append(Upsample(spatial_dims=spatial_dims, in_channels=block_in_ch))
+                blocks.append(
+                    Upsample(spatial_dims=spatial_dims, in_channels=block_in_ch, use_convtranspose=use_convtranspose)
+                )
 
         blocks.append(nn.GroupNorm(num_groups=norm_num_groups, num_channels=block_in_ch, eps=norm_eps, affine=True))
         blocks.append(
@@ -592,6 +616,8 @@ class AutoencoderKL(nn.Module):
         with_encoder_nonlocal_attn: if True use non-local attention block in the encoder.
         with_decoder_nonlocal_attn: if True use non-local attention block in the decoder.
         use_flash_attention: if True, use flash attention for a memory efficient attention mechanism.
+        use_checkpointing: if True, use activation checkpointing to save memory.
+        use_convtranspose: if True, use ConvTranspose to upsample feature maps in decoder.
     """
 
     def __init__(
@@ -607,7 +633,9 @@ class AutoencoderKL(nn.Module):
         norm_eps: float = 1e-6,
         with_encoder_nonlocal_attn: bool = True,
         with_decoder_nonlocal_attn: bool = True,
-        use_flash_attention: bool = False
+        use_flash_attention: bool = False,
+        use_checkpointing: bool = False,
+        use_convtranspose: bool = False,
     ) -> None:
         super().__init__()
 
@@ -654,7 +682,8 @@ class AutoencoderKL(nn.Module):
             norm_eps=norm_eps,
             attention_levels=attention_levels,
             with_nonlocal_attn=with_decoder_nonlocal_attn,
-            use_flash_attention=use_flash_attention
+            use_flash_attention=use_flash_attention,
+            use_convtranspose=use_convtranspose,
         )
         self.quant_conv_mu = Convolution(
             spatial_dims=spatial_dims,
@@ -684,6 +713,7 @@ class AutoencoderKL(nn.Module):
             conv_only=True,
         )
         self.latent_channels = latent_channels
+        self.use_checkpointing = use_checkpointing
 
     def encode(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
@@ -693,7 +723,10 @@ class AutoencoderKL(nn.Module):
             x: BxCx[SPATIAL DIMS] tensor
 
         """
-        h = self.encoder(x)
+        if self.use_checkpointing:
+            h = torch.utils.checkpoint.checkpoint(self.encoder, x, use_reentrant=False)
+        else:
+            h = self.encoder(x)
 
         z_mu = self.quant_conv_mu(h)
         z_log_var = self.quant_conv_log_sigma(h)
@@ -725,6 +758,7 @@ class AutoencoderKL(nn.Module):
 
         Args:
             x: BxCx[SPATIAL DIMENSIONS] tensor.
+
         Returns:
             reconstructed image, of the same shape as input
         """
@@ -738,11 +772,15 @@ class AutoencoderKL(nn.Module):
 
         Args:
             z: Bx[Z_CHANNELS]x[LATENT SPACE SHAPE]
+
         Returns:
             decoded image tensor
         """
         z = self.post_quant_conv(z)
-        dec = self.decoder(z)
+        if self.use_checkpointing:
+            dec = torch.utils.checkpoint.checkpoint(self.decoder, z, use_reentrant=False)
+        else:
+            dec = self.decoder(z)
         return dec
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
