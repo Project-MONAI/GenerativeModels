@@ -17,8 +17,7 @@ import numpy as np
 import torch
 from monai.networks import eval_mode
 from parameterized import parameterized
-
-from generative.networks.nets.spade_network import SPADE_Net
+from generative.networks.nets import SPADENet
 
 CASE_2D = [[[2, 1, 1, 3, [64, 64], [16, 32, 64, 128], 16, True]]]
 CASE_2D_BIS = [[[2, 1, 1, 3, [64, 64], [16, 32, 64, 128], 16, True]]]
@@ -75,7 +74,7 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
         """
         Check that forward method is called correctly and output shape matches.
         """
-        net = SPADE_Net(*input_param)
+        net = SPADENet(*input_param)
         in_label, in_image = create_semantic_data(input_param[4], input_param[3])
         with eval_mode(net):
             out, kld = net(in_label, in_image)
@@ -93,7 +92,7 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
         """
         Check that forward method is called correctly and output shape matches.
         """
-        net = SPADE_Net(*input_param)
+        net = SPADENet(*input_param)
         in_label, in_image = create_semantic_data(input_param[4], input_param[3])
         with eval_mode(net):
             out_z = net.encode(in_image)
@@ -106,7 +105,7 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
         """
         Check that forward method is called correctly and output shape matches.
         """
-        net = SPADE_Net(*input_param)
+        net = SPADENet(*input_param)
         in_label, in_image = create_semantic_data(input_param[4], input_param[3])
         with eval_mode(net):
             out, kld = net(in_label, in_image)
@@ -124,7 +123,7 @@ class TestDiffusionModelUNet2D(unittest.TestCase):
         We input an input shape that isn't divisible by 2**(n downstream steps)
         """
         with self.assertRaises(ValueError):
-            _ = SPADE_Net(1, 1, 8, [16, 16], [16, 32, 64, 128], 16, True)
+            _ = SPADENet(1, 1, 8, [16, 16], [16, 32, 64, 128], 16, True)
 
 
 if __name__ == "__main__":

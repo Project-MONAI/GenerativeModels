@@ -20,6 +20,7 @@ import torch.nn.functional as F
 from monai.inferers import Inferer
 from monai.utils import optional_import
 from monai.transforms import SpatialPad, CenterSpatialCrop
+from generative.networks.nets import SPADEAutoencoderKL, SPADEDiffusionModelUNet
 
 tqdm, has_tqdm = optional_import("tqdm", name="tqdm")
 
@@ -45,6 +46,7 @@ class DiffusionInferer(Inferer):
         timesteps: torch.Tensor,
         condition: torch.Tensor | None = None,
         mode: str = "crossattn",
+        seg: torch.Tensor | None = None
     ) -> torch.Tensor:
         """
         Implements the forward pass for a supervised training iteration.
@@ -56,6 +58,8 @@ class DiffusionInferer(Inferer):
             timesteps: random timesteps.
             condition: Conditioning for network input.
             mode: Conditioning mode for the network.
+            seg: if model is instance of SPADEDiffusionModelUnet, segmentation must be
+            provided on the forward (for SPADE-like AE or SPADE-like DM)
         """
         if mode not in ["crossattn", "concat"]:
             raise NotImplementedError(f"{mode} condition is not supported")
@@ -64,7 +68,10 @@ class DiffusionInferer(Inferer):
         if mode == "concat":
             noisy_image = torch.cat([noisy_image, condition], dim=1)
             condition = None
-        prediction = diffusion_model(x=noisy_image, timesteps=timesteps, context=condition)
+        if isinstance(diffusion_model, SPADEDiffusionModelUNet):
+            prediction = diffusion_model(x=noisy_image, timesteps=timesteps, context=condition, seg=seg)
+        else:
+            prediction = diffusion_model(x=noisy_image, timesteps=timesteps, context=condition)
 
         return prediction
 
@@ -79,6 +86,7 @@ class DiffusionInferer(Inferer):
         conditioning: torch.Tensor | None = None,
         mode: str = "crossattn",
         verbose: bool = True,
+        seg: torch.Tensor | None = None
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Args:
@@ -90,6 +98,7 @@ class DiffusionInferer(Inferer):
             conditioning: Conditioning for network input.
             mode: Conditioning mode for the network.
             verbose: if true, prints the progression bar of the sampling process.
+            seg: if diffusion model is instance of SPADEDiffusionModel, segmentation must be provided.
         """
         if mode not in ["crossattn", "concat"]:
             raise NotImplementedError(f"{mode} condition is not supported")
@@ -106,13 +115,23 @@ class DiffusionInferer(Inferer):
             # 1. predict noise model_output
             if mode == "concat":
                 model_input = torch.cat([image, conditioning], dim=1)
-                model_output = diffusion_model(
-                    model_input, timesteps=torch.Tensor((t,)).to(input_noise.device), context=None
-                )
+                if isinstance(diffusion_model, SPADEDiffusionModelUNet):
+                    model_output = diffusion_model(
+                        model_input, timesteps=torch.Tensor((t,)).to(input_noise.device), context=None, seg = seg,
+                    )
+                else:
+                    model_output = diffusion_model(
+                        model_input, timesteps=torch.Tensor((t,)).to(input_noise.device), context=None
+                    )
             else:
-                model_output = diffusion_model(
-                    image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning
-                )
+                if isinstance(diffusion_model, SPADEDiffusionModelUNet):
+                    model_output = diffusion_model(
+                        image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning, seg = seg
+                    )
+                else:
+                    model_output = diffusion_model(
+                        image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning
+                    )
 
             # 2. compute previous image: x_t -> x_t-1
             image, _ = scheduler.step(model_output, t, image)
@@ -135,6 +154,7 @@ class DiffusionInferer(Inferer):
         original_input_range: tuple | None = (0, 255),
         scaled_input_range: tuple | None = (0, 1),
         verbose: bool = True,
+        seg: torch.Tensor | None = None
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Computes the log-likelihoods for an input.
@@ -149,6 +169,7 @@ class DiffusionInferer(Inferer):
             original_input_range: the [min,max] intensity range of the input data before any scaling was applied.
             scaled_input_range: the [min,max] intensity range of the input data after scaling.
             verbose: if true, prints the progression bar of the sampling process.
+            seg: if diffusion model is instance of SPADEDiffusionModel, segmentation must be provided.
         """
 
         if not scheduler:
@@ -172,9 +193,15 @@ class DiffusionInferer(Inferer):
             noisy_image = self.scheduler.add_noise(original_samples=inputs, noise=noise, timesteps=timesteps)
             if mode == "concat":
                 noisy_image = torch.cat([noisy_image, conditioning], dim=1)
-                model_output = diffusion_model(noisy_image, timesteps=timesteps, context=None)
+                if isinstance(diffusion_model, SPADEDiffusionModelUNet):
+                    model_output = diffusion_model(noisy_image, timesteps=timesteps, context=None, seg=seg)
+                else:
+                    model_output = diffusion_model(noisy_image, timesteps=timesteps, context=None)
             else:
-                model_output = diffusion_model(x=noisy_image, timesteps=timesteps, context=conditioning)
+                if isinstance(diffusion_model, SPADEDiffusionModelUNet):
+                    model_output = diffusion_model(x=noisy_image, timesteps=timesteps, context=conditioning, seg=seg)
+                else:
+                    model_output = diffusion_model(x=noisy_image, timesteps=timesteps, context=conditioning)
             # get the model's predicted mean,  and variance if it is predicted
             if model_output.shape[1] == inputs.shape[1] * 2 and scheduler.variance_type in ["learned", "learned_range"]:
                 model_output, predicted_variance = torch.split(model_output, inputs.shape[1], dim=1)
@@ -330,6 +357,7 @@ class LatentDiffusionInferer(DiffusionInferer):
         timesteps: torch.Tensor,
         condition: torch.Tensor | None = None,
         mode: str = "crossattn",
+        seg: torch.Tensor | None = None
     ) -> torch.Tensor:
         """
         Implements the forward pass for a supervised training iteration.
@@ -342,6 +370,7 @@ class LatentDiffusionInferer(DiffusionInferer):
             timesteps: random timesteps.
             condition: conditioning for network input.
             mode: Conditioning mode for the network.
+            seg: if diffusion model is instance of SPADEDiffusionModel, segmentation must be provided.
         """
         with torch.no_grad():
             latent = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
@@ -349,14 +378,25 @@ class LatentDiffusionInferer(DiffusionInferer):
         if self.ldm_latent_shape is not None:
             latent = self.ldm_resizer(latent)
 
-        prediction = super().__call__(
-            inputs=latent,
-            diffusion_model=diffusion_model,
-            noise=noise,
-            timesteps=timesteps,
-            condition=condition,
-            mode=mode,
-        )
+        if isinstance(diffusion_model, SPADEDiffusionModelUNet):
+            prediction = super().__call__(
+                inputs=latent,
+                diffusion_model=diffusion_model,
+                noise=noise,
+                timesteps=timesteps,
+                condition=condition,
+                mode=mode,
+                seg=seg
+            )
+        else:
+            prediction = super().__call__(
+                inputs=latent,
+                diffusion_model=diffusion_model,
+                noise=noise,
+                timesteps=timesteps,
+                condition=condition,
+                mode=mode,
+            )
 
         return prediction
 
@@ -372,6 +412,7 @@ class LatentDiffusionInferer(DiffusionInferer):
         conditioning: torch.Tensor | None = None,
         mode: str = "crossattn",
         verbose: bool = True,
+        seg: torch.Tensor | None = None
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Args:
@@ -384,17 +425,38 @@ class LatentDiffusionInferer(DiffusionInferer):
             conditioning: Conditioning for network input.
             mode: Conditioning mode for the network.
             verbose: if true, prints the progression bar of the sampling process.
+            seg: if diffusion model is instance of SPADEDiffusionModel, or autoencoder_model
+             is instance of SPADEAutoencoderKL, segmentation must be provided.
         """
-        outputs = super().sample(
-            input_noise=input_noise,
-            diffusion_model=diffusion_model,
-            scheduler=scheduler,
-            save_intermediates=save_intermediates,
-            intermediate_steps=intermediate_steps,
-            conditioning=conditioning,
-            mode=mode,
-            verbose=verbose,
-        )
+
+        if isinstance(autoencoder_model, SPADEAutoencoderKL) and isinstance(diffusion_model, SPADEDiffusionModelUNet) \
+                and autoencoder_model.decoder.label_nc != diffusion_model.label_nc:
+            raise ValueError("If both autoencoder_model and diffusion_model implement SPADE, the number of semantic"
+                             "labels for each must be compatible. ")
+
+        if isinstance(diffusion_model, SPADEDiffusionModelUNet):
+            outputs = super().sample(
+                input_noise=input_noise,
+                diffusion_model=diffusion_model,
+                scheduler=scheduler,
+                save_intermediates=save_intermediates,
+                intermediate_steps=intermediate_steps,
+                conditioning=conditioning,
+                mode=mode,
+                verbose=verbose,
+                seg=seg
+            )
+        else:
+            outputs = super().sample(
+                input_noise=input_noise,
+                diffusion_model=diffusion_model,
+                scheduler=scheduler,
+                save_intermediates=save_intermediates,
+                intermediate_steps=intermediate_steps,
+                conditioning=conditioning,
+                mode=mode,
+                verbose=verbose,
+            )
 
         if save_intermediates:
             latent, latent_intermediates = outputs
@@ -410,7 +472,12 @@ class LatentDiffusionInferer(DiffusionInferer):
         if save_intermediates:
             intermediates = []
             for latent_intermediate in latent_intermediates:
-                intermediates.append(autoencoder_model.decode_stage_2_outputs(latent_intermediate / self.scale_factor))
+                if isinstance(autoencoder_model, SPADEAutoencoderKL):
+                    intermediates.append(autoencoder_model.decode_stage_2_outputs(
+                        latent_intermediate / self.scale_factor), seg = seg)
+                else:
+                    intermediates.append(autoencoder_model.decode_stage_2_outputs(
+                        latent_intermediate / self.scale_factor))
             return image, intermediates
 
         else:
@@ -431,6 +498,7 @@ class LatentDiffusionInferer(DiffusionInferer):
         verbose: bool = True,
         resample_latent_likelihoods: bool = False,
         resample_interpolation_mode: str = "nearest",
+        seg: torch.Tensor | None = None
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Computes the log-likelihoods of the latent representations of the input.
@@ -450,6 +518,8 @@ class LatentDiffusionInferer(DiffusionInferer):
                 dimension as the input images.
             resample_interpolation_mode: if use resample_latent_likelihoods, select interpolation 'nearest', 'bilinear',
                 or 'trilinear;
+            seg: if diffusion model is instance of SPADEDiffusionModel, or autoencoder_model
+             is instance of SPADEAutoencoderKL, segmentation must be provided.
         """
         if resample_latent_likelihoods and resample_interpolation_mode not in ("nearest", "bilinear", "trilinear"):
             raise ValueError(
@@ -460,15 +530,27 @@ class LatentDiffusionInferer(DiffusionInferer):
         if self.ldm_latent_shape is not None:
             latents = self.ldm_resizer(latents)
 
-        outputs = super().get_likelihood(
-            inputs=latents,
-            diffusion_model=diffusion_model,
-            scheduler=scheduler,
-            save_intermediates=save_intermediates,
-            conditioning=conditioning,
-            mode=mode,
-            verbose=verbose,
-        )
+        if isinstance(diffusion_model, SPADEDiffusionModelUNet):
+            outputs = super().get_likelihood(
+                inputs=latents,
+                diffusion_model=diffusion_model,
+                scheduler=scheduler,
+                save_intermediates=save_intermediates,
+                conditioning=conditioning,
+                mode=mode,
+                verbose=verbose,
+                seg=seg
+            )
+        else:
+            outputs = super().get_likelihood(
+                inputs=latents,
+                diffusion_model=diffusion_model,
+                scheduler=scheduler,
+                save_intermediates=save_intermediates,
+                conditioning=conditioning,
+                mode=mode,
+                verbose=verbose,
+            )
         if save_intermediates and resample_latent_likelihoods:
             intermediates = outputs[1]
             resizer = nn.Upsample(size=inputs.shape[2:], mode=resample_interpolation_mode)
