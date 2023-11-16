@@ -17,7 +17,13 @@ import torch
 from parameterized import parameterized
 
 from generative.inferers import LatentDiffusionInferer
-from generative.networks.nets import VQVAE, AutoencoderKL, DiffusionModelUNet
+from generative.networks.nets import (
+    VQVAE,
+    AutoencoderKL,
+    DiffusionModelUNet,
+    SPADEAutoencoderKL,
+    SPADEDiffusionModelUNet,
+)
 from generative.networks.schedulers import DDPMScheduler
 
 TEST_CASES = [
@@ -35,6 +41,7 @@ TEST_CASES = [
             "with_decoder_nonlocal_attn": False,
             "norm_num_groups": 4,
         },
+        "DiffusionModelUNet",
         {
             "spatial_dims": 2,
             "in_channels": 3,
@@ -62,6 +69,7 @@ TEST_CASES = [
             "num_embeddings": 16,
             "embedding_dim": 3,
         },
+        "DiffusionModelUNet",
         {
             "spatial_dims": 2,
             "in_channels": 3,
@@ -89,6 +97,7 @@ TEST_CASES = [
             "num_embeddings": 16,
             "embedding_dim": 3,
         },
+        "DiffusionModelUNet",
         {
             "spatial_dims": 3,
             "in_channels": 3,
@@ -118,6 +127,7 @@ TEST_CASES_DIFF_SHAPES = [
             "with_decoder_nonlocal_attn": False,
             "norm_num_groups": 4,
         },
+        "DiffusionModelUNet",
         {
             "spatial_dims": 2,
             "in_channels": 3,
@@ -145,6 +155,7 @@ TEST_CASES_DIFF_SHAPES = [
             "num_embeddings": 16,
             "embedding_dim": 3,
         },
+        "DiffusionModelUNet",
         {
             "spatial_dims": 2,
             "in_channels": 3,
@@ -172,6 +183,7 @@ TEST_CASES_DIFF_SHAPES = [
             "num_embeddings": 16,
             "embedding_dim": 3,
         },
+        "DiffusionModelUNet",
         {
             "spatial_dims": 3,
             "in_channels": 3,
@@ -185,17 +197,110 @@ TEST_CASES_DIFF_SHAPES = [
         (1, 1, 12, 12, 12),
         (1, 3, 8, 8, 8),
     ],
+    [
+        "SPADEAutoencoderKL",
+        {
+            "spatial_dims": 2,
+            "label_nc": 3,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_channels": (4, 4),
+            "latent_channels": 3,
+            "attention_levels": [False, False],
+            "num_res_blocks": 1,
+            "with_encoder_nonlocal_attn": False,
+            "with_decoder_nonlocal_attn": False,
+            "norm_num_groups": 4,
+        },
+        "DiffusionModelUNet",
+        {
+            "spatial_dims": 2,
+            "in_channels": 3,
+            "out_channels": 3,
+            "num_channels": [4, 4],
+            "norm_num_groups": 4,
+            "attention_levels": [False, False],
+            "num_res_blocks": 1,
+            "num_head_channels": 4,
+        },
+        (1, 1, 8, 8),
+        (1, 3, 4, 4),
+    ],
+    [
+        "AutoencoderKL",
+        {
+            "spatial_dims": 2,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_channels": (4, 4),
+            "latent_channels": 3,
+            "attention_levels": [False, False],
+            "num_res_blocks": 1,
+            "with_encoder_nonlocal_attn": False,
+            "with_decoder_nonlocal_attn": False,
+            "norm_num_groups": 4,
+        },
+        "SPADEDiffusionModelUNet",
+        {
+            "spatial_dims": 2,
+            "label_nc": 3,
+            "in_channels": 3,
+            "out_channels": 3,
+            "num_channels": [4, 4],
+            "norm_num_groups": 4,
+            "attention_levels": [False, False],
+            "num_res_blocks": 1,
+            "num_head_channels": 4,
+        },
+        (1, 1, 8, 8),
+        (1, 3, 4, 4),
+    ],
+    [
+        "SPADEAutoencoderKL",
+        {
+            "spatial_dims": 2,
+            "label_nc": 3,
+            "in_channels": 1,
+            "out_channels": 1,
+            "num_channels": (4, 4),
+            "latent_channels": 3,
+            "attention_levels": [False, False],
+            "num_res_blocks": 1,
+            "with_encoder_nonlocal_attn": False,
+            "with_decoder_nonlocal_attn": False,
+            "norm_num_groups": 4,
+        },
+        "SPADEDiffusionModelUNet",
+        {
+            "spatial_dims": 2,
+            "label_nc": 3,
+            "in_channels": 3,
+            "out_channels": 3,
+            "num_channels": [4, 4],
+            "norm_num_groups": 4,
+            "attention_levels": [False, False],
+            "num_res_blocks": 1,
+            "num_head_channels": 4,
+        },
+        (1, 1, 8, 8),
+        (1, 3, 4, 4),
+    ],
 ]
 
 
 class TestDiffusionSamplingInferer(unittest.TestCase):
     @parameterized.expand(TEST_CASES)
-    def test_prediction_shape(self, model_type, autoencoder_params, stage_2_params, input_shape, latent_shape):
-        if model_type == "AutoencoderKL":
+    def test_prediction_shape(
+        self, ae_model_type, autoencoder_params, dm_model_type, stage_2_params, input_shape, latent_shape
+    ):
+        if ae_model_type == "AutoencoderKL":
             stage_1 = AutoencoderKL(**autoencoder_params)
-        if model_type == "VQVAE":
+        if ae_model_type == "VQVAE":
             stage_1 = VQVAE(**autoencoder_params)
-        stage_2 = DiffusionModelUNet(**stage_2_params)
+        if dm_model_type == "SPADEDiffusionModelUNet":
+            stage_2 = SPADEDiffusionModelUNet(**stage_2_params)
+        else:
+            stage_2 = DiffusionModelUNet(**stage_2_params)
 
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         stage_1.to(device)
@@ -208,20 +313,41 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         scheduler = DDPMScheduler(num_train_timesteps=10)
         inferer = LatentDiffusionInferer(scheduler=scheduler, scale_factor=1.0)
         scheduler.set_timesteps(num_inference_steps=10)
-
         timesteps = torch.randint(0, scheduler.num_train_timesteps, (input_shape[0],), device=input.device).long()
-        prediction = inferer(
-            inputs=input, autoencoder_model=stage_1, diffusion_model=stage_2, noise=noise, timesteps=timesteps
-        )
+
+        if dm_model_type == "SPADEDiffusionModelUNet":
+            input_shape_seg = list(input_shape)
+            if "label_nc" in stage_2_params.keys():
+                input_shape_seg[1] = stage_2_params["label_nc"]
+            else:
+                input_shape_seg[1] = autoencoder_params["label_nc"]
+            input_seg = torch.randn(input_shape_seg).to(device)
+            prediction = inferer(
+                inputs=input,
+                autoencoder_model=stage_1,
+                diffusion_model=stage_2,
+                seg=input_seg,
+                noise=noise,
+                timesteps=timesteps,
+            )
+        else:
+            prediction = inferer(
+                inputs=input, autoencoder_model=stage_1, diffusion_model=stage_2, noise=noise, timesteps=timesteps
+            )
         self.assertEqual(prediction.shape, latent_shape)
 
     @parameterized.expand(TEST_CASES)
-    def test_sample_shape(self, model_type, autoencoder_params, stage_2_params, input_shape, latent_shape):
-        if model_type == "AutoencoderKL":
+    def test_sample_shape(
+        self, ae_model_type, autoencoder_params, dm_model_type, stage_2_params, input_shape, latent_shape
+    ):
+        if ae_model_type == "AutoencoderKL":
             stage_1 = AutoencoderKL(**autoencoder_params)
-        if model_type == "VQVAE":
+        if ae_model_type == "VQVAE":
             stage_1 = VQVAE(**autoencoder_params)
-        stage_2 = DiffusionModelUNet(**stage_2_params)
+        if dm_model_type == "SPADEDiffusionModelUNet":
+            stage_2 = SPADEDiffusionModelUNet(**stage_2_params)
+        else:
+            stage_2 = DiffusionModelUNet(**stage_2_params)
 
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         stage_1.to(device)
@@ -234,18 +360,40 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         inferer = LatentDiffusionInferer(scheduler=scheduler, scale_factor=1.0)
         scheduler.set_timesteps(num_inference_steps=10)
 
-        sample = inferer.sample(
-            input_noise=noise, autoencoder_model=stage_1, diffusion_model=stage_2, scheduler=scheduler
-        )
+        if ae_model_type == "SPADEAutoencoderKL" or dm_model_type == "SPADEDiffusionModelUNet":
+            input_shape_seg = list(input_shape)
+            if "label_nc" in stage_2_params.keys():
+                input_shape_seg[1] = stage_2_params["label_nc"]
+            else:
+                input_shape_seg[1] = autoencoder_params["label_nc"]
+            input_seg = torch.randn(input_shape_seg).to(device)
+            sample = inferer.sample(
+                input_noise=noise,
+                autoencoder_model=stage_1,
+                diffusion_model=stage_2,
+                scheduler=scheduler,
+                seg=input_seg,
+            )
+        else:
+            sample = inferer.sample(
+                input_noise=noise, autoencoder_model=stage_1, diffusion_model=stage_2, scheduler=scheduler
+            )
         self.assertEqual(sample.shape, input_shape)
 
     @parameterized.expand(TEST_CASES)
-    def test_sample_intermediates(self, model_type, autoencoder_params, stage_2_params, input_shape, latent_shape):
-        if model_type == "AutoencoderKL":
+    def test_sample_intermediates(
+        self, ae_model_type, autoencoder_params, dm_model_type, stage_2_params, input_shape, latent_shape
+    ):
+        if ae_model_type == "AutoencoderKL":
             stage_1 = AutoencoderKL(**autoencoder_params)
-        if model_type == "VQVAE":
+        if ae_model_type == "VQVAE":
             stage_1 = VQVAE(**autoencoder_params)
-        stage_2 = DiffusionModelUNet(**stage_2_params)
+        if ae_model_type == "SPADEAutoencoderKL":
+            stage_1 = SPADEAutoencoderKL(**autoencoder_params)
+        if dm_model_type == "SPADEDiffusionModelUNet":
+            stage_2 = SPADEDiffusionModelUNet(**stage_2_params)
+        else:
+            stage_2 = DiffusionModelUNet(**stage_2_params)
 
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         stage_1.to(device)
@@ -258,24 +406,46 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         inferer = LatentDiffusionInferer(scheduler=scheduler, scale_factor=1.0)
         scheduler.set_timesteps(num_inference_steps=10)
 
-        sample, intermediates = inferer.sample(
-            input_noise=noise,
-            autoencoder_model=stage_1,
-            diffusion_model=stage_2,
-            scheduler=scheduler,
-            save_intermediates=True,
-            intermediate_steps=1,
-        )
+        if ae_model_type == "SPADEAutoencoderKL" or dm_model_type == "SPADEDiffusionModelUNet":
+            input_shape_seg = list(input_shape)
+            if "label_nc" in stage_2_params.keys():
+                input_shape_seg[1] = stage_2_params["label_nc"]
+            else:
+                input_shape_seg[1] = autoencoder_params["label_nc"]
+            input_seg = torch.randn(input_shape_seg).to(device)
+            sample = inferer.sample(
+                input_noise=noise,
+                autoencoder_model=stage_1,
+                diffusion_model=stage_2,
+                scheduler=scheduler,
+                seg=input_seg,
+            )
+        else:
+            sample, intermediates = inferer.sample(
+                input_noise=noise,
+                autoencoder_model=stage_1,
+                diffusion_model=stage_2,
+                scheduler=scheduler,
+                save_intermediates=True,
+                intermediate_steps=1,
+            )
         self.assertEqual(len(intermediates), 10)
         self.assertEqual(intermediates[0].shape, input_shape)
 
     @parameterized.expand(TEST_CASES)
-    def test_get_likelihoods(self, model_type, autoencoder_params, stage_2_params, input_shape, latent_shape):
-        if model_type == "AutoencoderKL":
+    def test_get_likelihoods(
+        self, ae_model_type, autoencoder_params, dm_model_type, stage_2_params, input_shape, latent_shape
+    ):
+        if ae_model_type == "AutoencoderKL":
             stage_1 = AutoencoderKL(**autoencoder_params)
-        if model_type == "VQVAE":
+        if ae_model_type == "VQVAE":
             stage_1 = VQVAE(**autoencoder_params)
-        stage_2 = DiffusionModelUNet(**stage_2_params)
+        if ae_model_type == "SPADEAutoencoderKL":
+            stage_1 = SPADEAutoencoderKL(**autoencoder_params)
+        if dm_model_type == "SPADEDiffusionModelUNet":
+            stage_2 = SPADEDiffusionModelUNet(**stage_2_params)
+        else:
+            stage_2 = DiffusionModelUNet(**stage_2_params)
 
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         stage_1.to(device)
@@ -288,23 +458,46 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         inferer = LatentDiffusionInferer(scheduler=scheduler, scale_factor=1.0)
         scheduler.set_timesteps(num_inference_steps=10)
 
-        sample, intermediates = inferer.get_likelihood(
-            inputs=input,
-            autoencoder_model=stage_1,
-            diffusion_model=stage_2,
-            scheduler=scheduler,
-            save_intermediates=True,
-        )
+        if dm_model_type == "SPADEDiffusionModelUNet":
+            input_shape_seg = list(input_shape)
+            if "label_nc" in stage_2_params.keys():
+                input_shape_seg[1] = stage_2_params["label_nc"]
+            else:
+                input_shape_seg[1] = autoencoder_params["label_nc"]
+            input_seg = torch.randn(input_shape_seg).to(device)
+            sample, intermediates = inferer.get_likelihood(
+                inputs=input,
+                autoencoder_model=stage_1,
+                diffusion_model=stage_2,
+                scheduler=scheduler,
+                save_intermediates=True,
+                seg=input_seg,
+            )
+        else:
+            sample, intermediates = inferer.get_likelihood(
+                inputs=input,
+                autoencoder_model=stage_1,
+                diffusion_model=stage_2,
+                scheduler=scheduler,
+                save_intermediates=True,
+            )
         self.assertEqual(len(intermediates), 10)
         self.assertEqual(intermediates[0].shape, latent_shape)
 
     @parameterized.expand(TEST_CASES)
-    def test_resample_likelihoods(self, model_type, autoencoder_params, stage_2_params, input_shape, latent_shape):
-        if model_type == "AutoencoderKL":
+    def test_resample_likelihoods(
+        self, ae_model_type, autoencoder_params, dm_model_type, stage_2_params, input_shape, latent_shape
+    ):
+        if ae_model_type == "AutoencoderKL":
             stage_1 = AutoencoderKL(**autoencoder_params)
-        if model_type == "VQVAE":
+        if ae_model_type == "VQVAE":
             stage_1 = VQVAE(**autoencoder_params)
-        stage_2 = DiffusionModelUNet(**stage_2_params)
+        if ae_model_type == "SPADEAutoencoderKL":
+            stage_1 = SPADEAutoencoderKL(**autoencoder_params)
+        if dm_model_type == "SPADEDiffusionModelUNet":
+            stage_2 = SPADEDiffusionModelUNet(**stage_2_params)
+        else:
+            stage_2 = DiffusionModelUNet(**stage_2_params)
 
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         stage_1.to(device)
@@ -317,30 +510,51 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         inferer = LatentDiffusionInferer(scheduler=scheduler, scale_factor=1.0)
         scheduler.set_timesteps(num_inference_steps=10)
 
-        sample, intermediates = inferer.get_likelihood(
-            inputs=input,
-            autoencoder_model=stage_1,
-            diffusion_model=stage_2,
-            scheduler=scheduler,
-            save_intermediates=True,
-            resample_latent_likelihoods=True,
-        )
+        if dm_model_type == "SPADEDiffusionModelUNet":
+            input_shape_seg = list(input_shape)
+            if "label_nc" in stage_2_params.keys():
+                input_shape_seg[1] = stage_2_params["label_nc"]
+            else:
+                input_shape_seg[1] = autoencoder_params["label_nc"]
+            input_seg = torch.randn(input_shape_seg).to(device)
+            sample, intermediates = inferer.get_likelihood(
+                inputs=input,
+                autoencoder_model=stage_1,
+                diffusion_model=stage_2,
+                scheduler=scheduler,
+                save_intermediates=True,
+                resample_latent_likelihoods=True,
+                seg=input_seg,
+            )
+        else:
+            sample, intermediates = inferer.get_likelihood(
+                inputs=input,
+                autoencoder_model=stage_1,
+                diffusion_model=stage_2,
+                scheduler=scheduler,
+                save_intermediates=True,
+                resample_latent_likelihoods=True,
+            )
         self.assertEqual(len(intermediates), 10)
         self.assertEqual(intermediates[0].shape[2:], input_shape[2:])
 
     @parameterized.expand(TEST_CASES)
     def test_prediction_shape_conditioned_concat(
-        self, model_type, autoencoder_params, stage_2_params, input_shape, latent_shape
+        self, ae_model_type, autoencoder_params, dm_model_type, stage_2_params, input_shape, latent_shape
     ):
-        if model_type == "AutoencoderKL":
+        if ae_model_type == "AutoencoderKL":
             stage_1 = AutoencoderKL(**autoencoder_params)
-        if model_type == "VQVAE":
+        if ae_model_type == "VQVAE":
             stage_1 = VQVAE(**autoencoder_params)
-
+        if ae_model_type == "SPADEAutoencoderKL":
+            stage_1 = SPADEAutoencoderKL(**autoencoder_params)
         stage_2_params = stage_2_params.copy()
         n_concat_channel = 3
         stage_2_params["in_channels"] = stage_2_params["in_channels"] + n_concat_channel
-        stage_2 = DiffusionModelUNet(**stage_2_params)
+        if dm_model_type == "SPADEDiffusionModelUNet":
+            stage_2 = SPADEDiffusionModelUNet(**stage_2_params)
+        else:
+            stage_2 = DiffusionModelUNet(**stage_2_params)
 
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         stage_1.to(device)
@@ -359,29 +573,53 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         scheduler.set_timesteps(num_inference_steps=10)
 
         timesteps = torch.randint(0, scheduler.num_train_timesteps, (input_shape[0],), device=input.device).long()
-        prediction = inferer(
-            inputs=input,
-            autoencoder_model=stage_1,
-            diffusion_model=stage_2,
-            noise=noise,
-            timesteps=timesteps,
-            condition=conditioning,
-            mode="concat",
-        )
+
+        if dm_model_type == "SPADEDiffusionModelUNet":
+            input_shape_seg = list(input_shape)
+            if "label_nc" in stage_2_params.keys():
+                input_shape_seg[1] = stage_2_params["label_nc"]
+            else:
+                input_shape_seg[1] = autoencoder_params["label_nc"]
+            input_seg = torch.randn(input_shape_seg).to(device)
+            prediction = inferer(
+                inputs=input,
+                autoencoder_model=stage_1,
+                diffusion_model=stage_2,
+                noise=noise,
+                timesteps=timesteps,
+                condition=conditioning,
+                mode="concat",
+                seg=input_seg,
+            )
+        else:
+            prediction = inferer(
+                inputs=input,
+                autoencoder_model=stage_1,
+                diffusion_model=stage_2,
+                noise=noise,
+                timesteps=timesteps,
+                condition=conditioning,
+                mode="concat",
+            )
         self.assertEqual(prediction.shape, latent_shape)
 
     @parameterized.expand(TEST_CASES)
     def test_sample_shape_conditioned_concat(
-        self, model_type, autoencoder_params, stage_2_params, input_shape, latent_shape
+        self, ae_model_type, autoencoder_params, dm_model_type, stage_2_params, input_shape, latent_shape
     ):
-        if model_type == "AutoencoderKL":
+        if ae_model_type == "AutoencoderKL":
             stage_1 = AutoencoderKL(**autoencoder_params)
-        if model_type == "VQVAE":
+        if ae_model_type == "VQVAE":
             stage_1 = VQVAE(**autoencoder_params)
+        if ae_model_type == "SPADEAutoencoderKL":
+            stage_1 = SPADEAutoencoderKL(**autoencoder_params)
         stage_2_params = stage_2_params.copy()
         n_concat_channel = 3
         stage_2_params["in_channels"] = stage_2_params["in_channels"] + n_concat_channel
-        stage_2 = DiffusionModelUNet(**stage_2_params)
+        if dm_model_type == "SPADEDiffusionModelUNet":
+            stage_2 = SPADEDiffusionModelUNet(**stage_2_params)
+        else:
+            stage_2 = DiffusionModelUNet(**stage_2_params)
 
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         stage_1.to(device)
@@ -398,29 +636,47 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         inferer = LatentDiffusionInferer(scheduler=scheduler, scale_factor=1.0)
         scheduler.set_timesteps(num_inference_steps=10)
 
-        sample = inferer.sample(
-            input_noise=noise,
-            autoencoder_model=stage_1,
-            diffusion_model=stage_2,
-            scheduler=scheduler,
-            conditioning=conditioning,
-            mode="concat",
-        )
+        if dm_model_type == "SPADEDiffusionModelUNet":
+            input_shape_seg = list(input_shape)
+            if "label_nc" in stage_2_params.keys():
+                input_shape_seg[1] = stage_2_params["label_nc"]
+            else:
+                input_shape_seg[1] = autoencoder_params["label_nc"]
+            input_seg = torch.randn(input_shape_seg).to(device)
+            sample = inferer.sample(
+                input_noise=noise,
+                autoencoder_model=stage_1,
+                diffusion_model=stage_2,
+                scheduler=scheduler,
+                conditioning=conditioning,
+                mode="concat",
+                seg=input_seg,
+            )
+        else:
+            sample = inferer.sample(
+                input_noise=noise,
+                autoencoder_model=stage_1,
+                diffusion_model=stage_2,
+                scheduler=scheduler,
+                conditioning=conditioning,
+                mode="concat",
+            )
         self.assertEqual(sample.shape, input_shape)
 
     @parameterized.expand(TEST_CASES_DIFF_SHAPES)
-    def test_sample_shape_different_latents(self,
-                                            model_type,
-                                            autoencoder_params,
-                                            stage_2_params,
-                                            input_shape,
-                                            latent_shape
-                                            ):
-        if model_type == "AutoencoderKL":
+    def test_sample_shape_different_latents(
+        self, ae_model_type, autoencoder_params, dm_model_type, stage_2_params, input_shape, latent_shape
+    ):
+        if ae_model_type == "AutoencoderKL":
             stage_1 = AutoencoderKL(**autoencoder_params)
-        if model_type == "VQVAE":
+        if ae_model_type == "VQVAE":
             stage_1 = VQVAE(**autoencoder_params)
-        stage_2 = DiffusionModelUNet(**stage_2_params)
+        if ae_model_type == "SPADEAutoencoderKL":
+            stage_1 = SPADEAutoencoderKL(**autoencoder_params)
+        if dm_model_type == "SPADEDiffusionModelUNet":
+            stage_2 = SPADEDiffusionModelUNet(**stage_2_params)
+        else:
+            stage_2 = DiffusionModelUNet(**stage_2_params)
 
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         stage_1.to(device)
@@ -432,16 +688,84 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
         noise = torch.randn(latent_shape).to(device)
         scheduler = DDPMScheduler(num_train_timesteps=10)
         # We infer the VAE shape
-        autoencoder_latent_shape = [i//(2**(len(autoencoder_params['num_channels'])-1)) for i in input_shape[2:]]
-        inferer = LatentDiffusionInferer(scheduler=scheduler, scale_factor=1.0,
-                                         ldm_latent_shape=list(latent_shape[2:]),
-                                         autoencoder_latent_shape=autoencoder_latent_shape)
+        autoencoder_latent_shape = [i // (2 ** (len(autoencoder_params["num_channels"]) - 1)) for i in input_shape[2:]]
+        inferer = LatentDiffusionInferer(
+            scheduler=scheduler,
+            scale_factor=1.0,
+            ldm_latent_shape=list(latent_shape[2:]),
+            autoencoder_latent_shape=autoencoder_latent_shape,
+        )
         scheduler.set_timesteps(num_inference_steps=10)
 
         timesteps = torch.randint(0, scheduler.num_train_timesteps, (input_shape[0],), device=input.device).long()
-        prediction = inferer(
-            inputs=input, autoencoder_model=stage_1, diffusion_model=stage_2, noise=noise, timesteps=timesteps
-        )
+
+        if dm_model_type == "SPADEDiffusionModelUNet":
+            input_shape_seg = list(input_shape)
+            if "label_nc" in stage_2_params.keys():
+                input_shape_seg[1] = stage_2_params["label_nc"]
+            else:
+                input_shape_seg[1] = autoencoder_params["label_nc"]
+            input_seg = torch.randn(input_shape_seg).to(device)
+            prediction = inferer(
+                inputs=input,
+                autoencoder_model=stage_1,
+                diffusion_model=stage_2,
+                noise=noise,
+                timesteps=timesteps,
+                seg=input_seg,
+            )
+        else:
+            prediction = inferer(
+                inputs=input, autoencoder_model=stage_1, diffusion_model=stage_2, noise=noise, timesteps=timesteps
+            )
         self.assertEqual(prediction.shape, latent_shape)
+
+    def test_incompatible_spade_setup(self):
+        stage_1 = SPADEAutoencoderKL(
+            spatial_dims=2,
+            label_nc=6,
+            in_channels=1,
+            out_channels=1,
+            num_channels=(4, 4),
+            latent_channels=3,
+            attention_levels=[False, False],
+            num_res_blocks=1,
+            with_encoder_nonlocal_attn=False,
+            with_decoder_nonlocal_attn=False,
+            norm_num_groups=4,
+        )
+        stage_2 = SPADEDiffusionModelUNet(
+            spatial_dims=2,
+            label_nc=3,
+            in_channels=3,
+            out_channels=3,
+            num_channels=[4, 4],
+            norm_num_groups=4,
+            attention_levels=[False, False],
+            num_res_blocks=1,
+            num_head_channels=4,
+        )
+
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        stage_1.to(device)
+        stage_2.to(device)
+        stage_1.eval()
+        stage_2.eval()
+        noise = torch.randn((1, 3, 4, 4)).to(device)
+        input_seg = torch.randn((1, 3, 8, 8)).to(device)
+        scheduler = DDPMScheduler(num_train_timesteps=10)
+        inferer = LatentDiffusionInferer(scheduler=scheduler, scale_factor=1.0)
+        scheduler.set_timesteps(num_inference_steps=10)
+
+        with self.assertRaises(ValueError):
+            _ = inferer.sample(
+                input_noise=noise,
+                autoencoder_model=stage_1,
+                diffusion_model=stage_2,
+                scheduler=scheduler,
+                seg=input_seg,
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
