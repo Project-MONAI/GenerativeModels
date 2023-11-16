@@ -245,7 +245,7 @@ DROPOUT_OK = [
             "with_conditioning": True,
             "transformer_num_layers": 1,
             "cross_attention_dim": 3,
-            "dropout_cattn": 0.25
+            "dropout_cattn": 0.25,
         }
     ],
     [
@@ -260,7 +260,7 @@ DROPOUT_OK = [
             "norm_num_groups": 8,
             "with_conditioning": True,
             "transformer_num_layers": 1,
-            "cross_attention_dim": 3
+            "cross_attention_dim": 3,
         }
     ],
 ]
@@ -279,9 +279,9 @@ DROPOUT_WRONG = [
             "with_conditioning": True,
             "transformer_num_layers": 1,
             "cross_attention_dim": 3,
-            "dropout_cattn": 3.0
+            "dropout_cattn": 3.0,
         }
-    ],
+    ]
 ]
 
 
@@ -586,7 +586,6 @@ class TestDiffusionModelUNet3D(unittest.TestCase):
     @parameterized.expand(DROPOUT_OK)
     def test_right_dropout(self, input_param):
         _ = DiffusionModelUNet(**input_param)
-
 
 
 if __name__ == "__main__":

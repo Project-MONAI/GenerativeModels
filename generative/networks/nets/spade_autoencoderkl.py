@@ -10,15 +10,18 @@
 # limitations under the License.
 
 from __future__ import annotations
+
 import importlib.util
 from collections.abc import Sequence
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from monai.networks.blocks import Convolution
 from monai.utils import ensure_tuple_rep
+
 from generative.networks.blocks.spade_norm import SPADE
-from generative.networks.nets.autoencoderkl import Encoder, Upsample, AttentionBlock
+from generative.networks.nets.autoencoderkl import AttentionBlock, Encoder, Upsample
 
 # To install xformers, use pip install xformers==0.0.16rc401
 if importlib.util.find_spec("xformers") is not None:
@@ -34,6 +37,7 @@ else:
 # xformers, has_xformers = optional_import("xformers.ops", name="xformers")
 
 __all__ = ["SPADEAutoencoderKL"]
+
 
 class SPADEResBlock(nn.Module):
     """
@@ -53,17 +57,27 @@ class SPADEResBlock(nn.Module):
     """
 
     def __init__(
-        self, spatial_dims: int, in_channels: int, norm_num_groups: int, norm_eps: float, out_channels: int,
-        label_nc: int, spade_intermediate_channels: int = 128,
+        self,
+        spatial_dims: int,
+        in_channels: int,
+        norm_num_groups: int,
+        norm_eps: float,
+        out_channels: int,
+        label_nc: int,
+        spade_intermediate_channels: int = 128,
     ) -> None:
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = in_channels if out_channels is None else out_channels
-        self.norm1 = SPADE(label_nc=label_nc, norm_nc=in_channels,
-                           norm="GROUP", norm_params={"num_groups": norm_num_groups,
-                                                               "affine": False},
-                           hidden_channels=spade_intermediate_channels,
-                           kernel_size=3, spatial_dims=spatial_dims)
+        self.norm1 = SPADE(
+            label_nc=label_nc,
+            norm_nc=in_channels,
+            norm="GROUP",
+            norm_params={"num_groups": norm_num_groups, "affine": False},
+            hidden_channels=spade_intermediate_channels,
+            kernel_size=3,
+            spatial_dims=spatial_dims,
+        )
         self.conv1 = Convolution(
             spatial_dims=spatial_dims,
             in_channels=self.in_channels,
@@ -73,11 +87,15 @@ class SPADEResBlock(nn.Module):
             padding=1,
             conv_only=True,
         )
-        self.norm2 = SPADE(label_nc=label_nc, norm_nc=out_channels,
-                           norm="GROUP", norm_params={"num_groups": norm_num_groups,
-                                                               "affine": False},
-                           hidden_channels=spade_intermediate_channels,
-                           kernel_size=3, spatial_dims=spatial_dims)
+        self.norm2 = SPADE(
+            label_nc=label_nc,
+            norm_nc=out_channels,
+            norm="GROUP",
+            norm_params={"num_groups": norm_num_groups, "affine": False},
+            hidden_channels=spade_intermediate_channels,
+            kernel_size=3,
+            spatial_dims=spatial_dims,
+        )
         self.conv2 = Convolution(
             spatial_dims=spatial_dims,
             in_channels=self.out_channels,
@@ -115,6 +133,7 @@ class SPADEResBlock(nn.Module):
 
         return x + h
 
+
 class SPADEDecoder(nn.Module):
     """
     Convolutional cascade upsampling from a spatial latent space into an image space.
@@ -147,7 +166,7 @@ class SPADEDecoder(nn.Module):
         label_nc: int,
         with_nonlocal_attn: bool = True,
         use_flash_attention: bool = False,
-        spade_intermediate_channels: int = None
+        spade_intermediate_channels: int = None,
     ) -> None:
         super().__init__()
         self.spatial_dims = spatial_dims
@@ -186,7 +205,7 @@ class SPADEDecoder(nn.Module):
                     norm_eps=norm_eps,
                     out_channels=reversed_block_out_channels[0],
                     label_nc=label_nc,
-                    spade_intermediate_channels=spade_intermediate_channels
+                    spade_intermediate_channels=spade_intermediate_channels,
                 )
             )
             blocks.append(
@@ -206,7 +225,7 @@ class SPADEDecoder(nn.Module):
                     norm_eps=norm_eps,
                     out_channels=reversed_block_out_channels[0],
                     label_nc=label_nc,
-                    spade_intermediate_channels=spade_intermediate_channels
+                    spade_intermediate_channels=spade_intermediate_channels,
                 )
             )
 
@@ -227,7 +246,7 @@ class SPADEDecoder(nn.Module):
                         norm_eps=norm_eps,
                         out_channels=block_out_ch,
                         label_nc=label_nc,
-                        spade_intermediate_channels=spade_intermediate_channels
+                        spade_intermediate_channels=spade_intermediate_channels,
                     )
                 )
                 block_in_ch = block_out_ch
@@ -269,6 +288,7 @@ class SPADEDecoder(nn.Module):
                 x = block(x)
         return x
 
+
 class SPADEAutoencoderKL(nn.Module):
     """
     Autoencoder model with KL-regularized latent space based on
@@ -307,7 +327,7 @@ class SPADEAutoencoderKL(nn.Module):
         with_encoder_nonlocal_attn: bool = True,
         with_decoder_nonlocal_attn: bool = True,
         use_flash_attention: bool = False,
-        spade_intermediate_channels: int = 128
+        spade_intermediate_channels: int = 128,
     ) -> None:
         super().__init__()
 
@@ -356,7 +376,7 @@ class SPADEAutoencoderKL(nn.Module):
             label_nc=label_nc,
             with_nonlocal_attn=with_decoder_nonlocal_attn,
             use_flash_attention=use_flash_attention,
-            spade_intermediate_channels = spade_intermediate_channels
+            spade_intermediate_channels=spade_intermediate_channels,
         )
         self.quant_conv_mu = Convolution(
             spatial_dims=spatial_dims,

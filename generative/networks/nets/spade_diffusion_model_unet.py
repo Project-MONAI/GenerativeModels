@@ -30,15 +30,27 @@
 # =========================================================================
 
 from __future__ import annotations
+
 import importlib.util
 from collections.abc import Sequence
+
 import torch
 from monai.networks.blocks import Convolution
 from monai.utils import ensure_tuple_rep
 from torch import nn
-from generative.networks.nets.diffusion_model_unet import SpatialTransformer, get_timestep_embedding, zero_module, \
-    Downsample, Upsample, ResnetBlock, AttentionBlock, get_down_block, get_mid_block
+
 from generative.networks.blocks.spade_norm import SPADE
+from generative.networks.nets.diffusion_model_unet import (
+    AttentionBlock,
+    Downsample,
+    ResnetBlock,
+    SpatialTransformer,
+    Upsample,
+    get_down_block,
+    get_mid_block,
+    get_timestep_embedding,
+    zero_module,
+)
 
 # To install xformers, use pip install xformers==0.0.16rc401
 if importlib.util.find_spec("xformers") is not None:
@@ -55,6 +67,7 @@ else:
 # xformers, has_xformers = optional_import("xformers.ops", name="xformers")
 
 __all__ = ["SPADEDiffusionModelUNet"]
+
 
 class SPADEResnetBlock(nn.Module):
     """
@@ -84,7 +97,7 @@ class SPADEResnetBlock(nn.Module):
         down: bool = False,
         norm_num_groups: int = 32,
         norm_eps: float = 1e-6,
-        spade_intermediate_channels: int = 128
+        spade_intermediate_channels: int = 128,
     ) -> None:
         super().__init__()
         self.spatial_dims = spatial_dims
@@ -93,13 +106,15 @@ class SPADEResnetBlock(nn.Module):
         self.out_channels = out_channels or in_channels
         self.up = up
         self.down = down
-        self.norm1 = SPADE(label_nc=label_nc, norm_nc=in_channels,
-                           norm="GROUP", norm_params={"num_groups": norm_num_groups,
-                                                               "affine": False,
-                                                               "eps": norm_eps,
-                                                               "affine": True},
-                           hidden_channels=spade_intermediate_channels,
-                           kernel_size=3, spatial_dims=spatial_dims)
+        self.norm1 = SPADE(
+            label_nc=label_nc,
+            norm_nc=in_channels,
+            norm="GROUP",
+            norm_params={"num_groups": norm_num_groups, "affine": False, "eps": norm_eps, "affine": True},
+            hidden_channels=spade_intermediate_channels,
+            kernel_size=3,
+            spatial_dims=spatial_dims,
+        )
         self.nonlinearity = nn.SiLU()
         self.conv1 = Convolution(
             spatial_dims=spatial_dims,
@@ -119,13 +134,15 @@ class SPADEResnetBlock(nn.Module):
 
         self.time_emb_proj = nn.Linear(temb_channels, self.out_channels)
 
-        self.norm2 = SPADE(label_nc=label_nc, norm_nc=self.out_channels,
-                           norm="GROUP", norm_params={"num_groups": norm_num_groups,
-                                                               "affine": False,
-                                                               "eps": norm_eps,
-                                                               "affine": True},
-                           hidden_channels=spade_intermediate_channels,
-                           kernel_size=3, spatial_dims=spatial_dims)
+        self.norm2 = SPADE(
+            label_nc=label_nc,
+            norm_nc=self.out_channels,
+            norm="GROUP",
+            norm_params={"num_groups": norm_num_groups, "affine": False, "eps": norm_eps, "affine": True},
+            hidden_channels=spade_intermediate_channels,
+            kernel_size=3,
+            spatial_dims=spatial_dims,
+        )
         self.conv2 = zero_module(
             Convolution(
                 spatial_dims=spatial_dims,
@@ -151,7 +168,7 @@ class SPADEResnetBlock(nn.Module):
                 conv_only=True,
             )
 
-    def forward(self, x: torch.Tensor, emb: torch.Tensor , seg: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, emb: torch.Tensor, seg: torch.Tensor) -> torch.Tensor:
         h = x
         h = self.norm1(h, seg)
         h = self.nonlinearity(h)
@@ -179,6 +196,7 @@ class SPADEResnetBlock(nn.Module):
         h = self.conv2(h)
 
         return self.skip_connection(x) + h
+
 
 class SPADEUpBlock(nn.Module):
     """
@@ -212,7 +230,7 @@ class SPADEUpBlock(nn.Module):
         norm_eps: float = 1e-6,
         add_upsample: bool = True,
         resblock_updown: bool = False,
-        spade_intermediate_channels: int = 128
+        spade_intermediate_channels: int = 128,
     ) -> None:
         super().__init__()
         self.resblock_updown = resblock_updown
@@ -231,7 +249,7 @@ class SPADEUpBlock(nn.Module):
                     label_nc=label_nc,
                     norm_num_groups=norm_num_groups,
                     norm_eps=norm_eps,
-                    spade_intermediate_channels=spade_intermediate_channels
+                    spade_intermediate_channels=spade_intermediate_channels,
                 )
             )
 
@@ -276,6 +294,7 @@ class SPADEUpBlock(nn.Module):
 
         return hidden_states
 
+
 class SPADEAttnUpBlock(nn.Module):
     """
     Unet's up block containing resnet, upsamplers, and self-attention blocks.
@@ -312,8 +331,7 @@ class SPADEAttnUpBlock(nn.Module):
         resblock_updown: bool = False,
         num_head_channels: int = 1,
         use_flash_attention: bool = False,
-        spade_intermediate_channels: int = 128
-
+        spade_intermediate_channels: int = 128,
     ) -> None:
         super().__init__()
         self.resblock_updown = resblock_updown
@@ -333,7 +351,7 @@ class SPADEAttnUpBlock(nn.Module):
                     label_nc=label_nc,
                     norm_num_groups=norm_num_groups,
                     norm_eps=norm_eps,
-                    spade_intermediate_channels = spade_intermediate_channels
+                    spade_intermediate_channels=spade_intermediate_channels,
                 )
             )
             attentions.append(
@@ -390,6 +408,7 @@ class SPADEAttnUpBlock(nn.Module):
 
         return hidden_states
 
+
 class SPADECrossAttnUpBlock(nn.Module):
     """
     Unet's up block containing resnet, upsamplers, and self-attention blocks.
@@ -432,7 +451,7 @@ class SPADECrossAttnUpBlock(nn.Module):
         upcast_attention: bool = False,
         use_flash_attention: bool = False,
         label_nc: int | None = None,
-        spade_intermediate_channels: int = 128
+        spade_intermediate_channels: int = 128,
     ) -> None:
         super().__init__()
         self.resblock_updown = resblock_updown
@@ -451,8 +470,8 @@ class SPADECrossAttnUpBlock(nn.Module):
                     temb_channels=temb_channels,
                     norm_num_groups=norm_num_groups,
                     norm_eps=norm_eps,
-                    label_nc = label_nc,
-                    spade_intermediate_channels = spade_intermediate_channels
+                    label_nc=label_nc,
+                    spade_intermediate_channels=spade_intermediate_channels,
                 )
             )
             attentions.append(
@@ -512,6 +531,7 @@ class SPADECrossAttnUpBlock(nn.Module):
 
         return hidden_states
 
+
 def get_spade_up_block(
     spatial_dims: int,
     in_channels: int,
@@ -531,7 +551,7 @@ def get_spade_up_block(
     cross_attention_dim: int | None,
     upcast_attention: bool = False,
     use_flash_attention: bool = False,
-    spade_intermediate_channels: int = 128
+    spade_intermediate_channels: int = 128,
 ) -> nn.Module:
     if with_attn:
         return SPADEAttnUpBlock(
@@ -548,7 +568,7 @@ def get_spade_up_block(
             resblock_updown=resblock_updown,
             num_head_channels=num_head_channels,
             use_flash_attention=use_flash_attention,
-            spade_intermediate_channels=spade_intermediate_channels
+            spade_intermediate_channels=spade_intermediate_channels,
         )
     elif with_cross_attn:
         return SPADECrossAttnUpBlock(
@@ -568,7 +588,7 @@ def get_spade_up_block(
             cross_attention_dim=cross_attention_dim,
             upcast_attention=upcast_attention,
             use_flash_attention=use_flash_attention,
-            spade_intermediate_channels=spade_intermediate_channels
+            spade_intermediate_channels=spade_intermediate_channels,
         )
     else:
         return SPADEUpBlock(
@@ -583,7 +603,7 @@ def get_spade_up_block(
             norm_eps=norm_eps,
             add_upsample=add_upsample,
             resblock_updown=resblock_updown,
-            spade_intermediate_channels=spade_intermediate_channels
+            spade_intermediate_channels=spade_intermediate_channels,
         )
 
 
@@ -635,7 +655,7 @@ class SPADEDiffusionModelUNet(nn.Module):
         num_class_embeds: int | None = None,
         upcast_attention: bool = False,
         use_flash_attention: bool = False,
-        spade_intermediate_channels: int = 128
+        spade_intermediate_channels: int = 128,
     ) -> None:
         super().__init__()
         if with_conditioning is True and cross_attention_dim is None:
@@ -788,8 +808,8 @@ class SPADEDiffusionModelUNet(nn.Module):
                 cross_attention_dim=cross_attention_dim,
                 upcast_attention=upcast_attention,
                 use_flash_attention=use_flash_attention,
-                label_nc = label_nc,
-                spade_intermediate_channels = spade_intermediate_channels
+                label_nc=label_nc,
+                spade_intermediate_channels=spade_intermediate_channels,
             )
 
             self.up_blocks.append(up_block)
@@ -882,7 +902,7 @@ class SPADEDiffusionModelUNet(nn.Module):
         for upsample_block in self.up_blocks:
             res_samples = down_block_res_samples[-len(upsample_block.resnets) :]
             down_block_res_samples = down_block_res_samples[: -len(upsample_block.resnets)]
-            h = upsample_block(hidden_states=h, res_hidden_states_list=res_samples, seg = seg,  temb=emb, context=context)
+            h = upsample_block(hidden_states=h, res_hidden_states_list=res_samples, seg=seg, temb=emb, context=context)
 
         # 7. output block
         h = self.out(h)

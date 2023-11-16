@@ -191,16 +191,29 @@ def picture_results(input_label, input_image, output_image):
 # - Autoencoder, incorporating SPADE normalisation in the decoder blocks
 # - Diffusion model, operating in the latent space, and incorporating SPADE normalisation in the decoding branch
 
-autoencoder = SPADEAutoencoderKL(spatial_dims = 2, in_channels = 1, out_channels = 1,
-                           num_res_blocks = (2,2,2,2), num_channels = (8, 16, 32, 64),
-                           attention_levels = [False, False, False, False],
-                           latent_channels = 8, norm_num_groups = 8, label_nc = 6
-                           )
+autoencoder = SPADEAutoencoderKL(
+    spatial_dims=2,
+    in_channels=1,
+    out_channels=1,
+    num_res_blocks=(2, 2, 2, 2),
+    num_channels=(8, 16, 32, 64),
+    attention_levels=[False, False, False, False],
+    latent_channels=8,
+    norm_num_groups=8,
+    label_nc=6,
+)
 
-diffusion = SPADEDiffusionModelUNet(spatial_dims = 2, in_channels = 8, out_channels = 8,
-                              num_res_blocks = (2,2,2,2), num_channels = (16, 32, 64, 128),
-                              attention_levels = (False, False, True, True), norm_num_groups = 16,
-                              with_conditioning = False, label_nc = 6)
+diffusion = SPADEDiffusionModelUNet(
+    spatial_dims=2,
+    in_channels=8,
+    out_channels=8,
+    num_res_blocks=(2, 2, 2, 2),
+    num_channels=(16, 32, 64, 128),
+    attention_levels=(False, False, True, True),
+    norm_num_groups=16,
+    with_conditioning=False,
+    label_nc=6,
+)
 
 
 # To train the autoencoder, we are using **a Patch-GAN-based adversarial loss**, a **perceptual loss** and a basic **L1 loss** between input and output.
@@ -209,8 +222,7 @@ perceptual_loss = PerceptualLoss(spatial_dims=2, network_type="alex")
 perceptual_loss.to(device)
 
 # +
-discriminator = PatchDiscriminator(spatial_dims=2, num_layers_d=3, num_channels=16, in_channels=1, out_channels=1,
-                                  )
+discriminator = PatchDiscriminator(spatial_dims=2, num_layers_d=3, num_channels=16, in_channels=1, out_channels=1)
 discriminator = discriminator.to(device)
 
 adv_loss = PatchAdversarialLoss(criterion="least_squares")
@@ -256,7 +268,7 @@ for epoch in range(n_epochs):
     progress_bar.set_description(f"Epoch {epoch}")
     for step, batch in progress_bar:
         images = batch["image"].to(device)
-        labels = one_hot(batch['label'], 6).to(device)
+        labels = one_hot(batch["label"], 6).to(device)
         optimizer_G.zero_grad(set_to_none=True)
 
         with autocast(enabled=True):
@@ -314,7 +326,7 @@ for epoch in range(n_epochs):
         with torch.no_grad():
             for val_step, batch in enumerate(val_loader, start=0):
                 images = batch["image"].to(device)
-                labels = one_hot(batch['label'], 6).to(device)
+                labels = one_hot(batch["label"], 6).to(device)
                 with autocast(enabled=True):
                     reconstruction, z_mu, z_sigma = autoencoder(images, labels)
                     recons_loss = recon(images.float(), reconstruction.float())
@@ -322,18 +334,17 @@ for epoch in range(n_epochs):
                 # We retrieve the image to plot
                 if val_step == 0:
                     reconstruction = reconstruction.detach().cpu()
-                    plt.figure(figsize=(5,3))
+                    plt.figure(figsize=(5, 3))
                     plt.subplot(1, 3, 1)
                     plt.imshow(images[0, 0, ...].detach().cpu(), cmap="gist_gray")
                     plt.axis("off")
                     plt.subplot(1, 3, 2)
-                    plt.imshow(reconstruction[0, 0, ...], cmap = "gist_gray")
-                    plt.axis('off')
+                    plt.imshow(reconstruction[0, 0, ...], cmap="gist_gray")
+                    plt.axis("off")
                     plt.subplot(1, 3, 3)
                     plt.imshow(batch["label"][0, 0, ...].detach().cpu(), cmap="jet")
                     plt.axis("off")
                     plt.show()
-
 
         val_loss /= max(val_step, 1)
         val_recon_losses.append(val_loss)
@@ -378,8 +389,12 @@ for epoch in range(n_epochs):
             noise = torch.randn_like(z).to(device)
             timesteps = torch.randint(0, inferer.scheduler.num_train_timesteps, (z.shape[0],), device=z.device).long()
             noise_pred = inferer(
-                inputs=images, diffusion_model=diffusion, noise=noise, timesteps=timesteps, autoencoder_model=autoencoder,
-                seg = labels
+                inputs=images,
+                diffusion_model=diffusion,
+                noise=noise,
+                timesteps=timesteps,
+                autoencoder_model=autoencoder,
+                seg=labels,
             )
             loss = F.mse_loss(noise_pred.float(), noise.float())
 
@@ -412,7 +427,7 @@ for epoch in range(n_epochs):
                         noise=noise,
                         timesteps=timesteps,
                         autoencoder_model=autoencoder,
-                        seg = labels,
+                        seg=labels,
                     )
 
                     loss = F.mse_loss(noise_pred.float(), noise.float())
@@ -428,15 +443,15 @@ for epoch in range(n_epochs):
         scheduler.set_timesteps(num_inference_steps=1000)
         with autocast(enabled=True):
             decoded = inferer.sample(
-                input_noise=z, diffusion_model=diffusion, scheduler=scheduler, autoencoder_model=autoencoder,
-                seg = labels)
+                input_noise=z, diffusion_model=diffusion, scheduler=scheduler, autoencoder_model=autoencoder, seg=labels
+            )
         plt.figure(figsize=(5, 3))
         plt.subplot(1, 3, 1)
         plt.imshow(images[0, 0, ...].detach().cpu(), cmap="gist_gray")
         plt.axis("off")
         plt.subplot(1, 3, 2)
-        plt.imshow(decoded[0, 0, ...].detach().cpu(), cmap = "gist_gray")
-        plt.axis('off')
+        plt.imshow(decoded[0, 0, ...].detach().cpu(), cmap="gist_gray")
+        plt.axis("off")
         plt.subplot(1, 3, 3)
         plt.imshow(batch["label"][0, 0, ...].detach().cpu(), cmap="jet")
         plt.axis("off")
@@ -445,5 +460,3 @@ for epoch in range(n_epochs):
 progress_bar.close()
 
 # -
-
-

@@ -18,11 +18,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from monai.inferers import Inferer
+from monai.transforms import CenterSpatialCrop, SpatialPad
 from monai.utils import optional_import
-from monai.transforms import SpatialPad, CenterSpatialCrop
+
 from generative.networks.nets import SPADEAutoencoderKL, SPADEDiffusionModelUNet
 
 tqdm, has_tqdm = optional_import("tqdm", name="tqdm")
+
 
 class DiffusionInferer(Inferer):
     """
@@ -46,7 +48,7 @@ class DiffusionInferer(Inferer):
         timesteps: torch.Tensor,
         condition: torch.Tensor | None = None,
         mode: str = "crossattn",
-        seg: torch.Tensor | None = None
+        seg: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Implements the forward pass for a supervised training iteration.
@@ -86,7 +88,7 @@ class DiffusionInferer(Inferer):
         conditioning: torch.Tensor | None = None,
         mode: str = "crossattn",
         verbose: bool = True,
-        seg: torch.Tensor | None = None
+        seg: torch.Tensor | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Args:
@@ -117,7 +119,7 @@ class DiffusionInferer(Inferer):
                 model_input = torch.cat([image, conditioning], dim=1)
                 if isinstance(diffusion_model, SPADEDiffusionModelUNet):
                     model_output = diffusion_model(
-                        model_input, timesteps=torch.Tensor((t,)).to(input_noise.device), context=None, seg = seg,
+                        model_input, timesteps=torch.Tensor((t,)).to(input_noise.device), context=None, seg=seg
                     )
                 else:
                     model_output = diffusion_model(
@@ -126,7 +128,7 @@ class DiffusionInferer(Inferer):
             else:
                 if isinstance(diffusion_model, SPADEDiffusionModelUNet):
                     model_output = diffusion_model(
-                        image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning, seg = seg
+                        image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning, seg=seg
                     )
                 else:
                     model_output = diffusion_model(
@@ -154,7 +156,7 @@ class DiffusionInferer(Inferer):
         original_input_range: tuple | None = (0, 255),
         scaled_input_range: tuple | None = (0, 1),
         verbose: bool = True,
-        seg: torch.Tensor | None = None
+        seg: torch.Tensor | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Computes the log-likelihoods for an input.
@@ -320,6 +322,7 @@ class DiffusionInferer(Inferer):
         assert log_probs.shape == inputs.shape
         return log_probs
 
+
 class LatentDiffusionInferer(DiffusionInferer):
     """
     LatentDiffusionInferer takes a stage 1 model (VQVAE or AutoencoderKL), diffusion model, and a scheduler, and can
@@ -330,23 +333,26 @@ class LatentDiffusionInferer(DiffusionInferer):
         scale_factor: scale factor to multiply the values of the latent representation before processing it by the
             second stage.
         ldm_latent_shape: desired spatial latent space shape. Used if there is a difference in the autoencoder model's latent shape.
-        autoencoder_latent_shape:  autoencoder_latent_shape: autoencoder spatial latent space shape. Used if there is a difference between the autoencoder's latent shape and the DM shape.
+        autoencoder_latent_shape:  autoencoder_latent_shape: autoencoder spatial latent space shape. Used if there is a
+             difference between the autoencoder's latent shape and the DM shape.
     """
 
-    def __init__(self, scheduler: nn.Module, scale_factor: float = 1.0,
-                 ldm_latent_shape: list | None = None,
-                 autoencoder_latent_shape: list | None = None) -> None:
-
+    def __init__(
+        self,
+        scheduler: nn.Module,
+        scale_factor: float = 1.0,
+        ldm_latent_shape: list | None = None,
+        autoencoder_latent_shape: list | None = None,
+    ) -> None:
         super().__init__(scheduler=scheduler)
         self.scale_factor = scale_factor
         if (ldm_latent_shape is None) ^ (autoencoder_latent_shape is None):
-            raise ValueError("If ldm_latent_shape is None, autoencoder_latent_shape must be None"
-                             "and vice versa.")
+            raise ValueError("If ldm_latent_shape is None, autoencoder_latent_shape must be None" "and vice versa.")
         self.ldm_latent_shape = ldm_latent_shape
         self.autoencoder_latent_shape = autoencoder_latent_shape
         if self.ldm_latent_shape is not None:
-            self.ldm_resizer = SpatialPad(spatial_size=[-1,]+self.ldm_latent_shape)
-            self.autoencoder_resizer = CenterSpatialCrop(roi_size=[-1,]+self.autoencoder_latent_shape)
+            self.ldm_resizer = SpatialPad(spatial_size=[-1] + self.ldm_latent_shape)
+            self.autoencoder_resizer = CenterSpatialCrop(roi_size=[-1] + self.autoencoder_latent_shape)
 
     def __call__(
         self,
@@ -357,7 +363,7 @@ class LatentDiffusionInferer(DiffusionInferer):
         timesteps: torch.Tensor,
         condition: torch.Tensor | None = None,
         mode: str = "crossattn",
-        seg: torch.Tensor | None = None
+        seg: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Implements the forward pass for a supervised training iteration.
@@ -386,7 +392,7 @@ class LatentDiffusionInferer(DiffusionInferer):
                 timesteps=timesteps,
                 condition=condition,
                 mode=mode,
-                seg=seg
+                seg=seg,
             )
         else:
             prediction = super().__call__(
@@ -412,7 +418,7 @@ class LatentDiffusionInferer(DiffusionInferer):
         conditioning: torch.Tensor | None = None,
         mode: str = "crossattn",
         verbose: bool = True,
-        seg: torch.Tensor | None = None
+        seg: torch.Tensor | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Args:
@@ -429,10 +435,15 @@ class LatentDiffusionInferer(DiffusionInferer):
              is instance of SPADEAutoencoderKL, segmentation must be provided.
         """
 
-        if isinstance(autoencoder_model, SPADEAutoencoderKL) and isinstance(diffusion_model, SPADEDiffusionModelUNet) \
-                and autoencoder_model.decoder.label_nc != diffusion_model.label_nc:
-            raise ValueError("If both autoencoder_model and diffusion_model implement SPADE, the number of semantic"
-                             "labels for each must be compatible. ")
+        if (
+            isinstance(autoencoder_model, SPADEAutoencoderKL)
+            and isinstance(diffusion_model, SPADEDiffusionModelUNet)
+            and autoencoder_model.decoder.label_nc != diffusion_model.label_nc
+        ):
+            raise ValueError(
+                "If both autoencoder_model and diffusion_model implement SPADE, the number of semantic"
+                "labels for each must be compatible. "
+            )
 
         if isinstance(diffusion_model, SPADEDiffusionModelUNet):
             outputs = super().sample(
@@ -444,7 +455,7 @@ class LatentDiffusionInferer(DiffusionInferer):
                 conditioning=conditioning,
                 mode=mode,
                 verbose=verbose,
-                seg=seg
+                seg=seg,
             )
         else:
             outputs = super().sample(
@@ -473,11 +484,13 @@ class LatentDiffusionInferer(DiffusionInferer):
             intermediates = []
             for latent_intermediate in latent_intermediates:
                 if isinstance(autoencoder_model, SPADEAutoencoderKL):
-                    intermediates.append(autoencoder_model.decode_stage_2_outputs(
-                        latent_intermediate / self.scale_factor), seg = seg)
+                    intermediates.append(
+                        autoencoder_model.decode_stage_2_outputs(latent_intermediate / self.scale_factor), seg=seg
+                    )
                 else:
-                    intermediates.append(autoencoder_model.decode_stage_2_outputs(
-                        latent_intermediate / self.scale_factor))
+                    intermediates.append(
+                        autoencoder_model.decode_stage_2_outputs(latent_intermediate / self.scale_factor)
+                    )
             return image, intermediates
 
         else:
@@ -498,7 +511,7 @@ class LatentDiffusionInferer(DiffusionInferer):
         verbose: bool = True,
         resample_latent_likelihoods: bool = False,
         resample_interpolation_mode: str = "nearest",
-        seg: torch.Tensor | None = None
+        seg: torch.Tensor | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Computes the log-likelihoods of the latent representations of the input.
@@ -539,7 +552,7 @@ class LatentDiffusionInferer(DiffusionInferer):
                 conditioning=conditioning,
                 mode=mode,
                 verbose=verbose,
-                seg=seg
+                seg=seg,
             )
         else:
             outputs = super().get_likelihood(
@@ -557,6 +570,7 @@ class LatentDiffusionInferer(DiffusionInferer):
             intermediates = [resizer(x) for x in intermediates]
             outputs = (outputs[0], intermediates)
         return outputs
+
 
 class VQVAETransformerInferer(Inferer):
     """

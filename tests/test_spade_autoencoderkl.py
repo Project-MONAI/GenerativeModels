@@ -10,10 +10,13 @@
 # limitations under the License.
 
 from __future__ import annotations
+
 import unittest
+
 import torch
 from monai.networks import eval_mode
 from parameterized import parameterized
+
 from generative.networks.nets import SPADEAutoencoderKL
 
 CASES = [
@@ -162,13 +165,13 @@ CASES = [
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+
 class TestSPADEAutoEncoderKL(unittest.TestCase):
     @parameterized.expand(CASES)
     def test_shape(self, input_param, input_shape, input_seg, expected_shape, expected_latent_shape):
         net = SPADEAutoencoderKL(**input_param).to(device)
         with eval_mode(net):
-            result = net.forward(torch.randn(input_shape).to(device),
-                                 torch.randn(input_seg).to(device))
+            result = net.forward(torch.randn(input_shape).to(device), torch.randn(input_seg).to(device))
             self.assertEqual(result[0].shape, expected_shape)
             self.assertEqual(result[1].shape, expected_latent_shape)
 
@@ -214,7 +217,6 @@ class TestSPADEAutoEncoderKL(unittest.TestCase):
                 norm_num_groups=16,
             )
 
-
     def test_shape_encode(self):
         input_param, input_shape, _, _, expected_latent_shape = CASES[0]
         net = SPADEAutoencoderKL(**input_param).to(device)
@@ -242,16 +244,18 @@ class TestSPADEAutoEncoderKL(unittest.TestCase):
     def test_wrong_shape_decode(self):
         net = SPADEAutoencoderKL(
             spatial_dims=2,
-            label_nc = 3,
+            label_nc=3,
             in_channels=1,
             out_channels=1,
             num_channels=(4, 4, 4),
-            latent_channels= 4,
-            attention_levels= (False, False, False),
+            latent_channels=4,
+            attention_levels=(False, False, False),
             num_res_blocks=1,
-            norm_num_groups=4)
+            norm_num_groups=4,
+        )
         with self.assertRaises(RuntimeError):
             _ = net.decode(torch.randn((1, 1, 16, 16)).to(device), torch.randn((1, 6, 16, 16)).to(device))
+
 
 if __name__ == "__main__":
     unittest.main()

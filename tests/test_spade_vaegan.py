@@ -17,6 +17,7 @@ import numpy as np
 import torch
 from monai.networks import eval_mode
 from parameterized import parameterized
+
 from generative.networks.nets import SPADENet
 
 CASE_2D = [[[2, 1, 1, 3, [64, 64], [16, 32, 64, 128], 16, True]]]
