@@ -95,9 +95,8 @@ class SPADEResnetBlock(nn.Module):
         self.down = down
         self.norm1 = SPADE(label_nc=label_nc, norm_nc=in_channels,
                            norm="GROUP", norm_params={"num_groups": norm_num_groups,
-                                                               "affine": False,
-                                                               "eps": norm_eps,
-                                                               "affine": True},
+                                                      "eps": norm_eps,
+                                                      "affine": True},
                            hidden_channels=spade_intermediate_channels,
                            kernel_size=3, spatial_dims=spatial_dims)
         self.nonlinearity = nn.SiLU()
@@ -121,9 +120,8 @@ class SPADEResnetBlock(nn.Module):
 
         self.norm2 = SPADE(label_nc=label_nc, norm_nc=self.out_channels,
                            norm="GROUP", norm_params={"num_groups": norm_num_groups,
-                                                               "affine": False,
-                                                               "eps": norm_eps,
-                                                               "affine": True},
+                                                       "eps": norm_eps,
+                                                        "affine": True},
                            hidden_channels=spade_intermediate_channels,
                            kernel_size=3, spatial_dims=spatial_dims)
         self.conv2 = zero_module(
