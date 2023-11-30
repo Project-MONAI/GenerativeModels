@@ -430,7 +430,7 @@ LATENT_CNDM_TEST_CASES_DIFF_SHAPES = [
     ],
 ]
 
-class CN_TestDiffusionSamplingInferer(unittest.TestCase):
+class ControlNetTestDiffusionSamplingInferer(unittest.TestCase):
     @parameterized.expand(CNDM_TEST_CASES)
     def test_call(self, model_params, controlnet_params, input_shape):
         model = DiffusionModelUNet(**model_params)
@@ -606,7 +606,7 @@ class CN_TestDiffusionSamplingInferer(unittest.TestCase):
         )
         self.assertEqual(len(intermediates), 10)
 
-class LCN_TestDiffusionSamplingInferer(unittest.TestCase):
+class LatentControlNetTestDiffusionSamplingInferer(unittest.TestCase):
     @parameterized.expand(LATENT_CNDM_TEST_CASES)
     def test_prediction_shape(
         self, ae_model_type, autoencoder_params, dm_model_type, stage_2_params, controlnet_params,
