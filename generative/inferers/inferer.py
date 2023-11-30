@@ -117,22 +117,17 @@ class DiffusionInferer(Inferer):
         intermediates = []
         for t in progress_bar:
             # 1. predict noise model_output
+            diffusion_model = (
+                partial(diffusion_model, seg=seg)
+                if isinstance(diffusion_model, SPADEDiffusionModelUNet)
+                else diffusion_model
+            )
             if mode == "concat":
                 model_input = torch.cat([image, conditioning], dim=1)
-                diffusion_model = (
-                    partial(diffusion_model, seg=seg)
-                    if isinstance(diffusion_model, SPADEDiffusionModelUNet)
-                    else diffusion_model
-                )
                 model_output = diffusion_model(
                     model_input, timesteps=torch.Tensor((t,)).to(input_noise.device), context=None
                 )
             else:
-                diffusion_model = (
-                    partial(diffusion_model, seg=seg)
-                    if isinstance(diffusion_model, SPADEDiffusionModelUNet)
-                    else diffusion_model
-                )
                 model_output = diffusion_model(
                     image, timesteps=torch.Tensor((t,)).to(input_noise.device), context=conditioning
                 )
@@ -195,20 +190,15 @@ class DiffusionInferer(Inferer):
         for t in progress_bar:
             timesteps = torch.full(inputs.shape[:1], t, device=inputs.device).long()
             noisy_image = self.scheduler.add_noise(original_samples=inputs, noise=noise, timesteps=timesteps)
+            diffusion_model = (
+                partial(diffusion_model, seg=seg)
+                if isinstance(diffusion_model, SPADEDiffusionModelUNet)
+                else diffusion_model
+            )
             if mode == "concat":
                 noisy_image = torch.cat([noisy_image, conditioning], dim=1)
-                diffusion_model = (
-                    partial(diffusion_model, seg=seg)
-                    if isinstance(diffusion_model, SPADEDiffusionModelUNet)
-                    else diffusion_model
-                )
                 model_output = diffusion_model(noisy_image, timesteps=timesteps, context=None)
             else:
-                diffusion_model = (
-                    partial(diffusion_model, seg=seg)
-                    if isinstance(diffusion_model, SPADEDiffusionModelUNet)
-                    else diffusion_model
-                )
                 model_output = diffusion_model(x=noisy_image, timesteps=timesteps, context=conditioning)
 
             # get the model's predicted mean,  and variance if it is predicted
@@ -391,26 +381,16 @@ class LatentDiffusionInferer(DiffusionInferer):
         if self.ldm_latent_shape is not None:
             latent = self.ldm_resizer(latent)
 
-        if isinstance(diffusion_model, SPADEDiffusionModelUNet):
-            prediction = super().__call__(
-                inputs=latent,
-                diffusion_model=diffusion_model,
-                noise=noise,
-                timesteps=timesteps,
-                condition=condition,
-                mode=mode,
-                seg=seg,
-            )
-        else:
-            prediction = super().__call__(
-                inputs=latent,
-                diffusion_model=diffusion_model,
-                noise=noise,
-                timesteps=timesteps,
-                condition=condition,
-                mode=mode,
-            )
-
+        call = partial(super().__call__, seg = seg) if \
+            isinstance(diffusion_model, SPADEDiffusionModelUNet) else super().__call__
+        prediction = call(
+            inputs=latent,
+            diffusion_model=diffusion_model,
+            noise=noise,
+            timesteps=timesteps,
+            condition=condition,
+            mode=mode
+        )
         return prediction
 
     @torch.no_grad()
@@ -483,7 +463,7 @@ class LatentDiffusionInferer(DiffusionInferer):
             for latent_intermediate in latent_intermediates:
                 if isinstance(autoencoder_model, SPADEAutoencoderKL):
                     intermediates.append(
-                        autoencoder_model.decode_stage_2_outputs(latent_intermediate / self.scale_factor), seg=seg
+                        autoencoder_model.decode_stage_2_outputs(latent_intermediate / self.scale_factor, seg=seg)
                     )
                 else:
                     intermediates.append(
@@ -678,14 +658,13 @@ class ControlNetDiffusionInferer(DiffusionInferer):
                 x=image, timesteps=torch.Tensor((t,)).to(input_noise.device), controlnet_cond=cn_cond
             )
             # 2. predict noise model_output
+            diffusion_model = (
+                partial(diffusion_model, seg=seg)
+                if isinstance(diffusion_model, SPADEDiffusionModelUNet)
+                else diffusion_model
+            )
             if mode == "concat":
                 model_input = torch.cat([image, conditioning], dim=1)
-                diffusion_model = (
-                    partial(diffusion_model, seg=seg)
-                    if isinstance(diffusion_model, SPADEDiffusionModelUNet)
-                    else diffusion_model
-                )
-
                 model_output = diffusion_model(
                     model_input,
                     timesteps=torch.Tensor((t,)).to(input_noise.device),
@@ -694,11 +673,6 @@ class ControlNetDiffusionInferer(DiffusionInferer):
                     mid_block_additional_residual=mid_block_res_sample,
                 )
             else:
-                diffusion_model = (
-                    partial(diffusion_model, seg=seg)
-                    if isinstance(diffusion_model, SPADEDiffusionModelUNet)
-                    else diffusion_model
-                )
                 model_output = diffusion_model(
                     image,
                     timesteps=torch.Tensor((t,)).to(input_noise.device),
@@ -773,13 +747,13 @@ class ControlNetDiffusionInferer(DiffusionInferer):
                 x=noisy_image, timesteps=torch.Tensor((t,)).to(inputs.device), controlnet_cond=cn_cond
             )
 
+            diffusion_model = (
+                partial(diffusion_model, seg=seg)
+                if isinstance(diffusion_model, SPADEDiffusionModelUNet)
+                else diffusion_model
+            )
             if mode == "concat":
                 noisy_image = torch.cat([noisy_image, conditioning], dim=1)
-                diffusion_model = (
-                    partial(diffusion_model, seg=seg)
-                    if isinstance(diffusion_model, SPADEDiffusionModelUNet)
-                    else diffusion_model
-                )
                 model_output = diffusion_model(
                     noisy_image,
                     timesteps=timesteps,
@@ -788,11 +762,6 @@ class ControlNetDiffusionInferer(DiffusionInferer):
                     mid_block_additional_residual=mid_block_res_sample,
                 )
             else:
-                diffusion_model = (
-                    partial(diffusion_model, seg=seg)
-                    if isinstance(diffusion_model, SPADEDiffusionModelUNet)
-                    else diffusion_model
-                )
                 model_output = diffusion_model(
                     x=noisy_image,
                     timesteps=timesteps,
@@ -936,8 +905,10 @@ class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
         if cn_cond.shape[2:] != latent.shape[2:]:
             cn_cond = F.interpolate(cn_cond, latent.shape[2:])
 
+        call = partial(super().__call__, seg = seg) if \
+            isinstance(diffusion_model, SPADEDiffusionModelUNet) else super().__call__
         if isinstance(diffusion_model, SPADEDiffusionModelUNet):
-            prediction = super().__call__(
+            prediction = call(
                 inputs=latent,
                 diffusion_model=diffusion_model,
                 controlnet=controlnet,
@@ -945,19 +916,7 @@ class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
                 timesteps=timesteps,
                 cn_cond=cn_cond,
                 condition=condition,
-                mode=mode,
-                seg=seg,
-            )
-        else:
-            prediction = super().__call__(
-                inputs=latent,
-                diffusion_model=diffusion_model,
-                controlnet=controlnet,
-                noise=noise,
-                timesteps=timesteps,
-                cn_cond=cn_cond,
-                condition=condition,
-                mode=mode,
+                mode=mode
             )
 
         return prediction
@@ -1008,8 +967,9 @@ class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
         if cn_cond.shape[2:] != input_noise.shape[2:]:
             cn_cond = F.interpolate(cn_cond, input_noise.shape[2:])
 
-        if isinstance(diffusion_model, SPADEDiffusionModelUNet):
-            outputs = super().sample(
+        sample = partial(super().sample, seg = seg) if \
+            isinstance(diffusion_model, SPADEDiffusionModelUNet) else diffusion_model
+        outputs = sample(
                 input_noise=input_noise,
                 diffusion_model=diffusion_model,
                 controlnet=controlnet,
@@ -1020,21 +980,7 @@ class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
                 conditioning=conditioning,
                 mode=mode,
                 verbose=verbose,
-                seg=seg,
-            )
-        else:
-            outputs = super().sample(
-                input_noise=input_noise,
-                diffusion_model=diffusion_model,
-                controlnet=controlnet,
-                cn_cond=cn_cond,
-                scheduler=scheduler,
-                save_intermediates=save_intermediates,
-                intermediate_steps=intermediate_steps,
-                conditioning=conditioning,
-                mode=mode,
-                verbose=verbose,
-            )
+        )
 
         if save_intermediates:
             latent, latent_intermediates = outputs
@@ -1118,31 +1064,20 @@ class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
         if self.ldm_latent_shape is not None:
             latents = self.ldm_resizer(latents)
 
-        if isinstance(diffusion_model, SPADEDiffusionModelUNet):
-            outputs = super().get_likelihood(
-                inputs=latents,
-                diffusion_model=diffusion_model,
-                controlnet=controlnet,
-                cn_cond=cn_cond,
-                scheduler=scheduler,
-                save_intermediates=save_intermediates,
-                conditioning=conditioning,
-                mode=mode,
-                verbose=verbose,
-                seg=seg,
-            )
-        else:
-            outputs = super().get_likelihood(
-                inputs=latents,
-                diffusion_model=diffusion_model,
-                controlnet=controlnet,
-                cn_cond=cn_cond,
-                scheduler=scheduler,
-                save_intermediates=save_intermediates,
-                conditioning=conditioning,
-                mode=mode,
-                verbose=verbose,
-            )
+        get_likelihood = partial(super().get_likelihood, seg = seg) if \
+            isinstance(diffusion_model, SPADEDiffusionModelUNet) else super().get_likelihood
+        outputs = get_likelihood(
+            inputs=latents,
+            diffusion_model=diffusion_model,
+            controlnet=controlnet,
+            cn_cond=cn_cond,
+            scheduler=scheduler,
+            save_intermediates=save_intermediates,
+            conditioning=conditioning,
+            mode=mode,
+            verbose=verbose,
+        )
+
         if save_intermediates and resample_latent_likelihoods:
             intermediates = outputs[1]
             resizer = nn.Upsample(size=inputs.shape[2:], mode=resample_interpolation_mode)
