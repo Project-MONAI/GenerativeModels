@@ -15,9 +15,16 @@ import unittest
 
 import torch
 from parameterized import parameterized
+
 from generative.inferers import ControlNetDiffusionInferer, ControlNetLatentDiffusionInferer
-from generative.networks.nets import DiffusionModelUNet, ControlNet, AutoencoderKL, \
-    SPADEAutoencoderKL, SPADEDiffusionModelUNet, VQVAE
+from generative.networks.nets import (
+    VQVAE,
+    AutoencoderKL,
+    ControlNet,
+    DiffusionModelUNet,
+    SPADEAutoencoderKL,
+    SPADEDiffusionModelUNet,
+)
 from generative.networks.schedulers import DDIMScheduler, DDPMScheduler
 
 CNDM_TEST_CASES = [
@@ -30,7 +37,7 @@ CNDM_TEST_CASES = [
             "norm_num_groups": 8,
             "attention_levels": [True],
             "num_res_blocks": 1,
-            "num_head_channels": 8
+            "num_head_channels": 8,
         },
         {
             "spatial_dims": 2,
@@ -40,8 +47,8 @@ CNDM_TEST_CASES = [
             "norm_num_groups": 8,
             "num_res_blocks": 1,
             "num_head_channels": 8,
-            "conditioning_embedding_num_channels": [16,],
-            "conditioning_embedding_in_channels": 1
+            "conditioning_embedding_num_channels": [16],
+            "conditioning_embedding_in_channels": 1,
         },
         (2, 1, 8, 8),
     ],
@@ -64,7 +71,7 @@ CNDM_TEST_CASES = [
             "num_res_blocks": 1,
             "norm_num_groups": 8,
             "num_head_channels": 8,
-            "conditioning_embedding_num_channels": [16,],
+            "conditioning_embedding_num_channels": [16],
             "conditioning_embedding_in_channels": 1,
         },
         (2, 1, 8, 8, 8),
@@ -104,8 +111,8 @@ LATENT_CNDM_TEST_CASES = [
             "num_res_blocks": 1,
             "norm_num_groups": 4,
             "num_head_channels": 4,
-            "conditioning_embedding_num_channels": [16,],
-            "conditioning_embedding_in_channels": 1
+            "conditioning_embedding_num_channels": [16],
+            "conditioning_embedding_in_channels": 1,
         },
         (1, 1, 8, 8),
         (1, 3, 4, 4),
@@ -143,7 +150,7 @@ LATENT_CNDM_TEST_CASES = [
             "num_res_blocks": 1,
             "norm_num_groups": 8,
             "num_head_channels": 8,
-            "conditioning_embedding_num_channels": [16,],
+            "conditioning_embedding_num_channels": [16],
             "conditioning_embedding_in_channels": 1,
         },
         (1, 1, 16, 16),
@@ -182,7 +189,7 @@ LATENT_CNDM_TEST_CASES = [
             "num_res_blocks": 1,
             "norm_num_groups": 8,
             "num_head_channels": 8,
-            "conditioning_embedding_num_channels": [16,],
+            "conditioning_embedding_num_channels": [16],
             "conditioning_embedding_in_channels": 1,
         },
         (1, 1, 16, 16, 16),
@@ -223,7 +230,7 @@ LATENT_CNDM_TEST_CASES_DIFF_SHAPES = [
             "num_res_blocks": 1,
             "norm_num_groups": 4,
             "num_head_channels": 4,
-            "conditioning_embedding_num_channels": [16,],
+            "conditioning_embedding_num_channels": [16],
             "conditioning_embedding_in_channels": 1,
         },
         (1, 1, 12, 12),
@@ -262,7 +269,7 @@ LATENT_CNDM_TEST_CASES_DIFF_SHAPES = [
             "num_res_blocks": 1,
             "norm_num_groups": 8,
             "num_head_channels": 8,
-            "conditioning_embedding_num_channels": [16,],
+            "conditioning_embedding_num_channels": [16],
             "conditioning_embedding_in_channels": 1,
         },
         (1, 1, 12, 12),
@@ -301,7 +308,7 @@ LATENT_CNDM_TEST_CASES_DIFF_SHAPES = [
             "num_res_blocks": 1,
             "norm_num_groups": 8,
             "num_head_channels": 8,
-            "conditioning_embedding_num_channels": [16,],
+            "conditioning_embedding_num_channels": [16],
             "conditioning_embedding_in_channels": 1,
         },
         (1, 1, 12, 12, 12),
@@ -341,7 +348,7 @@ LATENT_CNDM_TEST_CASES_DIFF_SHAPES = [
             "num_res_blocks": 1,
             "norm_num_groups": 4,
             "num_head_channels": 4,
-            "conditioning_embedding_num_channels": [16,],
+            "conditioning_embedding_num_channels": [16],
             "conditioning_embedding_in_channels": 1,
         },
         (1, 1, 8, 8),
@@ -381,7 +388,7 @@ LATENT_CNDM_TEST_CASES_DIFF_SHAPES = [
             "num_res_blocks": 1,
             "norm_num_groups": 4,
             "num_head_channels": 4,
-            "conditioning_embedding_num_channels": [16,],
+            "conditioning_embedding_num_channels": [16],
             "conditioning_embedding_in_channels": 1,
         },
         (1, 1, 8, 8),
@@ -422,13 +429,14 @@ LATENT_CNDM_TEST_CASES_DIFF_SHAPES = [
             "num_res_blocks": 1,
             "norm_num_groups": 4,
             "num_head_channels": 4,
-            "conditioning_embedding_num_channels": [16,],
+            "conditioning_embedding_num_channels": [16],
             "conditioning_embedding_in_channels": 1,
         },
         (1, 1, 8, 8),
         (1, 3, 4, 4),
     ],
 ]
+
 
 class ControlNetTestDiffusionSamplingInferer(unittest.TestCase):
     @parameterized.expand(CNDM_TEST_CASES)
@@ -447,8 +455,9 @@ class ControlNetTestDiffusionSamplingInferer(unittest.TestCase):
         inferer = ControlNetDiffusionInferer(scheduler=scheduler)
         scheduler.set_timesteps(num_inference_steps=10)
         timesteps = torch.randint(0, scheduler.num_train_timesteps, (input_shape[0],), device=input.device).long()
-        sample = inferer(inputs=input, noise=noise, diffusion_model=model, controlnet=controlnet,
-                         timesteps=timesteps, cn_cond=mask)
+        sample = inferer(
+            inputs=input, noise=noise, diffusion_model=model, controlnet=controlnet, timesteps=timesteps, cn_cond=mask
+        )
         self.assertEqual(sample.shape, input_shape)
 
     @parameterized.expand(CNDM_TEST_CASES)
@@ -466,8 +475,13 @@ class ControlNetTestDiffusionSamplingInferer(unittest.TestCase):
         inferer = ControlNetDiffusionInferer(scheduler=scheduler)
         scheduler.set_timesteps(num_inference_steps=10)
         sample, intermediates = inferer.sample(
-            input_noise=noise, diffusion_model=model, scheduler=scheduler,
-            controlnet=controlnet, cn_cond=mask, save_intermediates=True, intermediate_steps=1
+            input_noise=noise,
+            diffusion_model=model,
+            scheduler=scheduler,
+            controlnet=controlnet,
+            cn_cond=mask,
+            save_intermediates=True,
+            intermediate_steps=1,
         )
         self.assertEqual(len(intermediates), 10)
 
@@ -486,8 +500,13 @@ class ControlNetTestDiffusionSamplingInferer(unittest.TestCase):
         inferer = ControlNetDiffusionInferer(scheduler=scheduler)
         scheduler.set_timesteps(num_inference_steps=10)
         sample, intermediates = inferer.sample(
-            input_noise=noise, diffusion_model=model, scheduler=scheduler, controlnet=controlnet, cn_cond=mask,
-            save_intermediates=True, intermediate_steps=1
+            input_noise=noise,
+            diffusion_model=model,
+            scheduler=scheduler,
+            controlnet=controlnet,
+            cn_cond=mask,
+            save_intermediates=True,
+            intermediate_steps=1,
         )
         self.assertEqual(len(intermediates), 10)
 
@@ -506,8 +525,13 @@ class ControlNetTestDiffusionSamplingInferer(unittest.TestCase):
         inferer = ControlNetDiffusionInferer(scheduler=scheduler)
         scheduler.set_timesteps(num_inference_steps=10)
         sample, intermediates = inferer.sample(
-            input_noise=noise, diffusion_model=model, scheduler=scheduler, controlnet=controlnet, cn_cond=mask,
-            save_intermediates=True, intermediate_steps=1
+            input_noise=noise,
+            diffusion_model=model,
+            scheduler=scheduler,
+            controlnet=controlnet,
+            cn_cond=mask,
+            save_intermediates=True,
+            intermediate_steps=1,
         )
         self.assertEqual(len(intermediates), 10)
 
@@ -555,14 +579,19 @@ class ControlNetTestDiffusionSamplingInferer(unittest.TestCase):
         inferer = ControlNetDiffusionInferer(scheduler=scheduler)
         scheduler.set_timesteps(num_inference_steps=10)
         likelihood, intermediates = inferer.get_likelihood(
-            inputs=input, diffusion_model=model, scheduler=scheduler, controlnet=controlnet, cn_cond=mask,
-            save_intermediates=True
+            inputs=input,
+            diffusion_model=model,
+            scheduler=scheduler,
+            controlnet=controlnet,
+            cn_cond=mask,
+            save_intermediates=True,
         )
         self.assertEqual(intermediates[0].shape, input.shape)
         self.assertEqual(likelihood.shape[0], input.shape[0])
 
     def test_normal_cdf(self):
         from scipy.stats import norm
+
         scheduler = DDPMScheduler(num_train_timesteps=10)
         inferer = ControlNetDiffusionInferer(scheduler=scheduler)
         x = torch.linspace(-10, 10, 20)
@@ -606,11 +635,18 @@ class ControlNetTestDiffusionSamplingInferer(unittest.TestCase):
         )
         self.assertEqual(len(intermediates), 10)
 
+
 class LatentControlNetTestDiffusionSamplingInferer(unittest.TestCase):
     @parameterized.expand(LATENT_CNDM_TEST_CASES)
     def test_prediction_shape(
-        self, ae_model_type, autoencoder_params, dm_model_type, stage_2_params, controlnet_params,
-            input_shape, latent_shape
+        self,
+        ae_model_type,
+        autoencoder_params,
+        dm_model_type,
+        stage_2_params,
+        controlnet_params,
+        input_shape,
+        latent_shape,
     ):
         if ae_model_type == "AutoencoderKL":
             stage_1 = AutoencoderKL(**autoencoder_params)
@@ -657,15 +693,26 @@ class LatentControlNetTestDiffusionSamplingInferer(unittest.TestCase):
             )
         else:
             prediction = inferer(
-                inputs=input, autoencoder_model=stage_1, diffusion_model=stage_2, noise=noise, timesteps=timesteps,
-                controlnet=controlnet, cn_cond=mask,
+                inputs=input,
+                autoencoder_model=stage_1,
+                diffusion_model=stage_2,
+                noise=noise,
+                timesteps=timesteps,
+                controlnet=controlnet,
+                cn_cond=mask,
             )
         self.assertEqual(prediction.shape, latent_shape)
 
     @parameterized.expand(LATENT_CNDM_TEST_CASES)
     def test_sample_shape(
-        self, ae_model_type, autoencoder_params, dm_model_type, stage_2_params, controlnet_params,
-            input_shape, latent_shape
+        self,
+        ae_model_type,
+        autoencoder_params,
+        dm_model_type,
+        stage_2_params,
+        controlnet_params,
+        input_shape,
+        latent_shape,
     ):
         if ae_model_type == "AutoencoderKL":
             stage_1 = AutoencoderKL(**autoencoder_params)
@@ -709,15 +756,25 @@ class LatentControlNetTestDiffusionSamplingInferer(unittest.TestCase):
             )
         else:
             sample = inferer.sample(
-                input_noise=noise, autoencoder_model=stage_1, diffusion_model=stage_2, scheduler=scheduler,
-                controlnet=controlnet, cn_cond=mask,
+                input_noise=noise,
+                autoencoder_model=stage_1,
+                diffusion_model=stage_2,
+                scheduler=scheduler,
+                controlnet=controlnet,
+                cn_cond=mask,
             )
         self.assertEqual(sample.shape, input_shape)
 
     @parameterized.expand(LATENT_CNDM_TEST_CASES)
     def test_sample_intermediates(
-        self, ae_model_type, autoencoder_params, dm_model_type, stage_2_params, controlnet_params,
-            input_shape, latent_shape
+        self,
+        ae_model_type,
+        autoencoder_params,
+        dm_model_type,
+        stage_2_params,
+        controlnet_params,
+        input_shape,
+        latent_shape,
     ):
         if ae_model_type == "AutoencoderKL":
             stage_1 = AutoencoderKL(**autoencoder_params)
@@ -777,8 +834,14 @@ class LatentControlNetTestDiffusionSamplingInferer(unittest.TestCase):
 
     @parameterized.expand(LATENT_CNDM_TEST_CASES)
     def test_get_likelihoods(
-        self, ae_model_type, autoencoder_params, dm_model_type, stage_2_params, controlnet_params,
-            input_shape, latent_shape
+        self,
+        ae_model_type,
+        autoencoder_params,
+        dm_model_type,
+        stage_2_params,
+        controlnet_params,
+        input_shape,
+        latent_shape,
     ):
         if ae_model_type == "AutoencoderKL":
             stage_1 = AutoencoderKL(**autoencoder_params)
@@ -838,8 +901,14 @@ class LatentControlNetTestDiffusionSamplingInferer(unittest.TestCase):
 
     @parameterized.expand(LATENT_CNDM_TEST_CASES)
     def test_resample_likelihoods(
-        self, ae_model_type, autoencoder_params, dm_model_type, stage_2_params, controlnet_params,
-            input_shape, latent_shape
+        self,
+        ae_model_type,
+        autoencoder_params,
+        dm_model_type,
+        stage_2_params,
+        controlnet_params,
+        input_shape,
+        latent_shape,
     ):
         if ae_model_type == "AutoencoderKL":
             stage_1 = AutoencoderKL(**autoencoder_params)
@@ -901,8 +970,14 @@ class LatentControlNetTestDiffusionSamplingInferer(unittest.TestCase):
 
     @parameterized.expand(LATENT_CNDM_TEST_CASES)
     def test_prediction_shape_conditioned_concat(
-        self, ae_model_type, autoencoder_params, dm_model_type, stage_2_params, controlnet_params,
-            input_shape, latent_shape
+        self,
+        ae_model_type,
+        autoencoder_params,
+        dm_model_type,
+        stage_2_params,
+        controlnet_params,
+        input_shape,
+        latent_shape,
     ):
         if ae_model_type == "AutoencoderKL":
             stage_1 = AutoencoderKL(**autoencoder_params)
@@ -975,8 +1050,14 @@ class LatentControlNetTestDiffusionSamplingInferer(unittest.TestCase):
 
     @parameterized.expand(LATENT_CNDM_TEST_CASES)
     def test_sample_shape_conditioned_concat(
-        self, ae_model_type, autoencoder_params, dm_model_type, stage_2_params, controlnet_params,
-            input_shape, latent_shape
+        self,
+        ae_model_type,
+        autoencoder_params,
+        dm_model_type,
+        stage_2_params,
+        controlnet_params,
+        input_shape,
+        latent_shape,
     ):
         if ae_model_type == "AutoencoderKL":
             stage_1 = AutoencoderKL(**autoencoder_params)
@@ -1044,8 +1125,14 @@ class LatentControlNetTestDiffusionSamplingInferer(unittest.TestCase):
 
     @parameterized.expand(LATENT_CNDM_TEST_CASES_DIFF_SHAPES)
     def test_sample_shape_different_latents(
-        self, ae_model_type, autoencoder_params, dm_model_type, stage_2_params, controlnet_params,
-            input_shape, latent_shape
+        self,
+        ae_model_type,
+        autoencoder_params,
+        dm_model_type,
+        stage_2_params,
+        controlnet_params,
+        input_shape,
+        latent_shape,
     ):
         if ae_model_type == "AutoencoderKL":
             stage_1 = AutoencoderKL(**autoencoder_params)
@@ -1102,8 +1189,13 @@ class LatentControlNetTestDiffusionSamplingInferer(unittest.TestCase):
             )
         else:
             prediction = inferer(
-                inputs=input, autoencoder_model=stage_1, diffusion_model=stage_2, noise=noise,
-                controlnet=controlnet, cn_cond=mask, timesteps=timesteps
+                inputs=input,
+                autoencoder_model=stage_1,
+                diffusion_model=stage_2,
+                noise=noise,
+                controlnet=controlnet,
+                cn_cond=mask,
+                timesteps=timesteps,
             )
         self.assertEqual(prediction.shape, latent_shape)
 
@@ -1140,7 +1232,7 @@ class LatentControlNetTestDiffusionSamplingInferer(unittest.TestCase):
             attention_levels=[False, False],
             num_res_blocks=1,
             num_head_channels=4,
-            conditioning_embedding_num_channels=[16,],
+            conditioning_embedding_num_channels=[16],
         )
 
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
