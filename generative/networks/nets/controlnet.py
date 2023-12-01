@@ -171,20 +171,18 @@ class ControlNet(nn.Module):
         super().__init__()
         if with_conditioning is True and cross_attention_dim is None:
             raise ValueError(
-                "DiffusionModelUNet expects dimension of the cross-attention conditioning (cross_attention_dim) "
+                "ControlNet expects dimension of the cross-attention conditioning (cross_attention_dim) "
                 "when using with_conditioning."
             )
         if cross_attention_dim is not None and with_conditioning is False:
-            raise ValueError(
-                "DiffusionModelUNet expects with_conditioning=True when specifying the cross_attention_dim."
-            )
+            raise ValueError("ControlNet expects with_conditioning=True when specifying the cross_attention_dim.")
 
         # All number of channels should be multiple of num_groups
         if any((out_channel % norm_num_groups) != 0 for out_channel in num_channels):
-            raise ValueError("DiffusionModelUNet expects all num_channels being multiple of norm_num_groups")
+            raise ValueError("ControlNet expects all num_channels being multiple of norm_num_groups")
 
         if len(num_channels) != len(attention_levels):
-            raise ValueError("DiffusionModelUNet expects num_channels being same size of attention_levels")
+            raise ValueError("ControlNet expects num_channels being same size of attention_levels")
 
         if isinstance(num_head_channels, int):
             num_head_channels = ensure_tuple_rep(num_head_channels, len(attention_levels))
