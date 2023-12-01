@@ -907,17 +907,16 @@ class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
 
         call = partial(super().__call__, seg = seg) if \
             isinstance(diffusion_model, SPADEDiffusionModelUNet) else super().__call__
-        if isinstance(diffusion_model, SPADEDiffusionModelUNet):
-            prediction = call(
-                inputs=latent,
-                diffusion_model=diffusion_model,
-                controlnet=controlnet,
-                noise=noise,
-                timesteps=timesteps,
-                cn_cond=cn_cond,
-                condition=condition,
-                mode=mode
-            )
+        prediction = call(
+            inputs=latent,
+            diffusion_model=diffusion_model,
+            controlnet=controlnet,
+            noise=noise,
+            timesteps=timesteps,
+            cn_cond=cn_cond,
+            condition=condition,
+            mode=mode
+        )
 
         return prediction
 
@@ -968,7 +967,8 @@ class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
             cn_cond = F.interpolate(cn_cond, input_noise.shape[2:])
 
         sample = partial(super().sample, seg = seg) if \
-            isinstance(diffusion_model, SPADEDiffusionModelUNet) else diffusion_model
+            isinstance(diffusion_model, SPADEDiffusionModelUNet) else super().sample
+
         outputs = sample(
                 input_noise=input_noise,
                 diffusion_model=diffusion_model,
