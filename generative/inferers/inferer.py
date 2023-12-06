@@ -381,15 +381,18 @@ class LatentDiffusionInferer(DiffusionInferer):
         if self.ldm_latent_shape is not None:
             latent = self.ldm_resizer(latent)
 
-        call = partial(super().__call__, seg = seg) if \
-            isinstance(diffusion_model, SPADEDiffusionModelUNet) else super().__call__
+        call = (
+            partial(super().__call__, seg=seg)
+            if isinstance(diffusion_model, SPADEDiffusionModelUNet)
+            else super().__call__
+        )
         prediction = call(
             inputs=latent,
             diffusion_model=diffusion_model,
             noise=noise,
             timesteps=timesteps,
             condition=condition,
-            mode=mode
+            mode=mode,
         )
         return prediction
 
@@ -456,19 +459,22 @@ class LatentDiffusionInferer(DiffusionInferer):
             latent = self.autoencoder_resizer(latent)
             latent_intermediates = [self.autoencoder_resizer(l) for l in latent_intermediates]
 
-        image = autoencoder_model.decode_stage_2_outputs(latent / self.scale_factor)
+        decode = (
+            partial(autoencoder_model.decode_stage_2_outputs, seg=seg)
+            if isinstance(autoencoder_model, SPADEAutoencoderKL)
+            else autoencoder_model.decode_stage_2_outputs
+        )
+        image = decode(latent / self.scale_factor)
 
         if save_intermediates:
             intermediates = []
             for latent_intermediate in latent_intermediates:
-                if isinstance(autoencoder_model, SPADEAutoencoderKL):
-                    intermediates.append(
-                        autoencoder_model.decode_stage_2_outputs(latent_intermediate / self.scale_factor, seg=seg)
-                    )
-                else:
-                    intermediates.append(
-                        autoencoder_model.decode_stage_2_outputs(latent_intermediate / self.scale_factor)
-                    )
+                decode = (
+                    partial(autoencoder_model.decode_stage_2_outputs, seg=seg)
+                    if isinstance(autoencoder_model, SPADEAutoencoderKL)
+                    else autoencoder_model.decode_stage_2_outputs
+                )
+                intermediates.append(decode(latent_intermediate / self.scale_factor))
             return image, intermediates
 
         else:
@@ -905,8 +911,11 @@ class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
         if cn_cond.shape[2:] != latent.shape[2:]:
             cn_cond = F.interpolate(cn_cond, latent.shape[2:])
 
-        call = partial(super().__call__, seg = seg) if \
-            isinstance(diffusion_model, SPADEDiffusionModelUNet) else super().__call__
+        call = (
+            partial(super().__call__, seg=seg)
+            if isinstance(diffusion_model, SPADEDiffusionModelUNet)
+            else super().__call__
+        )
         prediction = call(
             inputs=latent,
             diffusion_model=diffusion_model,
@@ -915,7 +924,7 @@ class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
             timesteps=timesteps,
             cn_cond=cn_cond,
             condition=condition,
-            mode=mode
+            mode=mode,
         )
 
         return prediction
@@ -966,20 +975,21 @@ class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
         if cn_cond.shape[2:] != input_noise.shape[2:]:
             cn_cond = F.interpolate(cn_cond, input_noise.shape[2:])
 
-        sample = partial(super().sample, seg = seg) if \
-            isinstance(diffusion_model, SPADEDiffusionModelUNet) else super().sample
+        sample = (
+            partial(super().sample, seg=seg) if isinstance(diffusion_model, SPADEDiffusionModelUNet) else super().sample
+        )
 
         outputs = sample(
-                input_noise=input_noise,
-                diffusion_model=diffusion_model,
-                controlnet=controlnet,
-                cn_cond=cn_cond,
-                scheduler=scheduler,
-                save_intermediates=save_intermediates,
-                intermediate_steps=intermediate_steps,
-                conditioning=conditioning,
-                mode=mode,
-                verbose=verbose,
+            input_noise=input_noise,
+            diffusion_model=diffusion_model,
+            controlnet=controlnet,
+            cn_cond=cn_cond,
+            scheduler=scheduler,
+            save_intermediates=save_intermediates,
+            intermediate_steps=intermediate_steps,
+            conditioning=conditioning,
+            mode=mode,
+            verbose=verbose,
         )
 
         if save_intermediates:
@@ -991,19 +1001,22 @@ class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
             latent = self.autoencoder_resizer(latent)
             latent_intermediates = [self.autoencoder_resizer(l) for l in latent_intermediates]
 
-        image = autoencoder_model.decode_stage_2_outputs(latent / self.scale_factor)
+        decode = (
+            partial(autoencoder_model.decode_stage_2_outputs, seg=seg)
+            if isinstance(autoencoder_model, SPADEAutoencoderKL)
+            else autoencoder_model.decode_stage_2_outputs
+        )
+        image = decode(latent / self.scale_factor)
 
         if save_intermediates:
             intermediates = []
             for latent_intermediate in latent_intermediates:
-                if isinstance(autoencoder_model, SPADEAutoencoderKL):
-                    intermediates.append(
-                        autoencoder_model.decode_stage_2_outputs(latent_intermediate / self.scale_factor), seg=seg
-                    )
-                else:
-                    intermediates.append(
-                        autoencoder_model.decode_stage_2_outputs(latent_intermediate / self.scale_factor)
-                    )
+                decode = (
+                    partial(autoencoder_model.decode_stage_2_outputs, seg=seg)
+                    if isinstance(autoencoder_model, SPADEAutoencoderKL)
+                    else autoencoder_model.decode_stage_2_outputs
+                )
+                intermediates.append(decode(latent_intermediate / self.scale_factor))
             return image, intermediates
 
         else:
@@ -1064,8 +1077,11 @@ class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
         if self.ldm_latent_shape is not None:
             latents = self.ldm_resizer(latents)
 
-        get_likelihood = partial(super().get_likelihood, seg = seg) if \
-            isinstance(diffusion_model, SPADEDiffusionModelUNet) else super().get_likelihood
+        get_likelihood = (
+            partial(super().get_likelihood, seg=seg)
+            if isinstance(diffusion_model, SPADEDiffusionModelUNet)
+            else super().get_likelihood
+        )
         outputs = get_likelihood(
             inputs=latents,
             diffusion_model=diffusion_model,
