@@ -28,15 +28,15 @@ In the longer term, we aim to integrate the generative models into the MONAI cor
 image synthesis, anomaly detection, MRI reconstruction, domain transfer)
 
 ## Installation
-To install MONAI Generative Models, it is recommended to clone the codebase directly:
+To install the current release of MONAI Generative Models, you can run:
 ```
-git clone https://github.com/Project-MONAI/GenerativeModels.git
+pip install monai-generative
 ```
-This command will create a GenerativeModels/ folder in your current directory. You can install it by running the following:
+To install the current main branch of the repository, run:
 ```
-cd GenerativeModels/
-python setup.py install
+pip install git+https://github.com/Project-MONAI/GenerativeModels.git
 ```
+Requires Python >= 3.8.
 
 ## Contributing
 For guidance on making a contribution to MONAI, see the [contributing guidelines](https://github.com/Project-MONAI/GenerativeModels/blob/main/CONTRIBUTING.md).
