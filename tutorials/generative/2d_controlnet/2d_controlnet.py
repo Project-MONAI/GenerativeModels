@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.14.1
+#       jupytext_version: 1.14.4
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -50,7 +50,6 @@
 
 # %% jupyter={"outputs_hidden": false}
 import os
-import tempfile
 import time
 import os
 import matplotlib.pyplot as plt
@@ -66,7 +65,7 @@ from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
 
-from generative.inferers import DiffusionInferer
+from generative.inferers import ControlNetDiffusionInferer, DiffusionInferer
 from generative.networks.nets import DiffusionModelUNet, ControlNet
 from generative.networks.schedulers import DDPMScheduler
 
@@ -212,6 +211,7 @@ optimizer = torch.optim.Adam(params=model.parameters(), lr=2.5e-5)
 inferer = DiffusionInferer(scheduler)
 
 
+
 # %% [markdown]
 # ### Run training
 #
@@ -314,6 +314,7 @@ controlnet = controlnet.to(device)
 for p in model.parameters():
     p.requires_grad = False
 optimizer = torch.optim.Adam(params=controlnet.parameters(), lr=2.5e-5)
+controlnet_inferer = ControlNetDiffusionInferer(scheduler)
 
 
 # %% [markdown] tags=[]
@@ -328,7 +329,7 @@ val_epoch_loss_list = []
 scaler = GradScaler()
 total_start = time.time()
 for epoch in range(n_epochs):
-    model.train()
+    controlnet.train()
     epoch_loss = 0
     progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), ncols=70)
     progress_bar.set_description(f"Epoch {epoch}")
@@ -347,19 +348,10 @@ for epoch in range(n_epochs):
                 0, inferer.scheduler.num_train_timesteps, (images.shape[0],), device=images.device
             ).long()
 
-            images_noised = scheduler.add_noise(images, noise=noise, timesteps=timesteps)
-
-            # Get controlnet output
-            down_block_res_samples, mid_block_res_sample = controlnet(
-                x=images_noised, timesteps=timesteps, controlnet_cond=masks
-            )
-            # Get model prediction
-            noise_pred = model(
-                x=images_noised,
-                timesteps=timesteps,
-                down_block_additional_residuals=down_block_res_samples,
-                mid_block_additional_residual=mid_block_res_sample,
-            )
+            noise_pred = controlnet_inferer(inputs = images, diffusion_model = model,
+                                            controlnet = controlnet, noise = noise,
+                                            timesteps = timesteps,
+                                           cn_cond = masks, )
 
             loss = F.mse_loss(noise_pred.float(), noise.float())
 
@@ -373,7 +365,7 @@ for epoch in range(n_epochs):
     epoch_loss_list.append(epoch_loss / (step + 1))
 
     if (epoch + 1) % val_interval == 0:
-        model.eval()
+        controlnet.eval()
         val_epoch_loss = 0
         for step, batch in enumerate(val_loader):
             images = batch["image"].to(device)
@@ -383,33 +375,53 @@ for epoch in range(n_epochs):
                 with autocast(enabled=True):
                     noise = torch.randn_like(images).to(device)
                     timesteps = torch.randint(
-                        0, inferer.scheduler.num_train_timesteps, (images.shape[0],), device=images.device
+                        0, controlnet_inferer.scheduler.num_train_timesteps, (images.shape[0],), device=images.device
                     ).long()
-                    noise_pred = inferer(inputs=images, diffusion_model=model, noise=noise, timesteps=timesteps)
+
+                    noise_pred = controlnet_inferer(inputs = images, diffusion_model = model,
+                                            controlnet = controlnet, noise = noise,
+                                            timesteps = timesteps,
+                                           cn_cond = masks, )
                     val_loss = F.mse_loss(noise_pred.float(), noise.float())
 
+
             val_epoch_loss += val_loss.item()
+
             progress_bar.set_postfix({"val_loss": val_epoch_loss / (step + 1)})
             break
+
         val_epoch_loss_list.append(val_epoch_loss / (step + 1))
 
         # Sampling image during training with controlnet conditioning
-        progress_bar_sampling = tqdm(scheduler.timesteps, total=len(scheduler.timesteps), ncols=110)
-        progress_bar_sampling.set_description("sampling...")
-        sample = torch.randn((1, 1, 64, 64)).to(device)
-        for t in progress_bar_sampling:
-            with torch.no_grad():
-                with autocast(enabled=True):
-                    down_block_res_samples, mid_block_res_sample = controlnet(
-                        x=sample, timesteps=torch.Tensor((t,)).to(device).long(), controlnet_cond=masks[0, None, ...]
-                    )
-                    noise_pred = model(
-                        sample,
-                        timesteps=torch.Tensor((t,)).to(device),
-                        down_block_additional_residuals=down_block_res_samples,
-                        mid_block_additional_residual=mid_block_res_sample,
-                    )
-                    sample, _ = scheduler.step(model_output=noise_pred, timestep=t, sample=sample)
+
+        with torch.no_grad():
+            with autocast(enabled=True):
+                noise = torch.randn((1, 1, 64, 64)).to(device)
+                sample = controlnet_inferer.sample(
+                    input_noise = noise,
+                    diffusion_model = model,
+                    controlnet = controlnet,
+                    cn_cond = masks[0, None, ...],
+                    scheduler = scheduler,
+                )
+
+        # Without using an inferer:
+#         progress_bar_sampling = tqdm(scheduler.timesteps, total=len(scheduler.timesteps), ncols=110)
+#         progress_bar_sampling.set_description("sampling...")
+#         sample = torch.randn((1, 1, 64, 64)).to(device)
+#         for t in progress_bar_sampling:
+#             with torch.no_grad():
+#                 with autocast(enabled=True):
+#                     down_block_res_samples, mid_block_res_sample = controlnet(
+#                         x=sample, timesteps=torch.Tensor((t,)).to(device).long(), controlnet_cond=masks[0, None, ...]
+#                     )
+#                     noise_pred = model(
+#                         sample,
+#                         timesteps=torch.Tensor((t,)).to(device),
+#                         down_block_additional_residuals=down_block_res_samples,
+#                         mid_block_additional_residual=mid_block_res_sample,
+#                     )
+#                     sample, _ = scheduler.step(model_output=noise_pred, timestep=t, sample=sample)
 
         plt.subplots(1, 2, figsize=(4, 2))
         plt.subplot(1, 2, 1)
@@ -521,3 +533,5 @@ for k in range(num_samples):
         plt.title("Sampled image")
 plt.tight_layout()
 plt.show()
+
+# %%

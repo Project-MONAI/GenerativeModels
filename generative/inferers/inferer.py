@@ -598,7 +598,7 @@ class ControlNetDiffusionInferer(DiffusionInferer):
 
         diffuse = diffusion_model
         if isinstance(diffusion_model, SPADEDiffusionModelUNet):
-            diffuse = partial(diffusion_model, seg = seg)
+            diffuse = partial(diffusion_model, seg=seg)
 
         prediction = diffuse(
             x=noisy_image,
@@ -746,7 +746,7 @@ class ControlNetDiffusionInferer(DiffusionInferer):
 
             diffuse = diffusion_model
             if isinstance(diffusion_model, SPADEDiffusionModelUNet):
-                diffuse = partial(diffusion_model, seg = seg)
+                diffuse = partial(diffusion_model, seg=seg)
 
             if mode == "concat":
                 noisy_image = torch.cat([noisy_image, conditioning], dim=1)
@@ -831,6 +831,7 @@ class ControlNetDiffusionInferer(DiffusionInferer):
             return total_kl, intermediates
         else:
             return total_kl
+
 
 class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
     """
@@ -1084,6 +1085,7 @@ class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
             intermediates = [resizer(x) for x in intermediates]
             outputs = (outputs[0], intermediates)
         return outputs
+
 
 class VQVAETransformerInferer(Inferer):
     """
