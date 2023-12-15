@@ -65,7 +65,7 @@ from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
 
-from generative.inferers import ControlNetDiffusionInferer
+from generative.inferers import ControlNetDiffusionInferer, DiffusionInferer
 from generative.networks.nets import DiffusionModelUNet, ControlNet
 from generative.networks.schedulers import DDPMScheduler
 
@@ -77,7 +77,7 @@ print_config()
 
 # %% jupyter={"outputs_hidden": false}
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
-root_dir = "/tmp/tmpb89d70u5/" #tempfile.mkdtemp() if directory is None else directory
+root_dir = tempfile.mkdtemp() if directory is None else directory
 
 # %% [markdown]
 # ### Set deterministic training for reproducibility
@@ -348,7 +348,9 @@ for epoch in range(n_epochs):
                 0, inferer.scheduler.num_train_timesteps, (images.shape[0],), device=images.device
             ).long()
 
-            noise_pred = controlnet_inferer(model, controlnet, noise, timesteps,
+            noise_pred = controlnet_inferer(inputs = images, diffusion_model = model,
+                                            controlnet = controlnet, noise = noise,
+                                            timesteps = timesteps,
                                            cn_cond = masks, )
 
             loss = F.mse_loss(noise_pred.float(), noise.float())
@@ -376,7 +378,9 @@ for epoch in range(n_epochs):
                         0, controlnet_inferer.scheduler.num_train_timesteps, (images.shape[0],), device=images.device
                     ).long()
 
-                    noise_pred = controlnet_inferer(model, controlnet, noise, timesteps,
+                    noise_pred = controlnet_inferer(inputs = images, diffusion_model = model,
+                                            controlnet = controlnet, noise = noise,
+                                            timesteps = timesteps,
                                            cn_cond = masks, )
                     val_loss = F.mse_loss(noise_pred.float(), noise.float())
 
@@ -529,3 +533,5 @@ for k in range(num_samples):
         plt.title("Sampled image")
 plt.tight_layout()
 plt.show()
+
+# %%
