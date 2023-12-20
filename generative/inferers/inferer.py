@@ -14,10 +14,11 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Sequence
 from functools import partial
-from monai.data import decollate_batch
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from monai.data import decollate_batch
 from monai.inferers import Inferer
 from monai.transforms import CenterSpatialCrop, SpatialPad
 from monai.utils import optional_import
@@ -379,7 +380,7 @@ class LatentDiffusionInferer(DiffusionInferer):
             latent = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
 
         if self.ldm_latent_shape is not None:
-            latent = torch.stack([self.ldm_resizer(i) for i in decollate_batch(latent)],0)
+            latent = torch.stack([self.ldm_resizer(i) for i in decollate_batch(latent)], 0)
 
         call = super().__call__
         if isinstance(diffusion_model, SPADEDiffusionModelUNet):
@@ -456,8 +457,9 @@ class LatentDiffusionInferer(DiffusionInferer):
 
         if self.autoencoder_latent_shape is not None:
             latent = torch.stack([self.autoencoder_resizer(i) for i in decollate_batch(latent)], 0)
-            latent_intermediates = [torch.stack([self.autoencoder_resizer(i) for i in decollate_batch(l)], 0)
-                                    for l in latent_intermediates]
+            latent_intermediates = [
+                torch.stack([self.autoencoder_resizer(i) for i in decollate_batch(l)], 0) for l in latent_intermediates
+            ]
 
         decode = autoencoder_model.decode_stage_2_outputs
         if isinstance(autoencoder_model, SPADEAutoencoderKL):
@@ -598,7 +600,7 @@ class ControlNetDiffusionInferer(DiffusionInferer):
 
         diffuse = diffusion_model
         if isinstance(diffusion_model, SPADEDiffusionModelUNet):
-            diffuse = partial(diffusion_model, seg = seg)
+            diffuse = partial(diffusion_model, seg=seg)
 
         prediction = diffuse(
             x=noisy_image,
@@ -746,7 +748,7 @@ class ControlNetDiffusionInferer(DiffusionInferer):
 
             diffuse = diffusion_model
             if isinstance(diffusion_model, SPADEDiffusionModelUNet):
-                diffuse = partial(diffusion_model, seg = seg)
+                diffuse = partial(diffusion_model, seg=seg)
 
             if mode == "concat":
                 noisy_image = torch.cat([noisy_image, conditioning], dim=1)
@@ -831,6 +833,7 @@ class ControlNetDiffusionInferer(DiffusionInferer):
             return total_kl, intermediates
         else:
             return total_kl
+
 
 class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
     """
@@ -988,8 +991,9 @@ class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
 
         if self.autoencoder_latent_shape is not None:
             latent = torch.stack([self.autoencoder_resizer(i) for i in decollate_batch(latent)], 0)
-            latent_intermediates = [torch.stack([self.autoencoder_resizer(i) for i in decollate_batch(l)], 0)
-                                    for l in latent_intermediates]
+            latent_intermediates = [
+                torch.stack([self.autoencoder_resizer(i) for i in decollate_batch(l)], 0) for l in latent_intermediates
+            ]
 
         decode = autoencoder_model.decode_stage_2_outputs
         if isinstance(autoencoder_model, SPADEAutoencoderKL):
@@ -1086,6 +1090,7 @@ class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
             intermediates = [resizer(x) for x in intermediates]
             outputs = (outputs[0], intermediates)
         return outputs
+
 
 class VQVAETransformerInferer(Inferer):
     """
