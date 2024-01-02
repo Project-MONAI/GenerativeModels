@@ -218,7 +218,10 @@ class PatchDiscriminator(nn.Sequential):
         )
 
         self.apply(self.initialise_weights)
-
+        if norm.lower() == 'batch' and torch.distributed.is_initialized():
+            print("WARNING: Discriminator is using BatchNorm and a distributed training environment has been detected. "
+                  "To train with DDP, convert discriminator to SyncBatchNorm using "
+                  "torch.nn.SyncBatchNorm.convert_sync_batchnorm(model).)")
     def forward(self, x: torch.Tensor) -> list[torch.Tensor]:
         """
 
