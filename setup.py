@@ -16,7 +16,7 @@ from setuptools import find_packages, setup
 setup(
     name="monai-generative",
     packages=find_packages(exclude=[]),
-    version="0.2.2",
+    version="0.2.3",
     description="Installer to help to use the prototypes from MONAI generative models in other projects.",
-    install_requires=["monai>=1.2.0rc1"],
+    install_requires=["monai>=1.3.0"],
 )
