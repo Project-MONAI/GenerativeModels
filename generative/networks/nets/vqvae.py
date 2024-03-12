@@ -442,12 +442,12 @@ class VQVAE(nn.Module):
 
         return reconstruction, quantization_losses
 
-    def encode_stage_2_inputs(self, x: torch.Tensor, non_quantized: bool = False) -> torch.Tensor:
+    def encode_stage_2_inputs(self, x: torch.Tensor, quantized: bool = True) -> torch.Tensor:
         z = self.encode(x)
-        if non_quantized:
-            return  z
         e, _ = self.quantize(z)
-        return e
+        if quantized:
+            return e
+        return z
 
     def decode_stage_2_outputs(self, z: torch.Tensor) -> torch.Tensor:
         e, _ = self.quantize(z)
