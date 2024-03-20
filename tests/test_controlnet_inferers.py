@@ -15,8 +15,8 @@ import unittest
 
 import torch
 from parameterized import parameterized
-
-from generative.inferers import ControlNetLatentDiffusionInferer
+from generative.networks.schedulers import DDIMScheduler
+from generative.inferers import ControlNetLatentDiffusionInferer, ControlNetDiffusionInferer
 from generative.networks.nets import (
     VQVAE,
     AutoencoderKL,
@@ -438,203 +438,204 @@ LATENT_CNDM_TEST_CASES_DIFF_SHAPES = [
 ]
 
 
-# class ControlNetTestDiffusionSamplingInferer(unittest.TestCase):
-#     @parameterized.expand(CNDM_TEST_CASES)
-#     def test_call(self, model_params, controlnet_params, input_shape):
-#         model = DiffusionModelUNet(**model_params)
-#         controlnet = ControlNet(**controlnet_params)
-#         device = "cuda:0" if torch.cuda.is_available() else "cpu"
-#         model.to(device)
-#         model.eval()
-#         controlnet.to(device)
-#         controlnet.eval()
-#         input = torch.randn(input_shape).to(device)
-#         mask = torch.randn(input_shape).to(device)
-#         noise = torch.randn(input_shape).to(device)
-#         scheduler = DDPMScheduler(num_train_timesteps=10)
-#         inferer = ControlNetDiffusionInferer(scheduler=scheduler)
-#         scheduler.set_timesteps(num_inference_steps=10)
-#         timesteps = torch.randint(0, scheduler.num_train_timesteps, (input_shape[0],), device=input.device).long()
-#         sample = inferer(
-#             inputs=input, noise=noise, diffusion_model=model, controlnet=controlnet, timesteps=timesteps, cn_cond=mask
-#         )
-#         self.assertEqual(sample.shape, input_shape)
-#
-#     @parameterized.expand(CNDM_TEST_CASES)
-#     def test_sample_intermediates(self, model_params, controlnet_params, input_shape):
-#         model = DiffusionModelUNet(**model_params)
-#         controlnet = ControlNet(**controlnet_params)
-#         device = "cuda:0" if torch.cuda.is_available() else "cpu"
-#         model.to(device)
-#         model.eval()
-#         controlnet.to(device)
-#         controlnet.eval()
-#         noise = torch.randn(input_shape).to(device)
-#         mask = torch.randn(input_shape).to(device)
-#         scheduler = DDPMScheduler(num_train_timesteps=10)
-#         inferer = ControlNetDiffusionInferer(scheduler=scheduler)
-#         scheduler.set_timesteps(num_inference_steps=10)
-#         sample, intermediates = inferer.sample(
-#             input_noise=noise,
-#             diffusion_model=model,
-#             scheduler=scheduler,
-#             controlnet=controlnet,
-#             cn_cond=mask,
-#             save_intermediates=True,
-#             intermediate_steps=1,
-#         )
-#         self.assertEqual(len(intermediates), 10)
-#
-#     @parameterized.expand(CNDM_TEST_CASES)
-#     def test_ddpm_sampler(self, model_params, controlnet_params, input_shape):
-#         model = DiffusionModelUNet(**model_params)
-#         controlnet = ControlNet(**controlnet_params)
-#         device = "cuda:0" if torch.cuda.is_available() else "cpu"
-#         model.to(device)
-#         model.eval()
-#         controlnet.to(device)
-#         controlnet.eval()
-#         mask = torch.randn(input_shape).to(device)
-#         noise = torch.randn(input_shape).to(device)
-#         scheduler = DDPMScheduler(num_train_timesteps=1000)
-#         inferer = ControlNetDiffusionInferer(scheduler=scheduler)
-#         scheduler.set_timesteps(num_inference_steps=10)
-#         sample, intermediates = inferer.sample(
-#             input_noise=noise,
-#             diffusion_model=model,
-#             scheduler=scheduler,
-#             controlnet=controlnet,
-#             cn_cond=mask,
-#             save_intermediates=True,
-#             intermediate_steps=1,
-#         )
-#         self.assertEqual(len(intermediates), 10)
-#
-#     @parameterized.expand(CNDM_TEST_CASES)
-#     def test_ddim_sampler(self, model_params, controlnet_params, input_shape):
-#         model = DiffusionModelUNet(**model_params)
-#         controlnet = ControlNet(**controlnet_params)
-#         device = "cuda:0" if torch.cuda.is_available() else "cpu"
-#         model.to(device)
-#         model.eval()
-#         controlnet.to(device)
-#         controlnet.eval()
-#         mask = torch.randn(input_shape).to(device)
-#         noise = torch.randn(input_shape).to(device)
-#         scheduler = DDIMScheduler(num_train_timesteps=1000)
-#         inferer = ControlNetDiffusionInferer(scheduler=scheduler)
-#         scheduler.set_timesteps(num_inference_steps=10)
-#         sample, intermediates = inferer.sample(
-#             input_noise=noise,
-#             diffusion_model=model,
-#             scheduler=scheduler,
-#             controlnet=controlnet,
-#             cn_cond=mask,
-#             save_intermediates=True,
-#             intermediate_steps=1,
-#         )
-#         self.assertEqual(len(intermediates), 10)
-#
-#     @parameterized.expand(CNDM_TEST_CASES)
-#     def test_sampler_conditioned(self, model_params, controlnet_params, input_shape):
-#         model_params["with_conditioning"] = controlnet_params["with_conditioning"] =  True
-#         model_params["cross_attention_dim"] = controlnet_params["cross_attention_dim"]  = 3
-#         model = DiffusionModelUNet(**model_params)
-#         controlnet = ControlNet(**controlnet_params)
-#         device = "cuda:0" if torch.cuda.is_available() else "cpu"
-#         model.to(device)
-#         model.eval()
-#         controlnet.to(device)
-#         controlnet.eval()
-#         mask = torch.randn(input_shape).to(device)
-#         noise = torch.randn(input_shape).to(device)
-#         scheduler = DDIMScheduler(num_train_timesteps=1000)
-#         inferer = ControlNetDiffusionInferer(scheduler=scheduler)
-#         scheduler.set_timesteps(num_inference_steps=10)
-#         conditioning = torch.randn([input_shape[0], 1, 3]).to(device)
-#         sample, intermediates = inferer.sample(
-#             input_noise=noise,
-#             diffusion_model=model,
-#             controlnet=controlnet,
-#             cn_cond=mask,
-#             scheduler=scheduler,
-#             save_intermediates=True,
-#             intermediate_steps=1,
-#             conditioning=conditioning,
-#         )
-#         self.assertEqual(len(intermediates), 10)
-#
-#     @parameterized.expand(CNDM_TEST_CASES)
-#     def test_get_likelihood(self, model_params, controlnet_params, input_shape):
-#         model = DiffusionModelUNet(**model_params)
-#         device = "cuda:0" if torch.cuda.is_available() else "cpu"
-#         model.to(device)
-#         model.eval()
-#         controlnet = ControlNet(**controlnet_params)
-#         controlnet.to(device)
-#         controlnet.eval()
-#         input = torch.randn(input_shape).to(device)
-#         mask = torch.randn(input_shape).to(device)
-#         scheduler = DDPMScheduler(num_train_timesteps=10)
-#         inferer = ControlNetDiffusionInferer(scheduler=scheduler)
-#         scheduler.set_timesteps(num_inference_steps=10)
-#         likelihood, intermediates = inferer.get_likelihood(
-#             inputs=input,
-#             diffusion_model=model,
-#             scheduler=scheduler,
-#             controlnet=controlnet,
-#             cn_cond=mask,
-#             save_intermediates=True,
-#         )
-#         self.assertEqual(intermediates[0].shape, input.shape)
-#         self.assertEqual(likelihood.shape[0], input.shape[0])
-#
-#     def test_normal_cdf(self):
-#         from scipy.stats import norm
-#
-#         scheduler = DDPMScheduler(num_train_timesteps=10)
-#         inferer = ControlNetDiffusionInferer(scheduler=scheduler)
-#         x = torch.linspace(-10, 10, 20)
-#         cdf_approx = inferer._approx_standard_normal_cdf(x)
-#         cdf_true = norm.cdf(x)
-#         torch.testing.assert_allclose(cdf_approx, cdf_true, atol=1e-3, rtol=1e-5)
-#
-#     @parameterized.expand(CNDM_TEST_CASES)
-#     def test_sampler_conditioned_concat(self, model_params, controlnet_params, input_shape):
-#         # copy the model_params dict to prevent from modifying test cases
-#         model_params = model_params.copy()
-#         n_concat_channel = 2
-#         model_params["in_channels"] = model_params["in_channels"] + n_concat_channel
-#         controlnet_params["in_channels"] = controlnet_params["in_channels"] + n_concat_channel
-#         model_params["cross_attention_dim"] = controlnet_params["cross_attention_dim"] = None
-#         model_params["with_conditioning"] = controlnet_params["with_conditioning"] =  False
-#         model = DiffusionModelUNet(**model_params)
-#         device = "cuda:0" if torch.cuda.is_available() else "cpu"
-#         model.to(device)
-#         model.eval()
-#         controlnet = ControlNet(**controlnet_params)
-#         controlnet.to(device)
-#         controlnet.eval()
-#         noise = torch.randn(input_shape).to(device)
-#         mask = torch.randn(input_shape).to(device)
-#         conditioning_shape = list(input_shape)
-#         conditioning_shape[1] = n_concat_channel
-#         conditioning = torch.randn(conditioning_shape).to(device)
-#         scheduler = DDIMScheduler(num_train_timesteps=1000)
-#         inferer = ControlNetDiffusionInferer(scheduler=scheduler)
-#         scheduler.set_timesteps(num_inference_steps=10)
-#         sample, intermediates = inferer.sample(
-#             input_noise=noise,
-#             diffusion_model=model,
-#             controlnet=controlnet,
-#             cn_cond=mask,
-#             scheduler=scheduler,
-#             save_intermediates=True,
-#             intermediate_steps=1,
-#             conditioning=conditioning,
-#             mode="concat",
-#         )
-#         self.assertEqual(len(intermediates), 10)
+class ControlNetTestDiffusionSamplingInferer(unittest.TestCase):
+    @parameterized.expand(CNDM_TEST_CASES)
+    def test_call(self, model_params, controlnet_params, input_shape):
+        model = DiffusionModelUNet(**model_params)
+        controlnet = ControlNet(**controlnet_params)
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        model.to(device)
+        model.eval()
+        controlnet.to(device)
+        controlnet.eval()
+        input = torch.randn(input_shape).to(device)
+        mask = torch.randn(input_shape).to(device)
+        noise = torch.randn(input_shape).to(device)
+        scheduler = DDPMScheduler(num_train_timesteps=10)
+        inferer = ControlNetDiffusionInferer(scheduler=scheduler)
+        scheduler.set_timesteps(num_inference_steps=10)
+        timesteps = torch.randint(0, scheduler.num_train_timesteps, (input_shape[0],), device=input.device).long()
+        sample = inferer(
+            inputs=input, noise=noise, diffusion_model=model, controlnet=controlnet, timesteps=timesteps, cn_cond=mask
+        )
+        self.assertEqual(sample.shape, input_shape)
+
+    @parameterized.expand(CNDM_TEST_CASES)
+    def test_sample_intermediates(self, model_params, controlnet_params, input_shape):
+        model = DiffusionModelUNet(**model_params)
+        controlnet = ControlNet(**controlnet_params)
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        model.to(device)
+        model.eval()
+        controlnet.to(device)
+        controlnet.eval()
+        noise = torch.randn(input_shape).to(device)
+        mask = torch.randn(input_shape).to(device)
+        scheduler = DDPMScheduler(num_train_timesteps=10)
+        inferer = ControlNetDiffusionInferer(scheduler=scheduler)
+        scheduler.set_timesteps(num_inference_steps=10)
+        sample, intermediates = inferer.sample(
+            input_noise=noise,
+            diffusion_model=model,
+            scheduler=scheduler,
+            controlnet=controlnet,
+            cn_cond=mask,
+            save_intermediates=True,
+            intermediate_steps=1,
+        )
+        self.assertEqual(len(intermediates), 10)
+
+    @parameterized.expand(CNDM_TEST_CASES)
+    def test_ddpm_sampler(self, model_params, controlnet_params, input_shape):
+        model = DiffusionModelUNet(**model_params)
+        controlnet = ControlNet(**controlnet_params)
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        model.to(device)
+        model.eval()
+        controlnet.to(device)
+        controlnet.eval()
+        mask = torch.randn(input_shape).to(device)
+        noise = torch.randn(input_shape).to(device)
+        scheduler = DDPMScheduler(num_train_timesteps=1000)
+        inferer = ControlNetDiffusionInferer(scheduler=scheduler)
+        scheduler.set_timesteps(num_inference_steps=10)
+        sample, intermediates = inferer.sample(
+            input_noise=noise,
+            diffusion_model=model,
+            scheduler=scheduler,
+            controlnet=controlnet,
+            cn_cond=mask,
+            save_intermediates=True,
+            intermediate_steps=1,
+        )
+        self.assertEqual(len(intermediates), 10)
+
+    @parameterized.expand(CNDM_TEST_CASES)
+    def test_ddim_sampler(self, model_params, controlnet_params, input_shape):
+        model = DiffusionModelUNet(**model_params)
+        controlnet = ControlNet(**controlnet_params)
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        model.to(device)
+        model.eval()
+        controlnet.to(device)
+        controlnet.eval()
+        mask = torch.randn(input_shape).to(device)
+        noise = torch.randn(input_shape).to(device)
+        scheduler = DDIMScheduler(num_train_timesteps=1000)
+        inferer = ControlNetDiffusionInferer(scheduler=scheduler)
+        scheduler.set_timesteps(num_inference_steps=10)
+        sample, intermediates = inferer.sample(
+            input_noise=noise,
+            diffusion_model=model,
+            scheduler=scheduler,
+            controlnet=controlnet,
+            cn_cond=mask,
+            save_intermediates=True,
+            intermediate_steps=1,
+        )
+        self.assertEqual(len(intermediates), 10)
+
+    @parameterized.expand(CNDM_TEST_CASES)
+    def test_sampler_conditioned(self, model_params, controlnet_params, input_shape):
+        model_params["with_conditioning"] = controlnet_params["with_conditioning"] =  True
+        model_params["cross_attention_dim"] = controlnet_params["cross_attention_dim"]  = 3
+        model = DiffusionModelUNet(**model_params)
+        controlnet = ControlNet(**controlnet_params)
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        model.to(device)
+        model.eval()
+        controlnet.to(device)
+        controlnet.eval()
+        mask = torch.randn(input_shape).to(device)
+        noise = torch.randn(input_shape).to(device)
+        scheduler = DDIMScheduler(num_train_timesteps=1000)
+        inferer = ControlNetDiffusionInferer(scheduler=scheduler)
+        scheduler.set_timesteps(num_inference_steps=10)
+        conditioning = torch.randn([input_shape[0], 1, 3]).to(device)
+        sample, intermediates = inferer.sample(
+            input_noise=noise,
+            diffusion_model=model,
+            controlnet=controlnet,
+            cn_cond=mask,
+            scheduler=scheduler,
+            save_intermediates=True,
+            intermediate_steps=1,
+            conditioning=conditioning,
+        )
+        self.assertEqual(len(intermediates), 10)
+
+    @parameterized.expand(CNDM_TEST_CASES)
+    def test_get_likelihood(self, model_params, controlnet_params, input_shape):
+        model = DiffusionModelUNet(**model_params)
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        model.to(device)
+        model.eval()
+        controlnet = ControlNet(**controlnet_params)
+        controlnet.to(device)
+        controlnet.eval()
+        input = torch.randn(input_shape).to(device)
+        mask = torch.randn(input_shape).to(device)
+        scheduler = DDPMScheduler(num_train_timesteps=10)
+        inferer = ControlNetDiffusionInferer(scheduler=scheduler)
+        scheduler.set_timesteps(num_inference_steps=10)
+        likelihood, intermediates = inferer.get_likelihood(
+            inputs=input,
+            diffusion_model=model,
+            scheduler=scheduler,
+            controlnet=controlnet,
+            cn_cond=mask,
+            save_intermediates=True,
+        )
+        self.assertEqual(intermediates[0].shape, input.shape)
+        self.assertEqual(likelihood.shape[0], input.shape[0])
+
+    def test_normal_cdf(self):
+        from scipy.stats import norm
+
+        scheduler = DDPMScheduler(num_train_timesteps=10)
+        inferer = ControlNetDiffusionInferer(scheduler=scheduler)
+        x = torch.linspace(-10, 10, 20)
+        cdf_approx = inferer._approx_standard_normal_cdf(x)
+        cdf_true = norm.cdf(x)
+        torch.testing.assert_allclose(cdf_approx, cdf_true, atol=1e-3, rtol=1e-5)
+
+    @parameterized.expand(CNDM_TEST_CASES)
+    def test_sampler_conditioned_concat(self, model_params, controlnet_params, input_shape):
+        # copy the model_params dict to prevent from modifying test cases
+        model_params = model_params.copy()
+        controlnet_params = controlnet_params.copy()
+        n_concat_channel = 2
+        model_params["in_channels"] = model_params["in_channels"] + n_concat_channel
+        controlnet_params["in_channels"] = controlnet_params["in_channels"] + n_concat_channel
+        model_params["cross_attention_dim"] = controlnet_params["cross_attention_dim"] = None
+        model_params["with_conditioning"] = controlnet_params["with_conditioning"] =  False
+        model = DiffusionModelUNet(**model_params)
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        model.to(device)
+        model.eval()
+        controlnet = ControlNet(**controlnet_params)
+        controlnet.to(device)
+        controlnet.eval()
+        noise = torch.randn(input_shape).to(device)
+        mask = torch.randn(input_shape).to(device)
+        conditioning_shape = list(input_shape)
+        conditioning_shape[1] = n_concat_channel
+        conditioning = torch.randn(conditioning_shape).to(device)
+        scheduler = DDIMScheduler(num_train_timesteps=1000)
+        inferer = ControlNetDiffusionInferer(scheduler=scheduler)
+        scheduler.set_timesteps(num_inference_steps=10)
+        sample, intermediates = inferer.sample(
+            input_noise=noise,
+            diffusion_model=model,
+            controlnet=controlnet,
+            cn_cond=mask,
+            scheduler=scheduler,
+            save_intermediates=True,
+            intermediate_steps=1,
+            conditioning=conditioning,
+            mode="concat",
+        )
+        self.assertEqual(len(intermediates), 10)
 
 
 class LatentControlNetTestDiffusionSamplingInferer(unittest.TestCase):
