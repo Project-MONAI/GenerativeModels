@@ -15,8 +15,8 @@ import unittest
 
 import torch
 from parameterized import parameterized
-from generative.networks.schedulers import DDIMScheduler
-from generative.inferers import ControlNetLatentDiffusionInferer, ControlNetDiffusionInferer
+
+from generative.inferers import ControlNetDiffusionInferer, ControlNetLatentDiffusionInferer
 from generative.networks.nets import (
     VQVAE,
     AutoencoderKL,
@@ -25,7 +25,7 @@ from generative.networks.nets import (
     SPADEAutoencoderKL,
     SPADEDiffusionModelUNet,
 )
-from generative.networks.schedulers import DDPMScheduler
+from generative.networks.schedulers import DDIMScheduler, DDPMScheduler
 
 CNDM_TEST_CASES = [
     [
@@ -537,8 +537,8 @@ class ControlNetTestDiffusionSamplingInferer(unittest.TestCase):
 
     @parameterized.expand(CNDM_TEST_CASES)
     def test_sampler_conditioned(self, model_params, controlnet_params, input_shape):
-        model_params["with_conditioning"] = controlnet_params["with_conditioning"] =  True
-        model_params["cross_attention_dim"] = controlnet_params["cross_attention_dim"]  = 3
+        model_params["with_conditioning"] = controlnet_params["with_conditioning"] = True
+        model_params["cross_attention_dim"] = controlnet_params["cross_attention_dim"] = 3
         model = DiffusionModelUNet(**model_params)
         controlnet = ControlNet(**controlnet_params)
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -608,7 +608,7 @@ class ControlNetTestDiffusionSamplingInferer(unittest.TestCase):
         model_params["in_channels"] = model_params["in_channels"] + n_concat_channel
         controlnet_params["in_channels"] = controlnet_params["in_channels"] + n_concat_channel
         model_params["cross_attention_dim"] = controlnet_params["cross_attention_dim"] = None
-        model_params["with_conditioning"] = controlnet_params["with_conditioning"] =  False
+        model_params["with_conditioning"] = controlnet_params["with_conditioning"] = False
         model = DiffusionModelUNet(**model_params)
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         model.to(device)
@@ -977,11 +977,10 @@ class LatentControlNetTestDiffusionSamplingInferer(unittest.TestCase):
         autoencoder_params,
         dm_model_type,
         stage_2_params,
-        cn_params,
+        controlnet_params,
         input_shape,
         latent_shape,
     ):
-
         if ae_model_type == "AutoencoderKL":
             stage_1 = AutoencoderKL(**autoencoder_params)
         if ae_model_type == "VQVAE":
@@ -989,15 +988,15 @@ class LatentControlNetTestDiffusionSamplingInferer(unittest.TestCase):
         if ae_model_type == "SPADEAutoencoderKL":
             stage_1 = SPADEAutoencoderKL(**autoencoder_params)
         stage_2_params = stage_2_params.copy()
-        cn_params = cn_params.copy()
+        controlnet_params = controlnet_params.copy()
         n_concat_channel = 3
         stage_2_params["in_channels"] = stage_2_params["in_channels"] + n_concat_channel
-        cn_params["in_channels"] = cn_params["in_channels"] + n_concat_channel
+        controlnet_params["in_channels"] = controlnet_params["in_channels"] + n_concat_channel
         if dm_model_type == "SPADEDiffusionModelUNet":
             stage_2 = SPADEDiffusionModelUNet(**stage_2_params)
         else:
             stage_2 = DiffusionModelUNet(**stage_2_params)
-        controlnet = ControlNet(**cn_params)
+        controlnet = ControlNet(**controlnet_params)
 
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         stage_1.to(device)
@@ -1060,7 +1059,7 @@ class LatentControlNetTestDiffusionSamplingInferer(unittest.TestCase):
         autoencoder_params,
         dm_model_type,
         stage_2_params,
-        cn_params,
+        controlnet_params,
         input_shape,
         latent_shape,
     ):
@@ -1071,15 +1070,15 @@ class LatentControlNetTestDiffusionSamplingInferer(unittest.TestCase):
         if ae_model_type == "SPADEAutoencoderKL":
             stage_1 = SPADEAutoencoderKL(**autoencoder_params)
         stage_2_params = stage_2_params.copy()
-        cn_params = cn_params.copy()
+        controlnet_params = controlnet_params.copy()
         n_concat_channel = 3
         stage_2_params["in_channels"] = stage_2_params["in_channels"] + n_concat_channel
-        cn_params["in_channels"] = cn_params["in_channels"] + n_concat_channel
+        controlnet_params["in_channels"] = controlnet_params["in_channels"] + n_concat_channel
         if dm_model_type == "SPADEDiffusionModelUNet":
             stage_2 = SPADEDiffusionModelUNet(**stage_2_params)
         else:
             stage_2 = DiffusionModelUNet(**stage_2_params)
-        controlnet = ControlNet(**cn_params)
+        controlnet = ControlNet(**controlnet_params)
 
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         stage_1.to(device)
