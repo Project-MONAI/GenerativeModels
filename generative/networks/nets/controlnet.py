@@ -130,19 +130,15 @@ def copy_weights_to_controlnet(controlnet : nn.Module,
         controlnet: instance of ControlNet
         diffusion_model: instance of DiffusionModelUnet or SPADEDiffusionModelUnet
         verbose: if True, the matched and unmatched keys will be printed.
-
-    Returns:
     '''
 
     output = controlnet.load_state_dict(diffusion_model.state_dict(), strict = False)
     if verbose:
         dm_keys = [p[0] for p in list(diffusion_model.named_parameters()) if p[0] not in output.unexpected_keys]
-        print("Copied weights from %d keys of the diffusion model into the ControlNet: \n%s\n"
-              "ControlNet incompatible keys: %d.\n%s\n"
-              "DiffusionModel incompatible keys: %d.\n%s\n" %(len(dm_keys), "; ".join(dm_keys),
-                                                              len(output.missing_keys), "; ".join(output.missing_keys),
-                                                              len(output.unexpected_keys), "; ".join(output.unexpected_keys)))
-    return
+        print(f"Copied weights from {len(dm_keys)} keys of the diffusion model into the ControlNet:"
+              f"\n{'; '.join(dm_keys)}\nControlNet missing keys: {len(output.missing_keys)}:"
+              f"\n{'; '.join(output.missing_keys)}\nDiffusion model incompatible keys: {len(output.unexpected_keys)}:"
+              f"\n{'; '.join(output.unexpected_keys)}")
 
 class ControlNet(nn.Module):
     """
