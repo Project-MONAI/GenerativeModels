@@ -459,7 +459,8 @@ class LatentDiffusionInferer(DiffusionInferer):
             latent = torch.stack([self.autoencoder_resizer(i) for i in decollate_batch(latent)], 0)
             if save_intermediates:
                 latent_intermediates = [
-                    torch.stack([self.autoencoder_resizer(i) for i in decollate_batch(l)], 0) for l in latent_intermediates
+                    torch.stack([self.autoencoder_resizer(i) for i in decollate_batch(l)], 0)
+                    for l in latent_intermediates
                 ]
 
         decode = autoencoder_model.decode_stage_2_outputs
@@ -592,12 +593,14 @@ class ControlNetDiffusionInferer(DiffusionInferer):
             raise NotImplementedError(f"{mode} condition is not supported")
 
         noisy_image = self.scheduler.add_noise(original_samples=inputs, noise=noise, timesteps=timesteps)
-        down_block_res_samples, mid_block_res_sample = controlnet(
-            x=noisy_image, timesteps=timesteps, controlnet_cond=cn_cond
-        )
+
         if mode == "concat":
             noisy_image = torch.cat([noisy_image, condition], dim=1)
             condition = None
+
+        down_block_res_samples, mid_block_res_sample = controlnet(
+            x=noisy_image, timesteps=timesteps, controlnet_cond=cn_cond, context=condition
+        )
 
         diffuse = diffusion_model
         if isinstance(diffusion_model, SPADEDiffusionModelUNet):
@@ -654,32 +657,32 @@ class ControlNetDiffusionInferer(DiffusionInferer):
             progress_bar = iter(scheduler.timesteps)
         intermediates = []
         for t in progress_bar:
+            if mode == "concat":
+                model_input = torch.cat([image, conditioning], dim=1)
+                context_ = None
+            else:
+                model_input = image
+                context_ = conditioning
+
             # 1. ControlNet forward
             down_block_res_samples, mid_block_res_sample = controlnet(
-                x=image, timesteps=torch.Tensor((t,)).to(input_noise.device), controlnet_cond=cn_cond
+                x=model_input,
+                timesteps=torch.Tensor((t,)).to(input_noise.device),
+                controlnet_cond=cn_cond,
+                context=context_,
             )
             # 2. predict noise model_output
             diffuse = diffusion_model
             if isinstance(diffusion_model, SPADEDiffusionModelUNet):
                 diffuse = partial(diffusion_model, seg=seg)
 
-            if mode == "concat":
-                model_input = torch.cat([image, conditioning], dim=1)
-                model_output = diffuse(
-                    model_input,
-                    timesteps=torch.Tensor((t,)).to(input_noise.device),
-                    context=None,
-                    down_block_additional_residuals=down_block_res_samples,
-                    mid_block_additional_residual=mid_block_res_sample,
-                )
-            else:
-                model_output = diffuse(
-                    image,
-                    timesteps=torch.Tensor((t,)).to(input_noise.device),
-                    context=conditioning,
-                    down_block_additional_residuals=down_block_res_samples,
-                    mid_block_additional_residual=mid_block_res_sample,
-                )
+            model_output = diffuse(
+                model_input,
+                timesteps=torch.Tensor((t,)).to(input_noise.device),
+                context=context_,
+                down_block_additional_residuals=down_block_res_samples,
+                mid_block_additional_residual=mid_block_res_sample,
+            )
 
             # 3. compute previous image: x_t -> x_t-1
             image, _ = scheduler.step(model_output, t, image)
@@ -743,31 +746,30 @@ class ControlNetDiffusionInferer(DiffusionInferer):
         for t in progress_bar:
             timesteps = torch.full(inputs.shape[:1], t, device=inputs.device).long()
             noisy_image = self.scheduler.add_noise(original_samples=inputs, noise=noise, timesteps=timesteps)
+
+            if mode == "concat":
+                noisy_image = torch.cat([noisy_image, conditioning], dim=1)
+                conditioning = None
+
             down_block_res_samples, mid_block_res_sample = controlnet(
-                x=noisy_image, timesteps=torch.Tensor((t,)).to(inputs.device), controlnet_cond=cn_cond
+                x=noisy_image,
+                timesteps=torch.Tensor((t,)).to(inputs.device),
+                controlnet_cond=cn_cond,
+                context=conditioning,
             )
 
             diffuse = diffusion_model
             if isinstance(diffusion_model, SPADEDiffusionModelUNet):
                 diffuse = partial(diffusion_model, seg=seg)
 
-            if mode == "concat":
-                noisy_image = torch.cat([noisy_image, conditioning], dim=1)
-                model_output = diffuse(
-                    noisy_image,
-                    timesteps=timesteps,
-                    context=None,
-                    down_block_additional_residuals=down_block_res_samples,
-                    mid_block_additional_residual=mid_block_res_sample,
-                )
-            else:
-                model_output = diffuse(
-                    x=noisy_image,
-                    timesteps=timesteps,
-                    context=conditioning,
-                    down_block_additional_residuals=down_block_res_samples,
-                    mid_block_additional_residual=mid_block_res_sample,
-                )
+            model_output = diffuse(
+                noisy_image,
+                timesteps=timesteps,
+                context=conditioning,
+                down_block_additional_residuals=down_block_res_samples,
+                mid_block_additional_residual=mid_block_res_sample,
+            )
+
             # get the model's predicted mean,  and variance if it is predicted
             if model_output.shape[1] == inputs.shape[1] * 2 and scheduler.variance_type in ["learned", "learned_range"]:
                 model_output, predicted_variance = torch.split(model_output, inputs.shape[1], dim=1)
@@ -994,7 +996,8 @@ class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
             latent = torch.stack([self.autoencoder_resizer(i) for i in decollate_batch(latent)], 0)
             if save_intermediates:
                 latent_intermediates = [
-                    torch.stack([self.autoencoder_resizer(i) for i in decollate_batch(l)], 0) for l in latent_intermediates
+                    torch.stack([self.autoencoder_resizer(i) for i in decollate_batch(l)], 0)
+                    for l in latent_intermediates
                 ]
 
         decode = autoencoder_model.decode_stage_2_outputs

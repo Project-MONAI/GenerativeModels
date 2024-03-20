@@ -257,7 +257,9 @@ class DDIMScheduler(Scheduler):
 
         # 2. compute alphas, betas at timestep t+1
         alpha_prod_t = self.alphas_cumprod[timestep]
-        alpha_prod_t_next = self.alphas_cumprod[next_timestep] if next_timestep < len(self.alphas_cumprod) else self.first_alpha_cumprod
+        alpha_prod_t_next = (
+            self.alphas_cumprod[next_timestep] if next_timestep < len(self.alphas_cumprod) else self.first_alpha_cumprod
+        )
 
         beta_prod_t = 1 - alpha_prod_t
 
