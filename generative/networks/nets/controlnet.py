@@ -122,10 +122,11 @@ def zero_module(module):
 
 def copy_weights_to_controlnet(controlnet : nn.Module,
                                diffusion_model: nn.Module,
-                               verbose: bool = True):
+                               verbose: bool = True) -> None:
     '''
     Copy the state dict from the input diffusion model to the ControlNet, printing, if user requires it, the output
     keys that have matched and those that haven't.
+
     Args:
         controlnet: instance of ControlNet
         diffusion_model: instance of DiffusionModelUnet or SPADEDiffusionModelUnet
