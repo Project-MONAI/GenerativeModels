@@ -537,8 +537,8 @@ class ControlNetTestDiffusionSamplingInferer(unittest.TestCase):
 
     @parameterized.expand(CNDM_TEST_CASES)
     def test_sampler_conditioned(self, model_params, controlnet_params, input_shape):
-        model_params["with_conditioning"] = True
-        model_params["cross_attention_dim"] = 3
+        model_params["with_conditioning"] = controlnet_params["with_conditioning"] = True
+        model_params["cross_attention_dim"] = controlnet_params["cross_attention_dim"] = 3
         model = DiffusionModelUNet(**model_params)
         controlnet = ControlNet(**controlnet_params)
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -603,10 +603,12 @@ class ControlNetTestDiffusionSamplingInferer(unittest.TestCase):
     def test_sampler_conditioned_concat(self, model_params, controlnet_params, input_shape):
         # copy the model_params dict to prevent from modifying test cases
         model_params = model_params.copy()
+        controlnet_params = controlnet_params.copy()
         n_concat_channel = 2
         model_params["in_channels"] = model_params["in_channels"] + n_concat_channel
-        model_params["cross_attention_dim"] = None
-        model_params["with_conditioning"] = False
+        controlnet_params["in_channels"] = controlnet_params["in_channels"] + n_concat_channel
+        model_params["cross_attention_dim"] = controlnet_params["cross_attention_dim"] = None
+        model_params["with_conditioning"] = controlnet_params["with_conditioning"] = False
         model = DiffusionModelUNet(**model_params)
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
         model.to(device)
@@ -986,8 +988,10 @@ class LatentControlNetTestDiffusionSamplingInferer(unittest.TestCase):
         if ae_model_type == "SPADEAutoencoderKL":
             stage_1 = SPADEAutoencoderKL(**autoencoder_params)
         stage_2_params = stage_2_params.copy()
+        controlnet_params = controlnet_params.copy()
         n_concat_channel = 3
         stage_2_params["in_channels"] = stage_2_params["in_channels"] + n_concat_channel
+        controlnet_params["in_channels"] = controlnet_params["in_channels"] + n_concat_channel
         if dm_model_type == "SPADEDiffusionModelUNet":
             stage_2 = SPADEDiffusionModelUNet(**stage_2_params)
         else:
@@ -1066,8 +1070,10 @@ class LatentControlNetTestDiffusionSamplingInferer(unittest.TestCase):
         if ae_model_type == "SPADEAutoencoderKL":
             stage_1 = SPADEAutoencoderKL(**autoencoder_params)
         stage_2_params = stage_2_params.copy()
+        controlnet_params = controlnet_params.copy()
         n_concat_channel = 3
         stage_2_params["in_channels"] = stage_2_params["in_channels"] + n_concat_channel
+        controlnet_params["in_channels"] = controlnet_params["in_channels"] + n_concat_channel
         if dm_model_type == "SPADEDiffusionModelUNet":
             stage_2 = SPADEDiffusionModelUNet(**stage_2_params)
         else:
