@@ -17,7 +17,7 @@ from collections.abc import Sequence
 import torch
 import torch.nn as nn
 from monai.networks.blocks import Convolution
-from monai.networks.layers import Act
+from monai.networks.layers import (Act, get_pool_layer)
 
 
 class MultiScalePatchDiscriminator(nn.Sequential):
@@ -82,15 +82,11 @@ class MultiScalePatchDiscriminator(nn.Sequential):
         ), f"MultiScalePatchDiscriminator: num_d {num_d} must match the number of num_layers_d. {num_layers_d}"
 
         if pooling_method is None:
-            self.pool = None
-        elif pooling_method.lower() == "max":
-            self.pool = nn.MaxPool2d(kernel_size=kernel_size, stride=2)
-        elif pooling_method.lower() == "avg":
-            self.pool = nn.AvgPool2d(kernel_size=kernel_size, stride=2)
+            pool = None
         else:
-            raise ValueError(f"MultiScalePatchDiscriminator: Pooling method {pooling_method} is not supported.")
+            pool = get_pool_layer((pooling_method, {"kernel_size": kernel_size, "stride": 2}), spatial_dims=spatial_dims)
         print(
-            f"Initialising MultiScalePatchDiscriminator with {self.num_d} discriminators, {self.num_layers_d} layers and pooling method {self.pool.__class__.__name__}."
+            f"Initialising {spatial_dims}D MultiScalePatchDiscriminator with {self.num_d} discriminators, {self.num_layers_d} layers and pooling method {pool.__class__.__name__}."
         )
         self.num_channels = num_channels
         self.padding = tuple([int((kernel_size - 1) / 2)] * spatial_dims)
@@ -102,7 +98,7 @@ class MultiScalePatchDiscriminator(nn.Sequential):
                     "Your image size is too small to take in up to %d discriminators with num_layers = %d."
                     "Please reduce num_layers, reduce num_D or enter bigger images." % (i_, num_layers_d_i)
                 )
-            if i_ == 0 or self.pool is None:
+            if i_ == 0 or pool is None:
                 subnet_d = PatchDiscriminator(
                     spatial_dims=spatial_dims,
                     num_channels=self.num_channels,
@@ -119,7 +115,7 @@ class MultiScalePatchDiscriminator(nn.Sequential):
                 )
             else:
                 subnet_d = nn.Sequential(
-                    *[self.pool] * i_,
+                    *[pool] * i_,
                     PatchDiscriminator(
                         spatial_dims=spatial_dims,
                         num_channels=self.num_channels,
