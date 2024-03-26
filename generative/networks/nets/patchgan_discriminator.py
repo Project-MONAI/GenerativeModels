@@ -17,7 +17,7 @@ from collections.abc import Sequence
 import torch
 import torch.nn as nn
 from monai.networks.blocks import Convolution
-from monai.networks.layers import Act
+from monai.networks.layers import Act, get_pool_layer
 
 
 class MultiScalePatchDiscriminator(nn.Sequential):
@@ -38,6 +38,8 @@ class MultiScalePatchDiscriminator(nn.Sequential):
         spatial_dims: number of spatial dimensions (1D, 2D etc.)
         num_channels: number of filters in the first convolutional layer (double of the value is taken from then on)
         in_channels: number of input channels
+        pooling_method: pooling method to be applied before each discriminator after the first.
+            If None, the number of layers is multiplied by the number of discriminators.
         out_channels: number of output channels in each discriminator
         kernel_size: kernel size of the convolution layers
         activation: activation layer type
@@ -52,10 +54,11 @@ class MultiScalePatchDiscriminator(nn.Sequential):
     def __init__(
         self,
         num_d: int,
-        num_layers_d: int,
+        num_layers_d: int | list[int],
         spatial_dims: int,
         num_channels: int,
         in_channels: int,
+        pooling_method: str = None,
         out_channels: int = 1,
         kernel_size: int = 4,
         activation: str | tuple = (Act.LEAKYRELU, {"negative_slope": 0.2}),
@@ -67,31 +70,66 @@ class MultiScalePatchDiscriminator(nn.Sequential):
     ) -> None:
         super().__init__()
         self.num_d = num_d
+        if isinstance(num_layers_d, int) and pooling_method is None:
+            # if pooling_method is None, calculate the number of layers for each discriminator by multiplying by the number of discriminators
+            num_layers_d = [num_layers_d * i for i in range(1, num_d + 1)]
+        elif isinstance(num_layers_d, int) and pooling_method is not None:
+            # if pooling_method is not None, the number of layers is the same for all discriminators
+            num_layers_d = [num_layers_d] * num_d
         self.num_layers_d = num_layers_d
+        assert (
+            len(self.num_layers_d) == self.num_d
+        ), f"MultiScalePatchDiscriminator: num_d {num_d} must match the number of num_layers_d. {num_layers_d}"
+
+        if pooling_method is None:
+            pool = None
+        else:
+            pool = get_pool_layer(
+                (pooling_method, {"kernel_size": kernel_size, "stride": 2}), spatial_dims=spatial_dims
+            )
         self.num_channels = num_channels
         self.padding = tuple([int((kernel_size - 1) / 2)] * spatial_dims)
         for i_ in range(self.num_d):
-            num_layers_d_i = self.num_layers_d * (i_ + 1)
+            num_layers_d_i = self.num_layers_d[i_]
             output_size = float(minimum_size_im) / (2**num_layers_d_i)
             if output_size < 1:
                 raise AssertionError(
                     "Your image size is too small to take in up to %d discriminators with num_layers = %d."
                     "Please reduce num_layers, reduce num_D or enter bigger images." % (i_, num_layers_d_i)
                 )
-            subnet_d = PatchDiscriminator(
-                spatial_dims=spatial_dims,
-                num_channels=self.num_channels,
-                in_channels=in_channels,
-                out_channels=out_channels,
-                num_layers_d=num_layers_d_i,
-                kernel_size=kernel_size,
-                activation=activation,
-                norm=norm,
-                bias=bias,
-                padding=self.padding,
-                dropout=dropout,
-                last_conv_kernel_size=last_conv_kernel_size,
-            )
+            if i_ == 0 or pool is None:
+                subnet_d = PatchDiscriminator(
+                    spatial_dims=spatial_dims,
+                    num_channels=self.num_channels,
+                    in_channels=in_channels,
+                    out_channels=out_channels,
+                    num_layers_d=num_layers_d_i,
+                    kernel_size=kernel_size,
+                    activation=activation,
+                    norm=norm,
+                    bias=bias,
+                    padding=self.padding,
+                    dropout=dropout,
+                    last_conv_kernel_size=last_conv_kernel_size,
+                )
+            else:
+                subnet_d = nn.Sequential(
+                    *[pool] * i_,
+                    PatchDiscriminator(
+                        spatial_dims=spatial_dims,
+                        num_channels=self.num_channels,
+                        in_channels=in_channels,
+                        out_channels=out_channels,
+                        num_layers_d=num_layers_d_i,
+                        kernel_size=kernel_size,
+                        activation=activation,
+                        norm=norm,
+                        bias=bias,
+                        padding=self.padding,
+                        dropout=dropout,
+                        last_conv_kernel_size=last_conv_kernel_size,
+                    ),
+                )
 
             self.add_module("discriminator_%d" % i_, subnet_d)
 
