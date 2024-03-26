@@ -17,7 +17,7 @@ from collections.abc import Sequence
 import torch
 import torch.nn as nn
 from monai.networks.blocks import Convolution
-from monai.networks.layers import (Act, get_pool_layer)
+from monai.networks.layers import Act, get_pool_layer
 
 
 class MultiScalePatchDiscriminator(nn.Sequential):
@@ -84,7 +84,9 @@ class MultiScalePatchDiscriminator(nn.Sequential):
         if pooling_method is None:
             pool = None
         else:
-            pool = get_pool_layer((pooling_method, {"kernel_size": kernel_size, "stride": 2}), spatial_dims=spatial_dims)
+            pool = get_pool_layer(
+                (pooling_method, {"kernel_size": kernel_size, "stride": 2}), spatial_dims=spatial_dims
+            )
         print(
             f"Initialising {spatial_dims}D MultiScalePatchDiscriminator with {self.num_d} discriminators, {self.num_layers_d} layers and pooling method {pool.__class__.__name__}."
         )
