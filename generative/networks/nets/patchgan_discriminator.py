@@ -87,9 +87,6 @@ class MultiScalePatchDiscriminator(nn.Sequential):
             pool = get_pool_layer(
                 (pooling_method, {"kernel_size": kernel_size, "stride": 2}), spatial_dims=spatial_dims
             )
-        print(
-            f"Initialising {spatial_dims}D MultiScalePatchDiscriminator with {self.num_d} discriminators, {self.num_layers_d} layers and pooling method {pool.__class__.__name__}."
-        )
         self.num_channels = num_channels
         self.padding = tuple([int((kernel_size - 1) / 2)] * spatial_dims)
         for i_ in range(self.num_d):
