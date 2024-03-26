@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import unittest
 
+import numpy as np
 import torch
 from parameterized import parameterized
 
@@ -329,6 +330,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
                 seg=input_seg,
                 noise=noise,
                 timesteps=timesteps,
+                quantized=np.random.choice([True, False]),
             )
         else:
             prediction = inferer(
@@ -472,6 +474,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
                 scheduler=scheduler,
                 save_intermediates=True,
                 seg=input_seg,
+                quantized=np.random.choice([True, False]),
             )
         else:
             sample, intermediates = inferer.get_likelihood(
@@ -480,6 +483,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
                 diffusion_model=stage_2,
                 scheduler=scheduler,
                 save_intermediates=True,
+                quantized=np.random.choice([True, False]),
             )
         self.assertEqual(len(intermediates), 10)
         self.assertEqual(intermediates[0].shape, latent_shape)
@@ -525,6 +529,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
                 save_intermediates=True,
                 resample_latent_likelihoods=True,
                 seg=input_seg,
+                quantized=np.random.choice([True, False]),
             )
         else:
             sample, intermediates = inferer.get_likelihood(
@@ -534,6 +539,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
                 scheduler=scheduler,
                 save_intermediates=True,
                 resample_latent_likelihoods=True,
+                quantized=np.random.choice([True, False]),
             )
         self.assertEqual(len(intermediates), 10)
         self.assertEqual(intermediates[0].shape[2:], input_shape[2:])
@@ -590,6 +596,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
                 condition=conditioning,
                 mode="concat",
                 seg=input_seg,
+                quantized=np.random.choice([True, False]),
             )
         else:
             prediction = inferer(
@@ -600,6 +607,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
                 timesteps=timesteps,
                 condition=conditioning,
                 mode="concat",
+                quantized=np.random.choice([True, False]),
             )
         self.assertEqual(prediction.shape, latent_shape)
 
@@ -713,6 +721,7 @@ class TestDiffusionSamplingInferer(unittest.TestCase):
                 noise=noise,
                 timesteps=timesteps,
                 seg=input_seg,
+                quantized=np.random.choice([True, False]),
             )
         else:
             prediction = inferer(

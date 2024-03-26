@@ -23,7 +23,7 @@ from monai.inferers import Inferer
 from monai.transforms import CenterSpatialCrop, SpatialPad
 from monai.utils import optional_import
 
-from generative.networks.nets import SPADEAutoencoderKL, SPADEDiffusionModelUNet
+from generative.networks.nets import VQVAE, SPADEAutoencoderKL, SPADEDiffusionModelUNet
 
 tqdm, has_tqdm = optional_import("tqdm", name="tqdm")
 
@@ -362,6 +362,7 @@ class LatentDiffusionInferer(DiffusionInferer):
         condition: torch.Tensor | None = None,
         mode: str = "crossattn",
         seg: torch.Tensor | None = None,
+        quantized: bool = True,
     ) -> torch.Tensor:
         """
         Implements the forward pass for a supervised training iteration.
@@ -375,9 +376,14 @@ class LatentDiffusionInferer(DiffusionInferer):
             condition: conditioning for network input.
             mode: Conditioning mode for the network.
             seg: if diffusion model is instance of SPADEDiffusionModel, segmentation must be provided.
+            quantized: if autoencoder_model is a VQVAE, quantized controls whether the latents to the LDM
+            are quantized or not.
         """
         with torch.no_grad():
-            latent = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
+            autoencode = autoencoder_model.encode_stage_2_inputs
+            if isinstance(autoencoder_model, VQVAE):
+                autoencode = partial(autoencoder_model.encode_stage_2_inputs, quantized=quantized)
+            latent = autoencode(inputs) * self.scale_factor
 
         if self.ldm_latent_shape is not None:
             latent = torch.stack([self.ldm_resizer(i) for i in decollate_batch(latent)], 0)
@@ -496,6 +502,7 @@ class LatentDiffusionInferer(DiffusionInferer):
         resample_latent_likelihoods: bool = False,
         resample_interpolation_mode: str = "nearest",
         seg: torch.Tensor | None = None,
+        quantized: bool = True,
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Computes the log-likelihoods of the latent representations of the input.
@@ -517,12 +524,18 @@ class LatentDiffusionInferer(DiffusionInferer):
                 or 'trilinear;
             seg: if diffusion model is instance of SPADEDiffusionModel, or autoencoder_model
              is instance of SPADEAutoencoderKL, segmentation must be provided.
+            quantized: if autoencoder_model is a VQVAE, quantized controls whether the latents to the LDM
+            are quantized or not.
         """
         if resample_latent_likelihoods and resample_interpolation_mode not in ("nearest", "bilinear", "trilinear"):
             raise ValueError(
                 f"resample_interpolation mode should be either nearest, bilinear, or trilinear, got {resample_interpolation_mode}"
             )
-        latents = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
+
+        autoencode = autoencoder_model.encode_stage_2_inputs
+        if isinstance(autoencoder_model, VQVAE):
+            autoencode = partial(autoencoder_model.encode_stage_2_inputs, quantized=quantized)
+        latents = autoencode(inputs) * self.scale_factor
 
         if self.ldm_latent_shape is not None:
             latents = torch.stack([self.ldm_resizer(i) for i in decollate_batch(latents)], 0)
@@ -882,6 +895,7 @@ class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
         condition: torch.Tensor | None = None,
         mode: str = "crossattn",
         seg: torch.Tensor | None = None,
+        quantized: bool = True,
     ) -> torch.Tensor:
         """
         Implements the forward pass for a supervised training iteration.
@@ -897,9 +911,14 @@ class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
             condition: conditioning for network input.
             mode: Conditioning mode for the network.
             seg: if diffusion model is instance of SPADEDiffusionModel, segmentation must be provided.
+            quantized: if autoencoder_model is a VQVAE, quantized controls whether the latents to the LDM
+            are quantized or not.
         """
         with torch.no_grad():
-            latent = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
+            autoencode = autoencoder_model.encode_stage_2_inputs
+            if isinstance(autoencoder_model, VQVAE):
+                autoencode = partial(autoencoder_model.encode_stage_2_inputs, quantized=quantized)
+            latent = autoencode(inputs) * self.scale_factor
 
         if self.ldm_latent_shape is not None:
             latent = torch.stack([self.ldm_resizer(i) for i in decollate_batch(latent)], 0)
@@ -1036,6 +1055,7 @@ class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
         resample_latent_likelihoods: bool = False,
         resample_interpolation_mode: str = "nearest",
         seg: torch.Tensor | None = None,
+        quantized: bool = True,
     ) -> torch.Tensor | tuple[torch.Tensor, list[torch.Tensor]]:
         """
         Computes the log-likelihoods of the latent representations of the input.
@@ -1059,13 +1079,19 @@ class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
                 or 'trilinear;
             seg: if diffusion model is instance of SPADEDiffusionModel, or autoencoder_model
              is instance of SPADEAutoencoderKL, segmentation must be provided.
+            quantized: if autoencoder_model is a VQVAE, quantized controls whether the latents to the LDM
+            are quantized or not.
         """
         if resample_latent_likelihoods and resample_interpolation_mode not in ("nearest", "bilinear", "trilinear"):
             raise ValueError(
                 f"resample_interpolation mode should be either nearest, bilinear, or trilinear, got {resample_interpolation_mode}"
             )
 
-        latents = autoencoder_model.encode_stage_2_inputs(inputs) * self.scale_factor
+        with torch.no_grad():
+            autoencode = autoencoder_model.encode_stage_2_inputs
+            if isinstance(autoencoder_model, VQVAE):
+                autoencode = partial(autoencoder_model.encode_stage_2_inputs, quantized=quantized)
+            latents = autoencode(inputs) * self.scale_factor
 
         if cn_cond.shape[2:] != latents.shape[2:]:
             cn_cond = F.interpolate(cn_cond, latents.shape[2:])
