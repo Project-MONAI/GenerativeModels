@@ -81,14 +81,15 @@ class MultiScalePatchDiscriminator(nn.Sequential):
             len(self.num_layers_d) == self.num_d
         ), f"MultiScalePatchDiscriminator: num_d {num_d} must match the number of num_layers_d. {num_layers_d}"
 
+        self.padding = tuple([int((kernel_size - 1) / 2)] * spatial_dims)
+
         if pooling_method is None:
             pool = None
         else:
             pool = get_pool_layer(
-                (pooling_method, {"kernel_size": kernel_size, "stride": 2}), spatial_dims=spatial_dims
+                (pooling_method, {"kernel_size": kernel_size, "stride": 2, 'padding': self.padding}), spatial_dims=spatial_dims
             )
         self.num_channels = num_channels
-        self.padding = tuple([int((kernel_size - 1) / 2)] * spatial_dims)
         for i_ in range(self.num_d):
             num_layers_d_i = self.num_layers_d[i_]
             output_size = float(minimum_size_im) / (2**num_layers_d_i)
