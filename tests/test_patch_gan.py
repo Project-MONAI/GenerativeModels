@@ -59,7 +59,7 @@ TEST_3D = [
     [4, 7],
 ]
 TEST_3D_POOL = [
-{
+    {
         "num_d": 2,
         "num_layers_d": 3,
         "spatial_dims": 3,
@@ -101,7 +101,7 @@ TEST_2D_POOL = [
 TEST_LAYER_LIST = [
     {
         "num_d": 3,
-        "num_layers_d": [3,4,5],
+        "num_layers_d": [3, 4, 5],
         "spatial_dims": 2,
         "num_channels": 8,
         "in_channels": 3,
@@ -136,7 +136,7 @@ TEST_TOO_SMALL_SIZE = [
 TEST_MISMATCHED_NUM_LAYERS = [
     {
         "num_d": 5,
-        "num_layers_d": [3,4,5],
+        "num_layers_d": [3, 4, 5],
         "spatial_dims": 2,
         "num_channels": 8,
         "in_channels": 3,
@@ -151,6 +151,7 @@ TEST_MISMATCHED_NUM_LAYERS = [
 ]
 
 CASES = [TEST_2D, TEST_3D, TEST_3D_POOL, TEST_2D_POOL, TEST_LAYER_LIST]
+
 
 class TestPatchGAN(unittest.TestCase):
     @parameterized.expand(CASES)

@@ -459,7 +459,8 @@ class LatentDiffusionInferer(DiffusionInferer):
             latent = torch.stack([self.autoencoder_resizer(i) for i in decollate_batch(latent)], 0)
             if save_intermediates:
                 latent_intermediates = [
-                    torch.stack([self.autoencoder_resizer(i) for i in decollate_batch(l)], 0) for l in latent_intermediates
+                    torch.stack([self.autoencoder_resizer(i) for i in decollate_batch(l)], 0)
+                    for l in latent_intermediates
                 ]
 
         decode = autoencoder_model.decode_stage_2_outputs
@@ -994,7 +995,8 @@ class ControlNetLatentDiffusionInferer(ControlNetDiffusionInferer):
             latent = torch.stack([self.autoencoder_resizer(i) for i in decollate_batch(latent)], 0)
             if save_intermediates:
                 latent_intermediates = [
-                    torch.stack([self.autoencoder_resizer(i) for i in decollate_batch(l)], 0) for l in latent_intermediates
+                    torch.stack([self.autoencoder_resizer(i) for i in decollate_batch(l)], 0)
+                    for l in latent_intermediates
                 ]
 
         decode = autoencoder_model.decode_stage_2_outputs
